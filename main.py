@@ -354,7 +354,7 @@ def MC(samples):
     :param samples: The samples of the random variable
     :return: The expectation and a 95% confidence interval, (expectation, confidence)
     """
-    return np.average(samples), 1.95 * np.std(samples) / np.sqrt(len(samples))
+    return np.average(samples, axis=-1), 1.95 * np.std(samples, axis=-1) / np.sqrt(samples.shape[-1])
 
 
 def BS_d1(S=1., K=1., sigma=1., r=0., T=1.):
@@ -426,19 +426,11 @@ def implied_volatility_call(S=1., K=1., r=0., T=1., price=1., tol=10.**(-10), sl
     :param sr: Right point of the search interval
     :return: The implied volatility
     """
-    if price == 0.:
-        return 0.
-    el = BS_call_price(S, K, sl, r, T) - price
-    er = BS_call_price(S, K, sr, r, T) - price
     sm = (sl + sr)/2
-    while sr - sl > tol:
+    while np.amax(sr - sl) > tol:
         em = BS_call_price(S, K, sm, r, T) - price
-        if em < 0:
-            sl = sm
-            el = em
-        else:
-            sr = sm
-            er = em
+        sl = (em < 0)*sm + (em >= 0)*sl
+        sr = (em >= 0)*sm + (em < 0)*sr
         sm = (sl + sr)/2
     return sm
 
@@ -448,9 +440,16 @@ def call_option_payoff(S, K):
     Computes the payoff of a (European) call option.
     :param S: (Final) stock price
     :param K: Strike price
-    :return: The payoff
+    :return: The payoff. If S and K are floats, a float is returned. If either S or K are floats, the other being a
+            vector, a vector is returned. If both S and K are vectors, a matrix is returned. In the matrix, the rows
+            have fixed K, the columns have fixed S.
     """
-    return np.fmax(S - K, 0)
+    if isinstance(K, float) or isinstance(S, float):
+        return np.fmax(S - K, 0)
+
+    S_matrix = np.repeat(np.array([S]), len(K), axis=0)
+    K_matrix = np.repeat(np.array([K]), len(S), axis=0).transpose()
+    return np.fmax(S_matrix - K_matrix, 0)
 
 
 def put_option_payoff(S, K):
@@ -458,9 +457,16 @@ def put_option_payoff(S, K):
     Computes the payoff of a (European) put option.
     :param S: (Final) stock price
     :param K: Strike price
-    :return: The payoff
+    :return: The payoff. If S and K are floats, a float is returned. If either S or K are floats, the other being a
+            vector, a vector is returned. If both S and K are vectors, a matrix is returned. In the matrix, the rows
+            have fixed K, the columns have fixed S.
     """
-    return np.fmax(K - S, 0)
+    if isinstance(K, float) or isinstance(S, float):
+        return np.fmax(K - S, 0)
+
+    S_matrix = np.repeat(np.array([S]), len(K), axis=0)
+    K_matrix = np.repeat(np.array([K]), len(S), axis=0).transpose()
+    return np.fmax(K_matrix - S_matrix, 0)
 
 
 # noinspection PyShadowingNames
@@ -620,22 +626,11 @@ V_0 = 0.235**2
 S_0 = 1.
 rho = -0.9
 r = 0.
-m = 100
+m = 1000
 K = 1.
 print('Test implied volatility: {0}'.format(implied_volatility_call_rBergomi_BFG(H, T, N, eta, V_0, S_0, rho, K, m)))
 k_vec = np.array([i/100. for i in range(-20, 13)])
 K_vec = S_0*np.exp(k_vec)
-implied_volatility_estimate = np.empty(shape=(len(K_vec),))
-implied_volatility_lower = np.empty(shape=(len(K_vec),))
-implied_volatility_upper = np.empty(shape=(len(K_vec),))
-
-for i in range(0, len(K_vec)):
-    K = K_vec[i]
-    (implied_volatility_estimate[i], implied_volatility_lower[i], implied_volatility_upper[i]) = implied_volatility_call_rBergomi_BFG(H, T, N, eta, V_0, S_0, rho, K, m)
-    print('K: {0}, lower: {1}, middle: {2}, upper: {3}.'.format(K, implied_volatility_lower[i], implied_volatility_estimate[i], implied_volatility_upper[i]))
-
-
-plt.plot(k_vec, implied_volatility_estimate)
-plt.plot(k_vec, implied_volatility_lower)
-plt.plot(k_vec, implied_volatility_upper)
+(mi, lo, up) = implied_volatility_call_rBergomi_BFG(H, T, N, eta, V_0, S_0, rho, K_vec, m)
+plt.plot(k_vec, np.array([mi, lo, up]).transpose())
 plt.show()
