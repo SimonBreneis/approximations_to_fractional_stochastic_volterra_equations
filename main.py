@@ -1,10 +1,14 @@
+import time
+
 import numpy as np
 import matplotlib.pyplot as plt
 import math
 import scipy
 from scipy import stats, linalg, special
+from scipy.special import gamma
 import mpmath as mp
 
+c_H = (math.gamma(0.1 + 0.5) * math.gamma(0.5 - 0.1))
 
 # noinspection PyShadowingNames
 def fractional_kernel(H, t):
@@ -269,14 +273,21 @@ def sqrt_cov_matrix_rBergomi_BFG(H=0.1, T=1., N=1000):
     :return: The Cholesky decomposition of the above covariance matrix
     """
     cov = np.empty(shape=(2 * N, 2 * N))
+
     cov[0:N, 0:N] = scipy.special.gamma(H + 0.5) / scipy.special.gamma(H + 1.5) * np.array([[(np.fmin(i,
                                                                                                       j) * T / N) ** (
-                                                                                                     0.5 + H) * (
-                                                                                                     np.fmax(i,
-                                                                                                             j) * T / N) ** (
-                                                                                                     H - 0.5) * scipy.special.hyp2f1(
+                                                                                                         0.5 + H) * (
+                                                                                                         np.fmax(i,
+                                                                                                                 j) * T / N) ** (
+                                                                                                         H - 0.5) * scipy.special.hyp2f1(
         0.5 - H, 1., 1.5 + H, np.fmin(float(i), float(j)) / np.fmax(float(i), float(j))) for i in range(1, N + 1)] for j
                                                                                             in range(1, N + 1)])
+    '''
+    cov[0:N, 0:N] = 1/(H+0.5) * np.array([[(np.fmax(i, j)*T/N)**(0.5+H) * (np.fmin(i, j)*T/N)**(H-0.5) * scipy.special.hyp2f1(1., 0.5-H, 1.5+H, np.fmin(float(i), float(j))/np.fmax(float(i), float(j))) for i in range(1, N+1)] for j in range(1, N+1)])
+    
+    for i in range(1, N+1):
+        cov[i-1, i-1] = i*T/(2*H*N)
+    '''
     cov[N:(2 * N), N:(2 * N)] = np.array([[np.fmin(i, j) * T / N for i in range(1, N + 1)] for j in range(1, N + 1)])
     cov[0:N, N:(2 * N)] = 1. / (H + 0.5) * np.array(
         [[(i * T / N) ** (H + 0.5) - (np.fmax(i - j, 0) * T / N) ** (H + 0.5) for j in range(1, N + 1)] for i in
@@ -336,23 +347,21 @@ def rBergomi_BFG(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9,
     :param m: Number of samples
     :return: An array of the final stock prices [S_T^1, S_T^2, ..., S_T^m]
     """
+    dt = T / N
     sqrt_cov = sqrt_cov_matrix_rBergomi_BFG(H, T, N)
     W_vec = sqrt_cov.dot(np.random.normal(0, 1, (2 * N, m)))
     V = np.empty(shape=(N + 1, m))
     V[0, :] = V_0
     V[1:, :] = V_0 * np.exp(
         eta * np.sqrt(2 * H) * W_vec[0:N, :] - eta * eta / 2 * np.array(
-            [[(i * T / N) ** (2 * H) for _ in range(0, m)] for i in range(1, N + 1)]))
-
+            [[(i * dt) ** (2 * H) for _ in range(0, m)] for i in range(1, N + 1)]))
     W_diff = np.empty(shape=(N, m))
     W_diff[0, :] = W_vec[N, :]
     W_diff[1:, :] = W_vec[(N + 1):(2 * N), :] - W_vec[N:(2 * N - 1), :]
-    W_2 = np.random.normal(0, T / N, (N, m))
-    S = np.array([S_0 for _ in range(0, m)])
-    for i in range(1, N + 1):
-        S = S * np.exp(
-            np.sqrt(V[i - 1, :]) * (rho * W_diff[i - 1, :] + np.sqrt(1 - rho ** 2) * W_2[i - 1, :]) - V[i - 1,
-                                                                                                      :] * T / (2 * N))
+    W_2 = np.random.normal(0, np.sqrt(dt), (N, m))
+    S = S_0 * np.ones(shape=(m,))
+    for i in range(N):
+        S = S * np.exp(np.sqrt(V[i, :]) * (rho * W_diff[i, :] + np.sqrt(1 - rho ** 2) * W_2[i, :]) - V[i, :] * dt / 2)
     return S
 
 
@@ -493,68 +502,60 @@ def implied_volatility_call_rBergomi_BFG(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235
     :param m: Number of samples
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
+    tic = time.perf_counter()
     samples = rBergomi_BFG(H, T, N, eta, V_0, S_0, rho, m)
+    toc = time.perf_counter()
+    print(f"Generating {m} rBergomi samples with N={N} takes {np.round(toc-tic, 2)} seconds.")
     (price_estimate, price_stat) = MC(call_option_payoff(samples, K))
-    implied_volatility_estimate = implied_volatility_call(S_0, K, r, T, price_estimate)
-    implied_volatility_lower = implied_volatility_call(S_0, K, r, T, price_estimate - price_stat)
-    implied_volatility_upper = implied_volatility_call(S_0, K, r, T, price_estimate + price_stat)
+    implied_volatility_estimate = implied_volatility_call(S_0, K, 0, T, price_estimate)
+    implied_volatility_lower = implied_volatility_call(S_0, K, 0, T, price_estimate - price_stat)
+    implied_volatility_upper = implied_volatility_call(S_0, K, 0, T, price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
-def sqrt_cov_matrix_rBergomi_AK_mpmath(H=0.1, T=1., m=1, n=10, a=1., b=1.):
+def sqrt_cov_matrix_rBergomi_AK_mpmath(dt=1., nodes=None):
     """
     Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
     Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
     More precisely, computes the Cholesky decomposition of the covariance matrix of the following Gaussian vector:
-    (int_0^T exp(-x_1(T-s)) dW_s, ..., int_0^T exp(-x_k(T-s)) dW_s, W_T),
+    (int_0^dt exp(-x_1(dt-s)) dW_s, ..., int_0^dt exp(-x_k(dt-s)) dW_s, W_dt),
     where k = m*n is the number of nodes, and these nodes are determined by the m-point quadrature rule approximation
     of the rough kernel on n subintervals. Note that no weights of the quadrature rule are used. Returns a numpy array,
     but the computation is done using the mpmath library.
-    :param H: Hurst parameter
-    :param T: Final time, time step size
-    :param m: Order of the quadrature rule
-    :param n: Number of intervals in the quadrature rule
-    :param a: Can shift the left end-point of the total interval of the quadrature rule
-    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    :param dt: Time step size
+    :param nodes: The nodes of the quadrature rule approximation
     :return: The Cholesky decomposition of the above covariance matrix
     """
-    mp.mp.dps = int(np.maximum(20., (m ** 5 * n) ** 2))
-    k = m * n
-    quad_rule = quadrature_rule_geometric(H, m, n, a, b)
-    nodes = quad_rule[0, :]
-    weights = quad_rule[1, :]  # weights contain a factor of c_H
+    k = len(nodes)
+    mp.mp.dps = int(np.amax(np.array([20., k ** 2, mp.mp.dps])))
     cov_matrix = mp.matrix(k + 1, k + 1)
-    for i in range(0, n):
-        for j in range(0, n):
-            cov_matrix[i, j] = (1 - mp.exp(-T * (nodes[i] + nodes[j]))) / (
+    for i in range(0, k):
+        for j in range(0, k):
+            cov_matrix[i, j] = (1 - mp.exp(-dt * (nodes[i] + nodes[j]))) / (
                     nodes[i] + nodes[j])
-    for i in range(0, n):
-        entry = (1 - mp.exp(-T * nodes[i])) / nodes[i]
-        cov_matrix[n, i] = entry
-        cov_matrix[i, n] = entry
-    cov_matrix[n, n] = T
+    for i in range(0, k):
+        entry = (1 - mp.exp(-dt * nodes[i])) / nodes[i]
+        cov_matrix[k, i] = entry
+        cov_matrix[i, k] = entry
+    cov_matrix[k, k] = dt
     return mp.cholesky(cov_matrix)
 
 
-def sqrt_cov_matrix_rBergomi_AK(H=0.1, T=1., m=1, n=10, a=1., b=1.):
+def sqrt_cov_matrix_rBergomi_AK(dt=1., nodes=None):
     """
     Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
     Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
     More precisely, computes the Cholesky decomposition of the covariance matrix of the following Gaussian vector:
-    (int_0^T exp(-x_1(T-s)) dW_s, ..., int_0^T exp(-x_k(T-s)) dW_s, W_T),
+    (int_0^dt exp(-x_1(dt-s)) dW_s, ..., int_0^dt exp(-x_k(dt-s)) dW_s, W_dt),
     where k = m*n is the number of nodes, and these nodes are determined by the m-point quadrature rule approximation
     of the rough kernel on n subintervals. Note that no weights of the quadrature rule are used. Returns a numpy array,
     but the computation is done using the mpmath library.
-    :param H: Hurst parameter
-    :param T: Final time, time step size
-    :param m: Order of the quadrature rule
-    :param n: Number of intervals in the quadrature rule
-    :param a: Can shift the left end-point of the total interval of the quadrature rule
-    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    :param dt: Time step size
+    :param nodes: The nodes of the quadrature rule approximation
     :return: The Cholesky decomposition of the above covariance matrix
     """
-    cov_root_mp = sqrt_cov_matrix_rBergomi_AK_mpmath(H, T, m, n, a, b)
-    num = n * m + 1
+    cov_root_mp = sqrt_cov_matrix_rBergomi_AK_mpmath(dt, nodes)
+    num = len(nodes) + 1
     cov_root = np.empty(shape=(num, num))
     for i in range(0, num):
         for j in range(0, num):
@@ -577,7 +578,7 @@ def rBergomi_AK_variance_integral(nodes, weights, t):
     result = np.empty(shape=(len(t),))
     for time_index in range(len(t)):
         expression = mp.matrix([[weight_matrix[i, j] / node_matrix[i, j] * (
-                    1 - mp.exp(-node_matrix[i, j] * mp.mpf(t[time_index]))) for j in range(len(nodes))] for i in
+                1 - mp.exp(-node_matrix[i, j] * mp.mpf(t[time_index]))) for j in range(len(nodes))] for i in
                                 range(len(nodes))])
         expression_np = np.array([[expression[i, j] for j in range(len(nodes))] for i in range(len(nodes))])
         result[time_index] = np.sum(expression_np.flatten())
@@ -605,7 +606,7 @@ def plot_rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     quad_rule = quadrature_rule_geometric(H, m, n, a, b)
     nodes = quad_rule[0, :]
     weights_mp = quad_rule[1, :]
-    sqrt_cov = sqrt_cov_matrix_rBergomi_AK(H, dt, m, n, a, b)
+    sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes)
     weights = np.array([float(weight) for weight in weights_mp])
     W_1_diff = sqrt_cov.dot(np.random.normal(0., 1., size=(m * n + 1, N)))
     eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
@@ -616,7 +617,7 @@ def plot_rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
         W_1_fBm[:, i] = exp_vector * W_1_fBm[:, i - 1] + W_1_diff[:-1, i - 1]
     W_1_fBm = eta_transformed * np.dot(weights, W_1_fBm)
     W_1_diff = W_1_diff[-1, :]
-    times = np.array([i * T / N for i in range(0, N + 1)])
+    times = np.arange(N + 1) * dt
     variances = eta_transformed ** 2 / 2 * rBergomi_AK_variance_integral(nodes, weights, times)
     V = V_0 * np.exp(W_1_fBm - variances)
     W_2_diff = np.sqrt(dt) * np.random.normal(0, 1, size=N)
@@ -652,9 +653,10 @@ def rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, 
     quad_rule = quadrature_rule_geometric(H, m, n, a, b)
     nodes = quad_rule[0, :]
     weights_mp = quad_rule[1, :]
-    sqrt_cov = sqrt_cov_matrix_rBergomi_AK(H, dt, m, n, a, b)
+    sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes)
     weights = np.array([float(weight) for weight in weights_mp])
     W_1_diff = np.array([sqrt_cov.dot(np.random.normal(0., 1., size=(m * n + 1, N))) for _ in range(M)])
+    # W_1_diff = np.transpose(sqrt_cov.dot(np.random.normal(0., 1., size=(M, m*n+1, N))), [1, 0, 2]) is slower
     eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
         H + 0.5)  # the sqrt is in the model, the Gamma takes care of the c_H in the weights of the quadrature rule
     exp_vector = np.exp(np.array([-float(node) * dt for node in nodes]))
@@ -665,7 +667,7 @@ def rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, 
         W_1_fBm[:, i, :] = weights[i] * W_1_fBm[:, i, :]
     W_1_fBm = eta_transformed * np.sum(W_1_fBm, axis=1)
     W_1_diff = W_1_diff[:, -1, :]
-    times = np.array([i * T / N for i in range(0, N + 1)])
+    times = np.arange(N + 1) * dt
     variances = eta_transformed ** 2 / 2 * rBergomi_AK_variance_integral(nodes, weights, times)
     V = V_0 * np.exp(W_1_fBm - variances)
     W_2_diff = np.sqrt(dt) * np.random.normal(0, 1, size=(M, N))
@@ -697,11 +699,306 @@ def implied_volatility_call_rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 
     :param M: Number of samples
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
+    tic = time.perf_counter()
     samples = rBergomi_AK(H, T, N, eta, V_0, S_0, rho, m, n, a, b, M)
+    toc = time.perf_counter()
+    print(f"Generating {M} approximate rBergomi samples with N={N} and n*m={n*m} takes {np.round(toc-tic, 2)} seconds.")
     (price_estimate, price_stat) = MC(call_option_payoff(samples, K))
-    implied_volatility_estimate = implied_volatility_call(S_0, K, r, T, price_estimate)
-    implied_volatility_lower = implied_volatility_call(S_0, K, r, T, price_estimate - price_stat)
-    implied_volatility_upper = implied_volatility_call(S_0, K, r, T, price_estimate + price_stat)
+    implied_volatility_estimate = implied_volatility_call(S_0, K, 0, T, price_estimate)
+    implied_volatility_lower = implied_volatility_call(S_0, K, 0, T, price_estimate - price_stat)
+    implied_volatility_upper = implied_volatility_call(S_0, K, 0, T, price_estimate + price_stat)
+    return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
+
+
+def sqrt_cov_matrix_rHeston(H=0.1, T=1., N=1000):
+    """
+    Computes the Cholesky decomposition of the covariance matrix for the rough Heston model with Hurst parameter H,
+    final time T and N number of time steps. This is the Cholesky decomposition of the covariance matrix of the
+    Gaussian vector (int_0^(T/N) (T/N - s)^(H-1/2) dW_s, ..., int_0^(T/N) (T-s)^(H-1/2) dW_s, W_(T/N)).
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :return: The Cholesky decomposition of the covariance matrix
+    """
+    dt = T / N
+    cov_matrix = np.empty(shape=(N + 1, N + 1))
+    cov_matrix[:-1, :-1] = dt ** (2 * H) / (H + 0.5) * np.array([[(np.fmax(i, j) - 0.5) ** (H - 0.5) * (
+                np.fmin(i, j) ** (H + 0.5) - (np.fmin(i, j) - 1) ** (H + 0.5)) for i in range(1, N + 1)] for j in
+                                                                 range(1, N + 1)])
+    for i in range(N):
+        cov_matrix[i, i] = dt ** (2 * H) / (2 * H) * ((i + 1) ** (2 * H) - i ** (2 * H))
+    cov_matrix[:-1, -1] = 1 / (H + 0.5) * dt ** (H + 0.5) * np.array(
+        [((i + 1) ** (H + 0.5) - i ** (H + 0.5)) for i in range(N)])
+    cov_matrix[-1, :-1] = cov_matrix[:-1, -1]
+    cov_matrix[-1, -1] = dt
+    (L, D, P) = scipy.linalg.ldl(cov_matrix)
+    return np.dot(L, np.sqrt(np.fmax(D, np.zeros(shape=D.shape))))
+
+
+def plot_rHeston(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V_0=0.02, S_0=1.):
+    """
+    Plots a realization of the rough Heston model together with the variance process.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :param rho: Correlation between the Brownian motion driving the volatility and the Brownian motion driving the stock
+    :param lambda_: Mean-reversion speed
+    :param theta: Mean volatility
+    :param nu: Volatility of volatility
+    :param V_0: Initial volatility
+    :param S_0: Initial stock price
+    :return: Nothing, plots a realization of the rough Heston model together with the variance process.
+    """
+    dt = T / N
+    sqrt_cov = sqrt_cov_matrix_rHeston(H, T, N)
+    gaussian_increments = sqrt_cov.dot(np.random.normal(0, 1, size=(N + 1, N)))
+    # CHECK IF THE RESULT IS AN (N+1, N) ARRAY!!! If so, i is for (t_i-s)^(H-1/2) and j is for int_t_(j-1)^t_j
+    V = np.zeros(shape=(N + 1,))
+    V[0] = V_0
+    coeffs = lambda_ / (H + 0.5) * dt ** (H + 0.5) * np.arange(N, -1, -1) ** (H + 0.5)
+    for i in range(1, N + 1):
+        V[i] = V_0 + 1 / gamma(H + 0.5) * np.sum(
+            (theta - V[:i]) * (coeffs[-i - 1:-1] - coeffs[-i:]) + nu * np.sqrt(V[:i]) * gaussian_increments[i - 1, :i])
+        V[i] = np.fmax(V[i], 0)
+    S = np.zeros(shape=(N + 1,))
+    S[0] = S_0
+    W_2_diff = np.random.normal(0, np.sqrt(dt), size=N)
+    for i in range(N):
+        S[i + 1] = S[i] * np.exp(
+            np.sqrt(V[i]) * (rho * gaussian_increments[-1, i] + np.sqrt(1 - rho ** 2) * W_2_diff[i]) - V[i] * dt / 2)
+    times = np.arange(N + 1) * dt
+    plt.plot(times, S)
+    plt.plot(times, V)
+    plt.show()
+
+
+def rHeston(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V_0=0.02, S_0=1., m=1000):
+    """
+    Computes m final stock values of the rough Heston model.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :param rho: Correlation between the Brownian motion driving the volatility and the Brownian motion driving the stock
+    :param lambda_: Mean-reversion speed
+    :param theta: Mean volatility
+    :param nu: Volatility of volatility
+    :param V_0: Initial volatility
+    :param S_0: Initial stock price
+    :param m: Number of stock prices computed
+    :return: An array of all the final stock prices
+    """
+    dt = T / N
+    sqrt_cov = sqrt_cov_matrix_rHeston(H, T, N)
+    gaussian_increments = np.array([sqrt_cov.dot(np.random.normal(0, 1, size=(N + 1, N))) for _ in range(m)])
+    V = np.zeros(shape=(m, N + 1))
+    V[:, 0] = V_0 * np.ones(m)
+    coeffs = lambda_ / (H + 0.5) * dt ** (H + 0.5) * np.arange(N, -1, -1) ** (H + 0.5)
+    for i in range(1, N + 1):
+        V[:, i] = V[:, 0] + 1 / gamma(H + 0.5) * ((theta - V[:, :i]).dot(coeffs[-i - 1:-1] - coeffs[-i:]) + np.sum(
+            nu * np.sqrt(V[:, :i]) * gaussian_increments[:, i - 1, :i], axis=1))
+        V[:, i] = np.fmax(V[:, i], np.zeros(m))
+    S = np.zeros(shape=(m, N + 1,))
+    S[:, 0] = S_0 * np.ones(m)
+    W_2_diff = np.random.normal(0, np.sqrt(dt), size=(m, N))
+    for i in range(N):
+        S[:, i + 1] = S[:, i] * np.exp(
+            np.sqrt(V[:, i]) * (rho * gaussian_increments[:, -1, i] + np.sqrt(1 - rho ** 2) * W_2_diff[:, i]) - V[:,
+                                                                                                                i] * dt / 2)
+    return S[:, -1]
+
+
+def implied_volatility_call_rHeston(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V_0=0.02, S_0=1.,
+                                    K=1., m=1000):
+    """
+    Computes the implied volatility of a European option under the rough Heston model.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :param rho: Correlation between the Brownian motion driving the volatility and the Brownian motion driving the stock
+    :param lambda_: Mean-reversion speed
+    :param theta: Mean volatility
+    :param nu: Volatility of volatility
+    :param V_0: Initial volatility
+    :param S_0: Initial stock price
+    :param K: Strike price
+    :param m: Number of stock prices computed
+    :return: An array of all the final stock prices
+    """
+    tic = time.perf_counter()
+    samples = rHeston(H, T, N, rho, lambda_, theta, nu, V_0, S_0, m)
+    toc = time.perf_counter()
+    print(f"Generating {m} rHeston samples with N={N} takes {np.round(toc-tic, 2)} seconds.")
+    (price_estimate, price_stat) = MC(call_option_payoff(samples, K))
+    implied_volatility_estimate = implied_volatility_call(S_0, K, 0, T, price_estimate)
+    implied_volatility_lower = implied_volatility_call(S_0, K, 0, T, price_estimate - price_stat)
+    implied_volatility_upper = implied_volatility_call(S_0, K, 0, T, price_estimate + price_stat)
+    return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
+
+
+def sqrt_cov_matrix_rHeston_AK_mpmath(dt=1., nodes=None):
+    """
+    Computes the Cholesky decomposition of the covariance matrix of the approximation of the rough Heston model that
+    was inspired by Alfonsi and Kebaier. The covariance matrix is the covariance matrix of the Gaussian vector
+    (int_0^Delta t exp(-(Delta t - s) node_1) dW_s, ..., int_0^Delta t exp(-(Delta t - s) node_k) dW_s, W_Delta t).
+    The computation is done with the mpmath library, the result is an mpmath matrix.
+    :param dt: Time step size
+    :param nodes: The quadrature nodes
+    :return: The Cholesky decomposition of the covariance matrix (an mpmath matrix)
+    """
+    return sqrt_cov_matrix_rBergomi_AK_mpmath(dt, nodes)
+
+
+def sqrt_cov_matrix_rHeston_AK(dt=1., nodes=None):
+    """
+    Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
+    Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
+    More precisely, computes the Cholesky decomposition of the covariance matrix of the following Gaussian vector:
+    (int_0^dt exp(-x_1(dt-s)) dW_s, ..., int_0^dt exp(-x_k(dt-s)) dW_s, W_dt),
+    where k = m*n is the number of nodes, and these nodes are determined by the m-point quadrature rule approximation
+    of the rough kernel on n subintervals. Note that no weights of the quadrature rule are used. Returns a numpy array,
+    but the computation is done using the mpmath library.
+    :param dt: Time step size
+    :param nodes: The nodes of the quadrature rule approximation
+    :return: The Cholesky decomposition of the above covariance matrix
+    """
+    return sqrt_cov_matrix_rBergomi_AK(dt, nodes)
+
+
+def plot_rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V_0=0.02, S_0=1., m=1, n=20, a=1., b=1.):
+    """
+    Plots a realization of the stock price and variance process of the approximation of the rough Heston model that
+    was inspired by Alfonsi and Kebaier.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :param rho: Correlation between the Brownian motions driving the variance process and the stock price
+    :param lambda_: Mean reversion rate of the variance process
+    :param theta: Average variance
+    :param nu: Volatility of volatility
+    :param V_0: Initial variance
+    :param S_0: Initial stock price
+    :param m: Level of the quadrature rule
+    :param n: Number of quadrature intervals
+    :param a: Can be used to shift the left endpoint of the total quadrature interval
+    :param b: Can be used to shift the right endpoint of the total quadrature interval
+    :return: Nothing, plots a realization of the stock price and variance process
+    """
+    dt = T/N
+    quad_rule = quadrature_rule_geometric(H, m, n, a, b)
+    nodes = quad_rule[0, :]
+    weights = quad_rule[1, :]
+    k = len(nodes)
+    sqrt_cov_matrix = sqrt_cov_matrix_rHeston_AK(dt, nodes)
+    weights = np.array([float(weight) for weight in weights])
+    nodes = np.array([float(node) for node in nodes])
+    total_weight = np.sum(weights)
+    V = np.empty(shape=(N+1,))
+    V[0] = V_0
+    Y = np.empty(shape=(N+1, k))
+    Y[0, :] = V_0/total_weight * np.ones(k)
+    W_1_trans = sqrt_cov_matrix.dot(np.random.normal(0, 1, size=(k+1, N)))
+    exp_beta = np.exp(-dt*nodes)
+    for i in range(N):
+        mu = V_0/total_weight + lambda_*(theta-V[i])/nodes
+        mean = exp_beta * Y[i, :] + (1-exp_beta) * mu
+        Y[i+1, :] = mean + nu*np.sqrt(V[i])*W_1_trans[:k, i]
+        # V[i+1] = np.fmax(np.dot(weights, Y[i+1, :]), 0)
+        V[i+1] = np.dot(weights, Y[i+1])
+        if V[i+1] < 0:
+            factor = -V[i+1]/(V_0-V[i+1])
+            V[i+1] = 0.
+            Y[i+1, :] = V_0/total_weight - (V_0/total_weight - Y[i+1, :]) * (1-factor)
+    W_1_diff = W_1_trans[-1, :]
+    W_2_diff = np.random.normal(0, np.sqrt(dt), size=(N,))
+    S = np.empty(shape=(N+1,))
+    S[0] = S_0
+    for i in range(N):
+        S[i+1] = S[i] * np.exp(np.sqrt(V[i]) * (rho*W_1_diff[i] + np.sqrt(1-rho**2)*W_2_diff[i]) - V[i] * dt/2)
+    times = dt * np.arange(N+1)
+    plt.plot(times, S)
+    plt.plot(times, V)
+    plt.show()
+
+
+def rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V_0=0.02, S_0=1., m=1, n=20, a=1., b=1., M=1000):
+    """
+    Computes M final values of the stock price of the approximation of the rough Heston model that
+    was inspired by Alfonsi and Kebaier.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :param rho: Correlation between the Brownian motions driving the variance process and the stock price
+    :param lambda_: Mean reversion rate of the variance process
+    :param theta: Average variance
+    :param nu: Volatility of volatility
+    :param V_0: Initial variance
+    :param S_0: Initial stock price
+    :param m: Level of the quadrature rule
+    :param n: Number of quadrature intervals
+    :param a: Can be used to shift the left endpoint of the total quadrature interval
+    :param b: Can be used to shift the right endpoint of the total quadrature interval
+    :param M: Number of samples
+    :return: A numpy array containing the final stock values
+    """
+    dt = T/N
+    quad_rule = quadrature_rule_geometric(H, m, n, a, b)
+    nodes = quad_rule[0, :]
+    weights = quad_rule[1, :]
+    k = len(nodes)
+    sqrt_cov_matrix = sqrt_cov_matrix_rHeston_AK(dt, nodes)
+    weights = np.array([float(weight) for weight in weights])
+    nodes = np.array([float(node) for node in nodes])
+    total_weight = np.sum(weights)
+    V = V_0*np.ones(shape=(M,))
+    Y = V_0/total_weight * np.ones(shape=(k, M))
+    W_1_trans = sqrt_cov_matrix.dot(np.random.normal(0, 1, size=(M, k+1, N)))
+    exp_beta = np.exp(-dt*nodes)
+    W_1_diff = W_1_trans[-1, :, :]
+    W_2_diff = np.random.normal(0, np.sqrt(dt), size=(M, N))
+    S = S_0 * np.ones(M)
+    for i in range(N):
+        S = S * np.exp(np.sqrt(V) * (rho*W_1_diff[:, i] + np.sqrt(1-rho**2)*W_2_diff[:, i]) - V * dt/2)
+        mu = V_0/total_weight + lambda_*np.array([(theta-V)/nodes[j] for j in range(k)]).transpose()
+        mean = np.array([exp_beta[node] * Y[node, :] + (1-exp_beta[node])*mu[:, node] for node in range(k)])
+        Y = mean + nu*np.sqrt(V)*W_1_trans[:k, :, i]
+        # V[i+1] = np.fmax(np.dot(weights, Y[i+1, :]), 0)
+        V = np.dot(weights, Y)
+        # factor = np.fmax(-V, 0)/np.fmax(V_0-V, V_0)  # The fmax in the denominator is to avoid division by 0
+        V = np.fmax(V, 0)
+        # Y = V_0/total_weight - (V_0/total_weight - Y) * (1-factor)
+    return S
+
+
+def implied_volatility_call_rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V_0=0.02, S_0=1.,
+                                    K=1., m=1, n=20, a=1., b=1., M=1000):
+    """
+    Computes the implied volatility of a European option under the rough Heston model using the approximation inspired
+    by Alfonsi and Kebaier.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param N: Number of time steps
+    :param rho: Correlation between the Brownian motion driving the volatility and the Brownian motion driving the stock
+    :param lambda_: Mean-reversion speed
+    :param theta: Mean volatility
+    :param nu: Volatility of volatility
+    :param V_0: Initial volatility
+    :param S_0: Initial stock price
+    :param K: Strike price
+    :param m: Level of the quadrature rule
+    :param n: Number of quadrature intervals
+    :param a: Can shift the left endpoint of the total quadrature interval
+    :param b: Can shift the right endpoint of the total quadrature interval
+    :param m: Number of stock prices computed
+    :return: An array of all the final stock prices
+    """
+    tic = time.perf_counter()
+    samples = rHeston_AK(H, T, N, rho, lambda_, theta, nu, V_0, S_0, m, n, a, b, M)
+    toc = time.perf_counter()
+    print(f"Generating {M} approximate rHeston samples with N={N} and n*m={n*m} takes {np.round(toc-tic, 2)} seconds.")
+    (price_estimate, price_stat) = MC(call_option_payoff(samples, K))
+    implied_volatility_estimate = implied_volatility_call(S_0, K, 0, T, price_estimate)
+    implied_volatility_lower = implied_volatility_call(S_0, K, 0, T, price_estimate - price_stat)
+    implied_volatility_upper = implied_volatility_call(S_0, K, 0, T, price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
@@ -829,24 +1126,108 @@ plt.show()
 sigma_imp = implied_volatility_call(S=100., K=120., r=0.05, T=0.5, price=2.)
 print('Test implied volatility: {0}'.format(sigma_imp))
 print('Test call price: {0}'.format(BS_call_price(100., 120., sigma_imp, 0.05, 0.5)))
-
 H = 0.07
 T = 0.9
-N = 1000
+N = 100
 eta = 1.9
 V_0 = 0.235 ** 2
 S_0 = 1.
 rho = -0.9
 r = 0.
-M = 30000
+M = 10000
 K = 1.
 m = 1
 n = 20
 a = 1.
 b = 1.
+S_0 = 1.
 k_vec = np.array([i / 100. for i in range(-40, 21)])
 K_vec = S_0 * np.exp(k_vec)
+n_vec = np.array([2, 4, 8])
 (mi, lo, up) = implied_volatility_call_rBergomi_BFG(H, T, N, eta, V_0, S_0, rho, K_vec, M)
-(mi2, lo2, up2) = implied_volatility_call_rBergomi_AK(H, T, N, eta, V_0, S_0, rho, K_vec, m, n, a, b, M)
-plt.plot(k_vec, np.array([mi, lo, up, mi2, lo2, up2]).transpose())
-plt.show()
+print("Vector of k:")
+print(k_vec)
+print("Implied volatility of call options of the rBergomi model, mean estimates:")
+print(mi)
+#print("Implied volatility of call options of the rBergomi model, lower estimates:")
+#print(lo)
+#print("Implied volatility of call options of the rBergomi model, upper estimates:")
+#print(up)
+
+for n in n_vec:
+    print(f"n={n}")
+    (mi2, lo2, up2) = implied_volatility_call_rBergomi_AK(H, T, N, eta, V_0, S_0, rho, K_vec, m, n, a, b, M)
+    print("Implied volatility of call options of the approximate rBergomi model, mean estimates:")
+    print(mi2)
+    #print("Implied volatility of call options of the approximate rBergomi model, lower estimates:")
+    #print(lo2)
+    #print("Implied volatility of call options of the approximate rBergomi model, upper estimates:")
+    #print(up2)
+    #print("Mean error estimate:")
+    mean_error = np.fabs(mi2-mi)
+    #print(mean_error)
+    #print("Upper error estimate:")
+    upper_error = np.fmax(np.fabs(up2-lo), np.fabs(up-lo2))
+    #print(upper_error)
+    print("Mean error integral:")
+    print(np.average(mean_error))
+    print("Upper error integral:")
+    print(np.average(upper_error))
+    print("Mean error for k=0.1:")
+    print(mean_error[50])
+    print("Upper error for k=0.1:")
+    print(upper_error[50])
+
+#plt.plot(k_vec, np.array([mi, lo, up, mi2, lo2, up2]).transpose())
+#plt.show()
+
+
+H = 0.1
+T = 1.
+N = 100
+rho = -0.9
+lambda_ = 0.3
+theta = 0.02
+nu = 0.3
+V_0 = 0.02
+S_0 = 1
+K = 1.
+m = 1
+n = 80
+a = 1.
+b = 1.
+M = 10000
+(mi, lo, up) = implied_volatility_call_rHeston(H, T, N, rho, lambda_, theta, nu, V_0, S_0, K_vec, M)
+print("Vector of k:")
+print(k_vec)
+print("Implied volatility of call options of the rHeston model, mean estimates:")
+print(mi)
+#print("Implied volatility of call options of the rHeston model, lower estimates:")
+#print(lo)
+#print("Implied volatility of call options of the rHeston model, upper estimates:")
+#print(up)
+for n in n_vec:
+    print(f"n={n}")
+    (mi2, lo2, up2) = implied_volatility_call_rHeston_AK(H, T, N, rho, lambda_, theta, nu, V_0, S_0, K_vec, m, n, a, b, M)
+    print("Implied volatility of call options of the approximate rHeston model, mean estimates:")
+    print(mi2)
+    #print("Implied volatility of call options of the approximate rHeston model, lower estimates:")
+    #print(lo2)
+    #print("Implied volatility of call options of the approximate rHeston model, upper estimates:")
+    #print(up2)
+    #print("Mean error estimate:")
+    mean_error = np.fabs(mi2-mi)
+    #print(mean_error)
+    #print("Upper error estimate:")
+    upper_error = np.fmax(np.fabs(up2-lo), np.fabs(up-lo2))
+    #print(upper_error)
+    print("Mean error integral:")
+    print(np.average(mean_error))
+    print("Upper error integral:")
+    print(np.average(upper_error))
+    print("Mean error for k=0.1:")
+    print(mean_error[50])
+    print("Upper error for k=0.1:")
+    print(upper_error[50])
+#plt.plot(k_vec, np.array([mi, lo, up, mi2, lo2, up2]).transpose())
+#plt.show()
