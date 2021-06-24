@@ -83,7 +83,7 @@ def strong_error_fBm_approximation_MC(H, T, m, n, samples, a=1., b=1.):
     """
     mp.mp.dps = int(np.maximum(20., (m * n) ** 2 / 20.))
 
-    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric(H, m, n, a, b)
+    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric_mpmath(H, m, n, a, b)
     nodes = quad_rule[0, :]
     weights = quad_rule[1, :]
 

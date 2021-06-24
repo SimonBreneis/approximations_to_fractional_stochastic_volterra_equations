@@ -12,60 +12,9 @@ import rBergomiAK
 import rHeston
 import rHestonAK
 import fBmAK
+import RoughKernel as rk
 
 
-'''
-H = 0.1
-m = 1
-r = m
-gamma = 0.5 - H
-delta = H
-number_time_steps = 1000000
-
-
-# Plot G and the approximation of G
-time_steps = np.array([float(i+100)/number_time_steps for i in range(0, number_time_steps)])
-approximations = np.empty(shape=(number_time_steps, 4))
-approximations[:, 0] = fractional_kernel(H, time_steps)
-
-for n in (4, 8, 16):
-    xi0 = n**(-r/gamma)
-    xin = n**(r/delta)
-    partition = np.array([xi0**(float(n-i)/n) * xin**(float(i)/n) for i in range(0, n+1)])
-    quad_rule = quadrature_rule(H, m, partition)
-    quad_nodes = quad_rule[0, :]
-    quad_weights = quad_rule[1, :]
-    approximations[:, int(np.log2(n))-1] = np.array([fractional_kernel_laplace(H, t, quad_nodes) for t in time_steps]).dot(quad_weights)
-
-plt.plot(time_steps, approximations)
-plt.show()
-
-
-
-# Plot errors for different numbers of intervals (error = L^2-norm of difference between kernel and approximation)
-time_steps = np.array([float(i+1)/number_time_steps for i in range(0, number_time_steps)])
-true_function = fractional_kernel(H, time_steps)
-print('The L^2-norm of G is {0}.'.format(np.sqrt(np.trapz(true_function**2, dx=1./number_time_steps))))
-error_vector = np.empty(shape=(7, 2))
-
-for n in (2, 4, 8, 16, 32, 64, 128):
-    xi0 = n**(-r/gamma)
-    xin = n**(r/delta)
-    partition = np.array([xi0**(float(n-i)/n) * xin**(float(i)/n) for i in range(0, n+1)])
-    quad_rule = quadrature_rule(H, m, partition)
-    quad_nodes = quad_rule[0, :]
-    quad_weights = quad_rule[1, :]
-    approximation = np.array([fractional_kernel_laplace(H, t, quad_nodes) for t in time_steps]).dot(quad_weights)
-    errors = (approximation - true_function)**2
-    error = np.sqrt(np.trapz(errors, dx=1./number_time_steps))
-    error_vector[int(np.log2(n)) - 1, 0] = error
-    print('The error for m={0} and n={1} is {2}.'.format(m, n, error))
-
-error_vector[:, 1] = np.array([32**m, 16**m, 8**m, 4**m, 2**m, 1, 0.5**m])*error_vector[-2, 0]
-ns = np.array([2, 4, 8, 16, 32, 64, 128])
-plt.loglog(ns, error_vector)
-plt.show()
-'''
 
 '''
 # Computing strong approximation errors for different values of n, m

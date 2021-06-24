@@ -35,10 +35,10 @@ def quadrature_rule_interval(H, m, a, b):
         return mp.matrix([[x1, x2], [w1, w2]])
 
 
-def quadrature_rule(H, m, partition):
+def quadrature_rule_mpmath(H, m, partition):
     """
     Returns the quadrature rule of level m of the fractional kernel with Hurst parameter H on all the partition
-    intervals.
+    intervals. The result is an mpmath matrix.
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
     :param partition: The partition points
@@ -52,10 +52,10 @@ def quadrature_rule(H, m, partition):
     return rule
 
 
-def quadrature_rule_geometric(H, m, n, a=1., b=1.):
+def quadrature_rule_geometric_mpmath(H, m, n, a=1., b=1.):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
-    on n geometrically spaced subintervals.
+    on n geometrically spaced subintervals. The result is an mpmath matrix.
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
     :param n: Number of subintervals
@@ -63,10 +63,25 @@ def quadrature_rule_geometric(H, m, n, a=1., b=1.):
     :param b: Can shift the right end-point of the total interval
     :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
     """
-    r = 1. * m
     gamma = 0.5 - H
     delta = H
-    xi0 = a * n ** (-r / gamma)
-    xin = b * n ** (r / delta)
+    xi0 = a * n ** (-m / gamma)
+    xin = b * n ** (m / delta)
     partition = np.array([xi0 ** (float(n - i) / n) * xin ** (float(i) / n) for i in range(0, n + 1)])
-    return quadrature_rule(H, m, partition)
+    return quadrature_rule_mpmath(H, m, partition)
+
+
+def quadrature_rule_geometric(H, m, n, a=1., b=1.):
+    """
+    Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
+    on n geometrically spaced subintervals. The result is a numpy array, but the computations are done using the
+    mpmath library.
+    :param H: Hurst parameter
+    :param m: Level of the quadrature rule
+    :param n: Number of subintervals
+    :param a: Can shift the left end-point of the total interval
+    :param b: Can shift the right end-point of the total interval
+    :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
+    """
+    rule = quadrature_rule_geometric_mpmath(H, m, n, a, b)
+    return np.array([[float(rule[i, j]) for j in range(n*m)] for i in range(2)])

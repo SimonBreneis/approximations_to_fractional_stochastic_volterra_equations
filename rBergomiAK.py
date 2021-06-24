@@ -98,7 +98,7 @@ def plot_rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     :return: Nothing, plots a realization of the stock price and the volatility
     """
     dt = T / N
-    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric(H, m, n, a, b)
+    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric_mpmath(H, m, n, a, b)
     nodes = quad_rule[0, :]
     weights_mp = quad_rule[1, :]
     sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes)
@@ -147,7 +147,7 @@ def rBergomi_AK(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, 
     :return: An array containing the final stock prices
     """
     dt = T / N
-    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric(H, m, n, a, b)
+    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric_mpmath(H, m, n, a, b)
     nodes = quad_rule[0, :]
     weights_mp = quad_rule[1, :]
     sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes)
