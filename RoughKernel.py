@@ -114,13 +114,14 @@ def error_estimate_improved(H, m, n, a=1., b=1., T=1.):
     return np.array([float(mp.sqrt(a*w_0*w_0 + b*w_0 + c)), float(w_0)])
 
 
-def plot_error_estimates(H, n1, n2, T=1.):
+def plot_error_estimates(H, n1, n2, n3, T=1.):
     """
-    Plots the errors for the approximations of the rough kernel using m=1 and n=n1, and m=2 and n=n2. Also plots the
-    errors when using best shifts and best constant (rho=0) weight.
+    Plots the errors for the approximations of the rough kernel using m=1 and n=n1, m=2 and n=n2, and m=3 and n=n3.
+    Also plots the errors when using best shifts and best constant (rho=0) weight.
     :param H: Hurst parameter
     :param n1: Number of intervals for m=1 (vector)
     :param n2: Number of intervals for m=2 (vector)
+    :param n3: Number of intervals for m=3 (vector)
     :param T: Final time
     :return:
     """
@@ -136,6 +137,11 @@ def plot_error_estimates(H, n1, n2, T=1.):
     error2_shift = np.empty(shape=(len(n2)))
     error2_const = np.empty(shape=(len(n2)))
     error2_shift_const = np.empty(shape=(len(n2)))
+
+    error3 = np.empty(shape=(len(n3)))
+    error3_shift = np.empty(shape=(len(n3)))
+    error3_const = np.empty(shape=(len(n3)))
+    error3_shift_const = np.empty(shape=(len(n3)))
 
     def func(x):
         if x[0] <= 0. or x[1] <= 0.:
@@ -167,6 +173,16 @@ def plot_error_estimates(H, n1, n2, T=1.):
         error2_shift_const[i] = minimize(func2, np.array([1., 1.]), method="nelder-mead",
                                          options={"xatol": 1e-7, "disp": True, "maxiter": 10000}).fun
 
+    m = 3
+    for i in range(len(n3)):
+        n = n3[i]
+        error3[i] = error_estimate(H, m, n, 1., 1., T)
+        error3_shift[i] = minimize(func, np.array([1., 1.]), method="nelder-mead",
+                                   options={"xatol": 1e-7, "disp": True, "maxiter": 10000}).fun
+        error3_const[i] = error_estimate_improved(H, m, n, 1., 1., T)[0]
+        error3_shift_const[i] = minimize(func2, np.array([1., 1.]), method="nelder-mead",
+                                         options={"xatol": 1e-7, "disp": True, "maxiter": 10000}).fun
+
     plt.loglog(n1, error1, "b-", label="m=1")
     plt.loglog(n1, error1_shift, "r-", label="m=1 + shift")
     plt.loglog(n1+1, error1_const, "g-", label="m=1 + const")
@@ -177,7 +193,58 @@ def plot_error_estimates(H, n1, n2, T=1.):
     plt.loglog(2*n2 + 1, error2_const, "g--", label="m=2 + const")
     plt.loglog(2*n2 + 1, error2_shift_const, "k--", label="m=2 + shift + const")
 
+    plt.loglog(3 * n3, error3, "ob--", label="m=3")
+    plt.loglog(3 * n3, error3_shift, "or--", label="m=3 + shift")
+    plt.loglog(3 * n3 + 1, error3_const, "og--", label="m=3 + const")
+    plt.loglog(3 * n3 + 1, error3_shift_const, "ok--", label="m=3 + shift + const")
+
     plt.legend(loc="upper right")
     plt.xlabel("Number nodes")
     plt.ylabel("Error")
     plt.show()
+
+
+def plot_errors_sparse(H, T, m_list, n_list):
+    """
+
+    :param H:
+    :param T:
+    :param m_list:
+    :param n_list:
+    :return:
+    """
+
+    def func(x):
+        if x[0] <= 0. or x[1] <= 0.:
+            return 10. ** 20
+        return error_estimate_improved(H, m, n, x[0], x[1], T)[0]
+
+    for j in range(len(m_list)):
+        m = m_list[j]
+        errors = np.empty(shape=(len(n_list[j])))
+        for i in range(len(n_list[j])):
+            n = n_list[j][i]
+            errors[i] = minimize(func, np.array([1., 1.]), method="nelder-mead",
+                                             options={"xatol": 1e-7, "disp": True, "maxiter": 10000}).fun
+        plt.loglog(np.array(n_list[j])*m+1, errors, label=f"m={m}")
+        print(f"m = {m}")
+        print(f"n = {np.array(n_list[j])*m+1}")
+        print(f"errors = {errors}")
+    plt.legend(loc="upper right")
+    plt.xlabel("Number of nodes")
+    plt.ylabel("Error")
+    plt.show()
+
+
+ms = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+ns = [[2, 4, 8, 16, 32, 64, 128, 256],
+      [2, 4, 8, 16, 32, 64, 128],
+      [3, 5, 11, 21, 43, 85],
+      [2, 4, 8, 16, 32, 64],
+      [2, 3, 6, 13, 26, 51],
+      [2, 3, 5, 11, 21, 43],
+      [2, 5, 9, 18, 37],
+      [2, 4, 8, 16, 32],
+      [2, 4, 7, 14, 28],
+      [2, 3, 6, 13, 26]]
+plot_errors_sparse(0.1, 1., ms, ns)

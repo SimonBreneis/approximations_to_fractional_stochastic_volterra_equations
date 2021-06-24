@@ -1,10 +1,14 @@
 import mpmath as mp
 import numpy as np
+import orthopy
+import quadpy
+import math
 
 
 def quadrature_rule_interval(H, m, a, b):
     """
-    Returns the nodes and weights of the Gauss quadrature rule level m for the fractional weight function on [a,b]
+    Returns the nodes and weights of the Gauss quadrature rule level m for the fractional weight function on [a,b].
+    Only applicable for m=1 and m=2
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
     :param a: Left end of interval
@@ -35,6 +39,26 @@ def quadrature_rule_interval(H, m, a, b):
         return mp.matrix([[x1, x2], [w1, w2]])
 
 
+def quadrature_rule_interval_general(H, m, a, b):
+    """
+        Returns the nodes and weights of the Gauss quadrature rule level m for the fractional weight function on [a,b]
+        :param H: Hurst parameter
+        :param m: Level of the quadrature rule
+        :param a: Left end of interval
+        :param b: Right end of interval
+        :return: The nodes and weights, in form [[node1, node2, ...], [weight1, weight2, ...]]
+    """
+    c_H = 1. / (math.gamma(0.5 + H) * math.gamma(0.5 - H))
+    moments = np.array(
+        [mp.mpf(c_H / (k + 0.5 - H) * (b ** (k + 0.5 - H) - a ** (k + 0.5 - H))) for k in range(2 * m)])
+    alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
+    points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
+    result = mp.matrix(2, m)
+    result[0, :] = mp.matrix(points.tolist()).transpose()
+    result[1, :] = mp.matrix(weights.tolist()).transpose()
+    return result
+
+
 def quadrature_rule_mpmath(H, m, partition):
     """
     Returns the quadrature rule of level m of the fractional kernel with Hurst parameter H on all the partition
@@ -48,7 +72,7 @@ def quadrature_rule_mpmath(H, m, partition):
     number_intervals = len(partition) - 1
     rule = mp.matrix(2, m * number_intervals)
     for i in range(0, number_intervals):
-        rule[:, m * i:m * (i + 1)] = quadrature_rule_interval(H, m, partition[i], partition[i + 1])
+        rule[:, m * i:m * (i + 1)] = quadrature_rule_interval_general(H, m, partition[i], partition[i + 1])
     return rule
 
 
@@ -67,6 +91,7 @@ def quadrature_rule_geometric_mpmath(H, m, n, a=1., b=1.):
     delta = H
     xi0 = a * n ** (-m / gamma)
     xin = b * n ** (m / delta)
+    mp.mp.dps = int(np.log10(xin/xi0)) + 5
     partition = np.array([xi0 ** (float(n - i) / n) * xin ** (float(i) / n) for i in range(0, n + 1)])
     return quadrature_rule_mpmath(H, m, partition)
 

@@ -5,7 +5,7 @@ import math
 import scipy
 from scipy import stats
 import mpmath as mp
-import QuadratureRulesRoughKernel
+import QuadratureRulesRoughKernel as qr
 import ComputationalFinance as cf
 import rBergomiBFG
 import rBergomiAK
@@ -13,6 +13,23 @@ import rHeston
 import rHestonAK
 import fBmAK
 import RoughKernel as rk
+
+
+import orthopy
+import quadpy
+
+
+N = 2
+moments = np.array([mp.mpf(rk.c_H(0.1) / (k + 0.5 - 0.1) * (2**(k+0.5-0.1) - 1**(k+0.5-0.1))) for k in range(2*N)])
+print(moments)
+
+alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
+points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
+print(points)
+print(weights)
+print(qr.quadrature_rule_geometric_mpmath(0.1, 2, 1, 1., 2.))
+
+print(qr.quadrature_rule_interval(0.1, 2, 1., 2.))
 
 
 
