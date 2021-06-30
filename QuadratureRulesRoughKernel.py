@@ -48,9 +48,9 @@ def quadrature_rule_interval_general(H, m, a, b):
         :param b: Right end of interval
         :return: The nodes and weights, in form [[node1, node2, ...], [weight1, weight2, ...]]
     """
-    c_H = 1. / (math.gamma(0.5 + H) * math.gamma(0.5 - H))
+    c_H = mp.mpf(1. / (math.gamma(0.5 + float(H)) * math.gamma(0.5 - float(H))))
     moments = np.array(
-        [mp.mpf(c_H / (k + 0.5 - H) * (b ** (k + 0.5 - H) - a ** (k + 0.5 - H))) for k in range(2 * m)])
+        [mp.mpf(c_H / (mp.mpf(k) + mp.mpf(0.5) - H) * (b ** (mp.mpf(k) + mp.mpf(0.5) - H) - a ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in range(2 * m)])
     alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
     points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
     result = mp.matrix(2, m)
@@ -87,12 +87,23 @@ def quadrature_rule_geometric_mpmath(H, m, n, a=1., b=1.):
     :param b: Can shift the right end-point of the total interval
     :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
     """
-    gamma = 0.5 - H
+    gamma = mp.mpf(0.5) - H
     delta = H
     xi0 = a * n ** (-m / gamma)
     xin = b * n ** (m / delta)
-    mp.mp.dps = int(np.log10(xin/xi0)) + 5
-    partition = np.array([xi0 ** (float(n - i) / n) * xin ** (float(i) / n) for i in range(0, n + 1)])
+    mp.mp.dps = 2*int(float(mp.log10(xin/xi0))) + 50
+    if mp.mp.dps < 50:
+        mp.mp.dps = 50
+    partition = np.array([xi0 ** (mp.mpf(n - i) / mp.mpf(n)) * xin ** (mp.mpf(i) / mp.mpf(n)) for i in range(0, n + 1)])
+    return quadrature_rule_mpmath(H, m, partition)
+
+
+def quadrature_rule_geometric_exponential_mpmath(H, m, n, a, b):
+    accuracy = int(a+b) + 50
+    if accuracy < 50:
+        accuracy = 50
+    mp.mp.dps = accuracy
+    partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(0, n + 1)])
     return quadrature_rule_mpmath(H, m, partition)
 
 

@@ -5,6 +5,7 @@ import math
 import scipy
 from scipy import stats
 import mpmath as mp
+# import Data
 import QuadratureRulesRoughKernel as qr
 import ComputationalFinance as cf
 import rBergomiBFG
@@ -18,7 +19,47 @@ import RoughKernel as rk
 import orthopy
 import quadpy
 
+print("Stop the program!")
+time.sleep(3600)
 
+a = 1.
+b = 10.
+
+
+def funky(x):
+    return np.exp(x/5.)*np.sin(x)
+
+
+m=2
+n=1000
+partition = a + (b-a)*np.arange(n+1)/n
+quad_rule = qr.quadrature_rule_mpmath(0.1, m, partition)
+nodes = quad_rule[0, :]
+nodes = np.array([float(node) for node in nodes])
+weights = quad_rule[1, :]
+weights = np.array([float(weight) for weight in weights])
+integral = weights.dot(funky(nodes))
+print(n)
+print(integral)
+error_old = 1.
+
+n_vec = np.array([1, 2, 4, 8, 16, 32, 64, 128])
+for n in n_vec:
+    partition = a + (b-a)*np.arange(n+1)/n
+    quad_rule = qr.quadrature_rule_mpmath(0.1, m, partition)
+    nodes = quad_rule[0, :]
+    nodes = np.array([float(node) for node in nodes])
+    weights = quad_rule[1, :]
+    weights = np.array([float(weight) for weight in weights])
+    approx = weights.dot(funky(nodes))
+    print(n)
+    print(approx)
+    error_new = np.fabs(integral-approx)
+    print(error_new)
+    print(error_old/error_new)
+    error_old = error_new
+
+'''
 N = 2
 moments = np.array([mp.mpf(rk.c_H(0.1) / (k + 0.5 - 0.1) * (2**(k+0.5-0.1) - 1**(k+0.5-0.1))) for k in range(2*N)])
 print(moments)
@@ -28,7 +69,7 @@ points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
 print(points)
 print(weights)
 print(qr.quadrature_rule_geometric_mpmath(0.1, 2, 1, 1., 2.))
-
+'''
 print(qr.quadrature_rule_interval(0.1, 2, 1., 2.))
 
 
