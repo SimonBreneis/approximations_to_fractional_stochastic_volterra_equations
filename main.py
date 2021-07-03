@@ -5,7 +5,7 @@ import math
 import scipy
 from scipy import stats
 import mpmath as mp
-# import Data
+import Data
 import QuadratureRulesRoughKernel as qr
 import ComputationalFinance as cf
 import rBergomiBFG
@@ -18,6 +18,96 @@ import RoughKernel as rk
 
 import orthopy
 import quadpy
+
+
+mp.mp.dps = 1000
+#print(error_estimate_improved_exponential(0.1, 7, 73, 7.7444, 131.24, 1.))
+#time.sleep(3600)
+
+
+ms = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+ns = [[1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256, 362, 512, 724, 1024],
+      [1, 2, 3, 4, 5, 8, 11, 16, 22, 32, 45, 64, 90, 128, 181, 256, 362, 512],
+      [1, 2, 3, 4, 5, 8, 11, 15, 21, 30, 43, 60, 85, 121, 171, 241, 341],
+      [1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256],
+      [1, 2, 3, 5, 6, 9, 13, 18, 26, 36, 51, 72, 102, 145, 205],
+      [1, 2, 3, 4, 5, 7, 11, 15, 21, 30, 43, 60, 85, 121, 171],
+      [1, 2, 3, 5, 6, 9, 13, 18, 26, 37, 52, 73, 103, 146],
+      [1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128],
+      [1, 2, 3, 4, 5, 7, 10, 14, 20, 28, 40, 57, 80, 114],
+      [1, 2, 3, 4, 6, 9, 13, 18, 26, 36, 51, 72, 102]]
+#plot_errors_sparse(0.1, 1., ms, ns)
+
+
+Ns = np.array([1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256, 362, 512, 724, 1024, 1448, 2048])
+print(0.1306*np.sqrt(Ns))
+
+
+alpha = 1.064184
+beta = 0.4275
+H = 0.1
+A = np.sqrt(1/H + 1/(1.5-H))
+rates = -2*alpha/A
+exponent = np.exp(alpha*beta)/(8*(np.exp(alpha*beta)-1))
+expp = 1/(3*exponent + 6*H - 4*H*H)
+c_H = 1/(math.gamma(0.5-H)*math.gamma(0.5+H))
+prefac = 1/(2*H) + 1/exponent + 1/(3-2*H)
+fac1 = (3/H)**(exponent * (3-2*H))
+fac2 = (5*np.pi**3/384 * np.exp(alpha*beta) * (np.exp(alpha*beta)-1) * (A/beta)**(2-2*H) / H)**(6*H - 4*H*H)
+fac3 = (1/(1.5-H))**(exponent*2*H)
+print(c_H**2 * prefac * (fac1*fac2*fac3)**expp)
+print((1-H)*(6*H-4*H*H)*expp)
+print(rates)
+
+'''
+betas = np.arange(1, 100001)/100000.
+res = 2*betas * (-np.log(1/2 * (np.exp(alpha*betas) - 1))) - alpha
+print(np.amax(res))
+print((np.argmax(res) + 1)/100000.)
+print((np.amax(res)+alpha))
+plt.plot(betas, res)
+plt.plot(betas, np.zeros(100000))
+plt.show()
+'''
+
+def func(x):
+    return np.exp(-x)
+
+
+mp.mp.dps = 100
+m = 10
+n = 100
+rule = qr.quadrature_rule_mpmath(mp.mpf(0.1), m, mp.matrix([mp.mpf(1+2.*x/n) for x in range(n+1)]))
+rule = np.array([[float(x) for x in rule[i, :]] for i in range(2)])
+true_integral = np.dot(rule[1, :], func(rule[0, :]))
+ms = np.array([int(m) for m in np.sqrt(2)**np.arange(1, 11)], dtype=int)
+for m in ms:
+    m = int(m)
+    rule = qr.quadrature_rule_interval_general(mp.mpf(0.1), m, mp.mpf(1.), mp.mpf(3.))
+    rule = np.array([[float(x) for x in rule[i, :]] for i in range(2)])
+    approx_integral = np.dot(rule[1, :], func(rule[0, :]))
+    print(f"True integral: {true_integral}")
+    print(f"Approximated integral: {approx_integral}")
+    print(f"Error: {np.fabs(true_integral-approx_integral)}")
+    print(f"Bound: {0.5 /math.factorial(2*m)}")
+
+
+N = np.array([1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256, 362, 512, 724, 1024, 1448, 2048])
+logximnn = np.array([4.8778, 9.1800, 12.063, 14.455, 18.342, 21.394, 23.917, 28.971, 33.278, 36.893, 43.621, 51.739, 58.953, 70.067, 79.889, 95.048, 110.73])
+
+c_arr = scipy.stats.linregress(np.log(N[1:len(logximnn)]), np.log(logximnn[1:]))
+c12 = c_arr[0]
+c02 = c_arr[1]
+print(c12, c02)
+plt.loglog(N[1:len(logximnn)], logximnn[1:], 'b-', label="error")
+plt.loglog(N[1:len(logximnn)], np.exp(c02) * N[1:len(logximnn)] ** c12, 'or--', label="regression")
+plt.loglog(N[1:len(logximnn)], np.exp(c02) * N[1:len(logximnn)] ** (0.5), 'sg--', label="order 0.5")
+plt.legend(loc='upper right')
+plt.xlabel('Nodes')
+plt.ylabel('Error')
+plt.show()
+
+print(np.log(2.1064*N**(-0.3067) * np.exp(1.987*np.sqrt(N))))
 
 print("Stop the program!")
 time.sleep(3600)
