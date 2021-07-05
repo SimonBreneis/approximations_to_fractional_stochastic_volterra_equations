@@ -52,34 +52,7 @@ def plot_kernel_approximations(H, m, n_vec, a=1., b=1., left=0.0001, right=1., n
     plt.show()
 
 
-def error_estimate(H, m, n, a=1., b=1., T=1.):
-    """
-    Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
-    on [0, T].
-    :param H: Hurst parameter
-    :param m: Level of the quadrature rule
-    :param n: Number of quadrature intervals
-    :param a: Can shift the left endpoint of the total interval of the quadrature rule
-    :param b: Can shift the right endpoint of the total interval of the quadrature rule
-    :param T: Final time
-    :return: An error estimate
-    """
-    T = mp.mpf(T)
-    rule = qr.quadrature_rule_geometric_mpmath(H, m, n, a, b)
-    nodes = rule[0, :]
-    weights = rule[1, :]
-    summand = T**(mp.mpf(2*H))/(mp.mpf(2*H) * mp.gamma(mp.mpf(H+0.5))**mp.mpf(2.))
-    sum_1 = 0
-    sum_2 = 0
-    for i in range(n*m):
-        for j in range(n*m):
-            sum_1 += weights[i] * weights[j] / (nodes[i] + nodes[j]) * (mp.mpf(1.) - mp.exp(-(nodes[i]+nodes[j])*T))
-        sum_2 += weights[i] / nodes[i]**(mp.mpf(H+0.5)) * mp.gammainc(mp.mpf(H+0.5), mp.mpf(0.), nodes[i]*T)
-    sum_2 *= mp.mpf(2)/mp.gamma(mp.mpf(H+0.5))
-    return float(mp.sqrt(summand + sum_1 - sum_2))
-
-
-def error_estimate_improved(H, m, n, a, b, T):
+def error_estimate_fBm(H, m, n, a, b, T):
     """
     Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
     on [0, T]. The approximation contains a constant/Brownian term.
@@ -105,7 +78,7 @@ def error_estimate_improved(H, m, n, a, b, T):
     summands_2 = np.empty(shape=(n*m))
     for i in range(n * m):
         for j in range(n * m):
-            summands_1[i*n*m + j] = weights[i] * weights[j] / (nodes[i] + nodes[j]) * (1 - mp.exp(-(nodes[i] + nodes[j]) * T))
+            summands_1[i*n*m + j] = weights[i]*weights[j] / (nodes[i]+nodes[j]) * (1 - mp.exp(-(nodes[i]+nodes[j])*T))
         summands_2[i] = weights[i] / nodes[i] ** (H + 0.5) * mp.gammainc(H + 0.5, mp.mpf(0.), nodes[i] * T)
     summands_1.sort()
     summands_2.sort()
@@ -122,42 +95,28 @@ def error_estimate_improved(H, m, n, a, b, T):
     b *= mp.mpf(2.)
     a = T
     w_0 = -b/(mp.mpf(2.)*a)
-    return np.array([float(mp.sqrt(a*w_0*w_0 + b*w_0 + c)), float(w_0)])
+    return np.array([np.sqrt(np.fmax(float(a*w_0*w_0 + b*w_0 + c), 0.)), float(w_0)])
 
 
-def plot_errors_sparse(H, T, m_list, n_list):
+def optimize_error_fBm(H, T, m, n, a=0., b=0., tol=1e-8):
     """
-
-    :param H:
-    :param T:
-    :param m_list:
-    :param n_list:
-    :return:
+    Optimizes the L^2 strong approximation error of the AK scheme over xi_0 and xi_n for fBm. Uses the Nelder-Mead
+    optimizer as implemented in scipy with maxiter=10000.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param m: Level of quadrature rule
+    :param n: Number of quadrature intervals
+    :param a: xi_0 = e^(-a)
+    :param b: xi_n = e^b
+    :param tol: Tolerance in a, b of the optimal values
+    :return: The minimal error together with the weight w_0 and a and b in the form [error, w_0, a, b] as a numpy array.
     """
-
     def func(x):
         if x[0] + x[1] <= 0.:
             return 10.**20
-        return error_estimate_improved(H, m, n, x[0], x[1], T)[0]
+        return error_estimate_fBm(H, m, n, x[0], x[1], T)[0]
 
-    for j in range(len(m_list)):
-        x0 = np.array([-1., 1.])
-        m = m_list[j]
-        errors = np.empty(shape=(len(n_list[j])))
-        fatol = 1e-8
-        for i in range(len(n_list[j])):
-            n = n_list[j][i]
-            res = minimize(func, x0, method="nelder-mead",
-                                             options={"fatol": fatol, "disp": True, "maxiter": 10000})
-            errors[i] = res.fun
-            x_0 = res.x
-            print(res.x)
-            fatol = 1e-8 * errors[i]
-        plt.loglog(np.array(n_list[j])*m+1, errors, label=f"m={m}")
-        print(f"m = {m}")
-        print(f"n = {np.array(n_list[j])*m+1}")
-        print(f"errors = {errors}")
-    plt.legend(loc="upper right")
-    plt.xlabel("Number of nodes")
-    plt.ylabel("Error")
-    plt.show()
+    res = minimize(func, np.array([a, b]), method="nelder-mead", options={"xatol": tol, "maxiter": 10000})
+    a = res.x[0]
+    b = res.x[1]
+    return np.array([res.fun, error_estimate_fBm(H, m, n, a, b, T)[1], a, b])

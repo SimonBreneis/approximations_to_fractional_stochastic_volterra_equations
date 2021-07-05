@@ -4,6 +4,15 @@ import scipy
 from scipy import stats
 
 
+def A_H(H):
+    """
+    Determines the constant A which is often used in the paper.
+    :param H: Hurst parameter
+    :return: A
+    """
+    return np.sqrt(1/H + 1/(1.5-H))
+
+
 """
 The strong L^2-approximation errors of fBm with H=0.1 and T=1 using the AK scheme.
 A node at x_0=0 is used, with optimal weight. Optimal xi_0 and xi_n are used.
@@ -12,19 +21,20 @@ The errors are given in fBm_errors, with the same indices as fBm_N.
 An error entry with the value 0 is a numerical 0, i.e. the rounding error in the computation of the approximation 
 error already exceeded the approximation error. This is, as it was already possible to choose xi_0 and xi_n such that
 the computed error was negative before applying the root (which is necessary to compute the L^2-norm).
+The xi_0s and xi_ns are given in fBm_a and fBm_b, respectively, where xi_0 = e^(-a) and xi_n = e^b.
 """
 
-fBm_M = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-fBm_N = [[1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256, 362, 512, 724, 1024],
-      [1, 2, 3, 4, 5, 8, 11, 16, 22, 32, 45, 64, 90, 128, 181, 256, 362, 512],
-      [1, 2, 3, 4, 5, 8, 11, 15, 21, 30, 43, 60, 85, 121, 171, 241, 341],
-      [1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256],
-      [1, 2, 3, 5, 6, 9, 13, 18, 26, 36, 51, 72, 102, 145, 205],
-      [1, 2, 3, 4, 5, 7, 11, 15, 21, 30, 43, 60, 85, 121, 171],
-      [1, 2, 3, 5, 6, 9, 13, 18, 26, 37, 52, 73, 103, 146],
-      [1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128],
-      [1, 2, 3, 4, 5, 7, 10, 14, 20, 28, 40, 57, 80, 114],
-      [1, 2, 3, 4, 6, 9, 13, 18, 26, 36, 51, 72, 102]]
+fBm_m = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+fBm_n = [[1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256, 362, 512, 724, 1024],
+         [1, 2, 3, 4, 5, 8, 11, 16, 22, 32, 45, 64, 90, 128, 181, 256, 362, 512],
+         [1, 2, 3, 4, 5, 8, 11, 15, 21, 30, 43, 60, 85, 121, 171, 241, 341],
+         [1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256],
+         [1, 2, 3, 5, 6, 9, 13, 18, 26, 36, 51, 72, 102, 145, 205],
+         [1, 2, 3, 4, 5, 7, 11, 15, 21, 30, 43, 60, 85, 121, 171],
+         [1, 2, 3, 5, 6, 9, 13, 18, 26, 37, 52, 73, 103, 146],
+         [1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128],
+         [1, 2, 3, 4, 5, 7, 10, 14, 20, 28, 40, 57, 80, 114],
+         [1, 2, 3, 4, 6, 9, 13, 18, 26, 36, 51, 72, 102]]
 
 fBm_errors = [[0.683687, 0.528237, 0.420265, 0.346109, 0.253310, 0.199291, 0.149395, 0.098625, 0.065529, 0.043699,
                0.028083, 0.017409, 0.010589, 0.006437, 0.003830, 0.002251, 0.001309, 0.000754, 0.000431, 0.000245],
@@ -35,7 +45,7 @@ fBm_errors = [[0.683687, 0.528237, 0.420265, 0.346109, 0.253310, 0.199291, 0.149
           [0.582543, 0.374196, 0.253831, 0.180499, 0.103376, 0.069539, 0.035804, 0.013985, 0.005244, 0.001812, 0.000526,
            0.000123, 2.74e-05, 5.37e-06, 0., 1.57e-07],
           [0.564594, 0.350288, 0.230415, 0.115370, 0.087745, 0.044988, 0.017360, 0.006881, 0.002035, 0.000596, 0.000130,
-           2.47e-05, 0., 4.99e-07, 0.],
+           2.47e-05, 3.79e-06, 4.99e-07, 0.],
           [0.549739, 0.331373, 0.212379, 0.143411, 0.101948, 0.048047, 0.021629, 0.008499, 0.003022, 0.000708, 0.000140,
            2.59e-05, 3.50e-06, 3.66e-07, 0.],
           [0.537137, 0.315874, 0.197939, 0.091741, 0.068621, 0.031377, 0.010481, 0.003575, 0.000841, 0.000167, 2.69e-05,
@@ -47,20 +57,345 @@ fBm_errors = [[0.683687, 0.528237, 0.420265, 0.346109, 0.253310, 0.199291, 0.149
           [0.508122, 0.281912, 0.167430, 0.105750, 0.053486, 0.020847, 0.005956, 0.001722, 0.000307, 5.28e-05, 5.47e-06,
            4.40e-07, 2.21e-08]]
 
+fBm_a = [[83.372, 1.4621, 0.9955, 0.7776, 0.5692, 0.5037, 2.1194, 1.6463, 2.2868, 2.3096, 2.7542, 3.1359, 3.5514,
+          3.9615, 4.3852, 4.8150, 5.2495, 5.6885, 6.1308, 6.5766],
+         [78.464, 0.9170, 0.5756, 0.4179, 0.3329, 0.2977, 2.3260, 1.8629, 1.8042, 2.7007, 3.4216, 4.4629, 5.1279,
+          5.8933, 6.6406, 7.3999, 8.1777, 8.9733],
+         [82.712, 0.7031, 0.4181, 0.2922, 0.2359, 0.3142, 2.4605, 2.0758, 1.9799, 3.1222, 3.9939, 4.6656, 6.5970,
+          7.0621, 8.2385, 9.3413, 10.441],
+         [4.8078, 0.5883, 0.3380, 0.2356, 0.2181, 0.4436, 2.6083, 2.1926, 3.9116, 3.4273, 6.0055, 6.2656, 7.4233,
+          9.7630, 0., 11.276],
+         [3.2387, 0.5156, 0.2903, 0.1957, 0.2360, 3.0594, 2.5352, 2.3270, 3.9750, 5.3305, 6.1260, 7.9805, 8.9325,
+          10.210, 0.],
+         [2.5502, 0.4652, 0.2594, 0.1932, 0.2000, 1.4035, 2.8848, 2.5445, 4.7272, 4.0711, 5.3315, 7.8346, 9.4066,
+          10.098, 0.],
+         [2.1460, 0.4278, 0.2384, 0.2106, 0.3022, 1.9567, 2.8012, 2.6517, 4.5182, 6.0340, 7.0503, 7.7444, 9.3630,
+          0.],
+         [1.8755, 0.3990, 0.2235, 0.1852, 0.3460, 1.6109, 3.1203, 2.7761, 5.0011, 4.5961, 6.0147, 8.6366, 10.482,
+          0.],
+         [1.6800, 0.3759, 0.2128, 0.1866, 0.2404, 1.3406, 3.3521, 2.9600, 4.0539, 4.8673, 6.4910, 0., 0.,
+          0.],
+         [1.5310, 0.3570, 0.2050, 0.1899, 0.4795, 2.1588, 3.1268, 3.0532, 5.1764, 7.0675, 8.3294, 11.065, 11.960]]
+
+fBm_b = [[4.8778, 9.1800, 12.063, 14.455, 18.342, 21.394, 23.917, 28.971, 33.278, 37.865, 42.606, 47.765, 53.091,
+          58.404, 63.928, 69.563, 75.288, 81.096, 86.970, 92.910],
+         [5.9852, 10.528, 13.957, 16.896, 19.508, 26.004, 29.534, 36.893, 42.621, 51.739, 59.665, 68.195, 77.107,
+          86.737, 96.621, 106.85, 117.35, 128.10],
+         [6.6458, 11.451, 15.300, 18.659, 21.690, 29.339, 33.469, 40.685, 49.580, 58.953, 70.067, 81.434, 93.266,
+          106.91, 120.50, 134.65, 149.46],
+         [7.0473, 12.162, 16.350, 20.051, 26.561, 31.785, 36.574, 46.624, 56.342, 68.460, 79.889, 95.048, 110.51,
+          126.96, 0., 163.28],
+         [7.3466, 12.742, 17.214, 24.882, 28.306, 33.957, 43.829, 54.265, 65.829, 78.297, 93.953, 110.73, 130.02,
+          150.94, 0.],
+         [7.5974, 13.233, 17.950, 22.193, 26.131, 33.826, 41.335, 51.080, 61.398, 76.958, 93.416, 109.87, 130.22,
+          153.65, 0.],
+         [7.8138, 13.660, 18.591, 27.228, 31.098, 37.809, 48.623, 60.867, 74.334, 90.692, 109.36, 131.24, 154.98,
+          0.],
+         [8.0042, 14.037, 19.161, 23.829, 32.230, 36.562, 44.946, 58.519, 71.899, 89.463, 107.94, 128.86, 153.06,
+          0.],
+         [8.1745, 14.376, 19.673, 24.525, 29.088, 34.741, 43.315, 55.225, 68.712, 85.238, 104.73, 0., 0.,
+          0.],
+         [8.3284, 14.683, 20.139, 25.159, 33.989, 41.749, 54.035, 68.429, 84.115, 101.87, 124.85, 150.28, 179.76]]
+
 
 def plot_fBm_errors():
     """
     Plots a loglog-plot of the strong L^2-errors of approximating a fBm with H=0.1 and T=1 for varying n and m.
     Includes a node at x_0=0 and takes optimal values of xi_0 and xi_n.
     """
-    for m in fBm_M:
-        n_here = np.array(fBm_N[m-1])
-        errors_here = np.array(fBm_errors[m-1])
-        plt.loglog(m*n_here[:-1]+1, errors_here[:-1], label=f"m={m}")
+    for m in fBm_m:
+        n = np.array(fBm_n[m - 1])
+        errors = np.array(fBm_errors[m-1])
+        plt.loglog(m*n[:-1]+1, errors[:-1], label=f"m={m}")
 
     plt.legend(loc="upper right")
     plt.xlabel("Number of nodes")
     plt.ylabel("Error")
+    plt.show()
+
+
+"""
+The strong L^2-approximation errors of fBm with varying Hurst parameter H and T=1 using the AK scheme.
+A node at x_0=0 is used, with optimal weight. Optimal xi_0 and xi_n are used.
+Given N, optimal values of m and n are used, such that m*n is approximately N, and optimal xi_0 and xi_n are computed.
+The values of H used are contained in fBm_H.
+The values of m used are contained in fBm_m_best. This is a list, the ith entry of which corresponds to fBm_H[i].
+The values of n used are contained in fBm_n_best. This is a list, the ith entry of which corresponds to fBm_H[i].
+The values of N used are contained in fBm_N_best. This is a list, the ith entry of which corresponds to fBm_H[i].
+Of course, fBm_N_best[i] = fBm_m_best[i] * fBm_n_best[i].
+The values of a used are contained in fBm_a_best. This is a list, the ith entry of which corresponds to fBm_H[i].
+Here, xi_0 = e^(-a).
+The values of b used are contained in fBm_b_best. This is a list, the ith entry of which corresponds to fBm_H[i].
+Here, xi_n = e^b.
+The values of the computed errors are contained in fBm_error_best.
+This is a list, the ith entry of which corresponds to fBm_H[i].
+The optimization was performed for all H in fBm_H and all N that are (roughly) a power of sqrt(2). No optimization was
+performed anymore if N was so large that the computed error was zero, indicating that the rounding errors in the
+error computation already exceeded the approximation error.
+"""
+
+fBm_H = np.array([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45])
+
+fBm_m_best_005 = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4])
+fBm_n_best_005 = np.array([1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 32, 45, 64, 60, 85, 90])
+fBm_N_best_005 = fBm_m_best_005 * fBm_n_best_005
+fBm_a_best_005 = np.array([68.267, 1.6212, 1.1705, 0.9570, 0.7207, 0.5831, 0.4667, 0.4238, 1.7465, 1.4611, 2.0026,
+                           1.7277, 2.9716, 2.5811, 2.9807, 3.8344, 4.2782])
+fBm_b_best_005 = np.array([5.8092, 11.078, 14.803, 17.974, 23.319, 27.793, 33.424, 40.847, 47.970, 56.159, 64.609,
+                           72.769, 85.834, 101.84, 117.20, 138.56, 161.81])
+fBm_error_best_005 = np.array([1.309316, 1.117131, 0.968190, 0.851984, 0.682578, 0.565580, 0.446300, 0.326527, 0.231697,
+                               0.162855, 0.110980, 0.063447, 0.033678, 0.016317, 0.007062, 0.002514, 0.000782])
+
+fBm_m_best_01 = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 6])
+fBm_n_best_01 = np.array([1, 2, 3, 4, 6, 8, 11, 16, 23, 16, 22, 32, 30, 43, 45, 64, 72, 85])
+fBm_N_best_01 = fBm_m_best_01 * fBm_n_best_01
+fBm_a_best_01 = np.array([83.372, 1.4621, 0.9955, 0.7776, 0.5692, 0.5037, 2.1194, 1.6463, 2.2868, 1.8629, 1.8042,
+                          2.7007, 3.1222, 3.9939, 6.0055, 6.2656, 7.9805, 9.4066])
+fBm_b_best_01 = np.array([4.8778, 9.1800, 12.063, 14.455, 18.342, 21.394, 23.917, 28.971, 33.278, 36.893, 43.621,
+                          51.739, 58.953, 70.067, 79.889, 95.048, 110.73, 130.22])
+fBm_error_best_01 = np.array([0.683687, 0.528237, 0.420265, 0.346109, 0.253310, 0.199291, 0.149395, 0.098625, 0.065529,
+                              0.039571, 0.022815, 0.010167, 0.004540, 0.001559, 0.000526, 0.000123, 2.47e-05, 3.50e-06])
+
+fBm_m_best_015 = np.array([1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 4, 6, 7, 8])
+fBm_n_best_015 = np.array([1, 2, 3, 4, 6, 8, 11, 16, 11, 16, 22, 32, 30, 43, 45, 43, 52, 64])
+fBm_N_best_015 = fBm_n_best_015 * fBm_m_best_015
+fBm_a_best_015 = np.array([97.792, 1.3180, 0.8893, 0.7042, 0.5828, 2.2974, 1.8262, 2.5641, 1.9724, 3.3083, 2.8285,
+                           4.5125, 4.1137, 5.7362, 6.3405, 7.7740, 9.2238, 10.457])
+fBm_b_best_015 = np.array([4.5220, 8.2057, 10.703, 12.738, 15.888, 17.057, 20.231, 23.153, 25.328, 29.982, 35.606,
+                           40.913, 48.118, 55.839, 64.978, 75.486, 88.702, 104.72])
+fBm_error_best_015 = np.array([0.408023, 0.291038, 0.217730, 0.172744, 0.123584, 0.093575, 0.064660, 0.042253, 0.026360,
+                               0.013057, 0.006725, 0.002818, 0.000988, 0.000296, 7.39e-05, 1.38e-05, 1.90e-06,
+                               1.97e-07])
+
+fBm_m_best_02 = np.array([1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 4, 4, 5, 6, 7, 9])
+fBm_n_best_02 = np.array([1, 2, 3, 4, 6, 8, 11, 8, 11, 16, 22, 21, 23, 32, 36, 43, 52, 57])
+fBm_N_best_02 = fBm_m_best_02 * fBm_n_best_02
+fBm_a_best_02 = np.array([4.3079, 1.1858, 0.8357, 0.7001, 2.6324, 2.1024, 1.8360, 2.1377, 1.9377, 3.0130, 3.8015,
+                          4.4170, 4.7479, 6.7955, 7.0644, 8.4979, 11.165, 12.317])
+fBm_b_best_02 = np.array([4.2163, 7.5560, 9.8627, 11.729, 12.987, 15.399, 17.871, 18.776, 22.910, 26.700, 30.468,
+                          34.754, 41.188, 47.071, 55.554, 65.397, 75.529, 89.709])
+fBm_error_best_02 = np.array([0.260448, 0.168793, 0.120762, 0.094786, 0.066514, 0.046403, 0.033040, 0.020377, 0.011986,
+                              0.005112, 0.002467, 0.000910, 0.000290, 7.35e-05, 1.60e-05, 2.28e-06, 2.42e-07, 1.64e-08])
+
+fBm_m_best_025 = np.array([1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 4, 4, 4, 6, 8])
+fBm_n_best_025 = np.array([1, 2, 3, 4, 6, 8, 11, 8, 11, 16, 22, 21, 23, 32, 45, 43, 45])
+fBm_N_best_025 = fBm_n_best_025 * fBm_m_best_025
+fBm_a_best_025 = np.array([2.3321, 1.0710, 0.8200, 0.7376, 2.4732, 2.0544, 3.0027, 2.0776, 3.4274, 4.2612, 4.7492,
+                           5.5759, 5.8976, 7.5928, 8.5448, 10.496, 11.752])
+fBm_b_best_025 = np.array([3.8767, 7.0555, 9.3000, 11.155, 12.139, 14.370, 15.677, 17.500, 19.617, 23.350, 26.860,
+                           30.554, 36.171, 41.634, 49.766, 56.788, 66.510])
+fBm_error_best_025 = np.array([0.168614, 0.099223, 0.068853, 0.055027, 0.034511, 0.024598, 0.016651, 0.009904, 0.005078,
+                               0.002157, 0.001009, 0.000335, 9.10e-05, 2.16e-05, 4.49e-06, 4.77e-07, 4.50e-08])
+
+fBm_m_best_03 = np.array([1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7])
+fBm_n_best_03 = np.array([1, 2, 3, 4, 5, 6, 11, 16, 11, 16, 15, 21, 23, 32, 36, 37])
+fBm_N_best_03 = fBm_m_best_03 * fBm_n_best_03
+fBm_a_best_03 = np.array([1.6429, 0.9825, 0.8302, 0.7937, 2.4023, 2.1053, 2.9969, 4.1563, 3.3196, 4.1298, 4.6673,
+                          5.3973, 7.0179, 8.4061, 9.9614, 11.486])
+fBm_b_best_03 = np.array([3.6182, 6.6441, 8.9214, 10.967, 11.576, 13.866, 14.859, 16.050, 18.518, 22.071, 24.129,
+                          28.906, 32.318, 37.557, 43.300, 51.217])
+fBm_error_best_03 = np.array([0.107225, 0.057602, 0.039323, 0.032875, 0.017865, 0.013574, 0.008582, 0.005222, 0.002396,
+                              0.001009, 0.000416, 0.000148, 3.25e-05, 7.18e-06, 1.19e-06, 1.17e-07])
+
+fBm_m_best_035 = np.array([1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 4])
+fBm_n_best_035 = np.array([1, 2, 3, 4, 6, 8, 11, 8, 8, 11, 15, 21, 23])
+fBm_N_best_035 = fBm_n_best_035 * fBm_m_best_035
+fBm_a_best_035 = np.array([1.3019, 0.9261, 0.8562, 2.9885, 2.3901, 3.7381, 3.1191, 3.7219, 3.9612, 5.2135, 6.0331,
+                           6.4369, 8.1268])
+fBm_b_best_035 = np.array([3.4146, 6.3027, 8.6800, 8.1831, 11.232, 11.992, 14.563, 14.003, 15.770, 18.273, 21.410,
+                           25.911, 29.225])
+fBm_error_best_035 = np.array([0.064887, 0.032008, 0.021847, 0.017005, 0.008927, 0.006111, 0.004370, 0.002417, 0.001256,
+                               0.000526, 0.000184, 5.38e-05, 1.25e-05])
+
+fBm_m_best_04 = np.array([1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5])
+fBm_n_best_04 = np.array([1, 2, 3, 4, 6, 8, 11, 16, 11, 16, 22, 21, 30, 32, 36])
+fBm_N_best_04 = fBm_m_best_04 * fBm_n_best_04
+fBm_a_best_04 = np.array([1.1126, 0.9012, 0.8895, 2.7998, 2.4092, 3.6982, 3.3562, 5.5013, 4.6677, 5.2914, 6.6539,
+                          7.4915, 9.4901, 10.089, 11.610])
+fBm_b_best_04 = np.array([3.2493, 6.0232, 8.5383, 7.8072, 11.045, 11.721, 15.645, 14.431, 15.459, 19.324, 21.535,
+                          23.486, 27.174, 31.722, 36.828])
+fBm_error_best_04 = np.array([0.035262, 0.016065, 0.011161, 0.007855, 0.004067, 0.002482, 0.001996, 0.000948, 0.000460,
+                              0.000172, 6.58e-05, 1.98e-05, 4.48e-06, 8.65e-07, 1.28e-07])
+
+fBm_m_best_045 = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4])
+fBm_n_best_045 = np.array([1, 2, 3, 4, 6, 8, 11, 16, 23, 16, 22, 32, 30, 43, 45])
+fBm_N_best_045 = fBm_m_best_045 * fBm_n_best_045
+fBm_a_best_045 = np.array([1.0050, 0.9038, 0.9256, 2.6467, 2.4356, 3.6513, 4.5937, 5.9468, 6.9425, 6.3889, 6.8332,
+                           9.8940, 10.315, 11.997, 13.008])
+fBm_b_best_045 = np.array([3.1111, 5.7994, 8.4604, 7.4577, 10.930, 11.475, 13.372, 14.892, 15.757, 17.238, 21.852,
+                           22.632, 25.237, 29.762, 34.545])
+fBm_error_best_045 = np.array([0.014476, 0.006129, 0.004411, 0.002771, 0.001430, 0.000736, 0.000410, 0.000224, 0.000132,
+                               4.69e-05, 2.07e-05, 5.02e-06, 1.20e-06, 2.11e-07, 3.40e-08])
+
+fBm_m_best = [fBm_m_best_005, fBm_m_best_01, fBm_m_best_015, fBm_m_best_02, fBm_m_best_025, fBm_m_best_03,
+              fBm_m_best_035, fBm_m_best_04, fBm_m_best_045]
+fBm_n_best = [fBm_n_best_005, fBm_n_best_01, fBm_n_best_015, fBm_n_best_02, fBm_n_best_025, fBm_n_best_03,
+              fBm_n_best_035, fBm_n_best_04, fBm_n_best_045]
+fBm_N_best = [fBm_N_best_005, fBm_N_best_01, fBm_N_best_015, fBm_N_best_02, fBm_N_best_025, fBm_N_best_03,
+              fBm_N_best_035, fBm_N_best_04, fBm_N_best_045]
+fBm_a_best = [fBm_a_best_005, fBm_a_best_01, fBm_a_best_015, fBm_a_best_02, fBm_a_best_025, fBm_a_best_03,
+              fBm_a_best_035, fBm_a_best_04, fBm_a_best_045]
+fBm_b_best = [fBm_b_best_005, fBm_b_best_01, fBm_b_best_015, fBm_b_best_02, fBm_b_best_025, fBm_b_best_03,
+              fBm_b_best_035, fBm_b_best_04, fBm_b_best_045]
+fBm_error_best = [fBm_error_best_005, fBm_error_best_01, fBm_error_best_015, fBm_error_best_02, fBm_error_best_025,
+                  fBm_error_best_03, fBm_error_best_035, fBm_error_best_04, fBm_error_best_045]
+
+
+def plot_beta(H, N, m):
+    """
+    Assumes that m = beta/A * sqrt(N), and determines beta using that formula. For every H, plots the thus
+    determined beta as a function of N.
+    :param H: Vector of Hurst parameters
+    :param N: List of numpy-arrays of N-values (number of nodes, N=n*m), where N[i] corresponds to H[i]
+    :param m: List of numpy-arrays of m-values (levels of quadrature nodes), where m[i] corresponds to H[i]
+    :return: Nothing, produces a plot of beta
+    """
+    for i in range(len(H)):
+        beta = m[i][2:] * A_H(H[i]) / np.sqrt(N[i][2:])  # excludes small N to avoid messing up the plot
+        plt.plot(np.log10(N[i][2:]), beta, label=f"H={H[i]}")
+    plt.xlabel("log_10(N)")
+    plt.ylabel("Estimate for beta")
+    plt.legend(loc="upper right")
+    plt.show()
+
+
+def plot_alpha(H, N, a, b, error):
+    """
+    Assumes that
+    xi_0 = exp(-alpha/((1.5-H)*A) * sqrt(N)),
+    xi_n = exp(alpha/(H*A) * sqrt(N)),
+    error = exp(-alpha/A * sqrt(N)).
+    Determines alpha using these formulas. For every H, plots the thus determined alpha as a function of N. Every H
+    produces three such functions, one given by xi_0, one by xi_n and one by error.
+    :param H: Vector of Hurst parameters
+    :param N: List of numpy-arrays of N-values (number of nodes, N=n*m), where N[i] corresponds to H[i]
+    :param a: List of numpy-arrays of a-values (xi_0 = e^(-a)), where a[i] corresponds to H[i]
+    :param b: List of numpy-arrays of b-values (xi_n = e^b), where b[i] corresponds to H[i]
+    :param error: List of numpy-arrays of estimated errors, where error[i] corresponds to H[i]
+    :return: Nothing, produces a plot of alpha
+    """
+    for i in range(len(H)):
+        H_ = H[i]
+        N_ = N[i][3:]  # excludes the first 3 elements as these occasionally produce awkward results, messing up the
+        a_ = a[i][3:]  # plot
+        b_ = b[i][3:]
+        error_ = error[i][3:]
+        A = A_H(H_)
+        error_ = np.log(error_)
+        a_ = (1.5 - H_) * A / np.sqrt(N_) * a_
+        b_ = H_ * A / np.sqrt(N_) * b_
+        error_ = -A / np.sqrt(N_) * error_
+
+        plt.plot(np.log10(N_), a_, label=f"H={H_}, xi_0")
+        plt.plot(np.log10(N_), b_, label=f"H={H_}, xi_n")
+        plt.plot(np.log10(N_), error_, label=f"H={H_}, error")
+    plt.xlabel("log_10(N)")
+    plt.ylabel("Estimate for alpha")
+    plt.show()
+
+
+def fit_observations():
+    """
+    Prints some approximations of the values of a, b, m determined by optimization, as well as the computed expected
+    L^2 strong approximation errors of fBm with varying Hurst parameter using the AK approximation scheme with varying
+    number of nodes N. Also shows some plots that illustrate the accuracy of the approximations.
+    :return: Nothing, prints some approximations that are determined by regression, and shows some plots
+    """
+    H = fBm_H
+    error = fBm_error_best.copy()
+    b = fBm_b_best.copy()
+    a = fBm_a_best.copy()
+    m = fBm_m_best.copy()
+    N = fBm_N_best.copy()
+
+    A = A_H(H)
+
+    plot_beta(H, N, m)
+
+    plot_alpha(H, N, a, b, error)
+    alpha = 1.8
+
+    for i in range(len(H)):
+        a[i] = a[i] - alpha / ((1.5 - H[i]) * A[i]) * np.sqrt(N[i])
+        b[i] = b[i] - alpha / (H[i] * A[i]) * np.sqrt(N[i])
+        error[i] = error[i] * np.exp(alpha / A[i] * np.sqrt(N[i]))
+
+    for i in range(len(H)):
+        plt.loglog(N[i][3:], np.exp(a[i][3:]), label=f"H={H[i]}")
+    plt.xlabel("N")
+    plt.ylabel("Factor by which xi_0 differs from its optimum")
+    plt.legend(loc="upper right")
+    plt.show()
+
+    avg_factor_xi_0 = np.array([np.average(np.exp(a[i][3:])) for i in range(len(H))])
+    res = scipy.stats.linregress(H, np.log(avg_factor_xi_0))
+    gamma = res[0]
+    C = res[1]
+    print(f"A good fit is achieved using xi_0 = {np.round(np.exp(C), 4)} * exp({np.round(gamma, 4)}*H) * exp(-{alpha}/((1.5-H)*A) * sqrt(N))")
+    plt.plot(H, np.log(avg_factor_xi_0), label="True log-factor")
+    plt.plot(H, C + gamma*H, label="regression")
+    plt.xlabel("H")
+    plt.ylabel("Logarithm of average factor by which xi_0 differs from its optimum")
+    plt.legend(loc="upper left")
+    plt.show()
+
+    avg_factor_xi_0 = avg_factor_xi_0 / np.exp(C + gamma*H)
+    plt.plot(H, np.log(avg_factor_xi_0), label="True log-factor")
+    plt.xlabel("H")
+    plt.ylabel("Logarithm of average factor by which xi_0 differs from its optimum")
+    # plt.legend(loc="upper right")
+    plt.show()
+
+    for i in range(len(H)):
+        plt.loglog(N[i][3:], np.exp(b[i][3:]), label=f"H={H[i]}")
+    plt.xlabel("N")
+    plt.ylabel("Factor by which xi_n differs from its optimum")
+    plt.legend(loc="upper right")
+    plt.show()
+
+    avg_factor_xi_n = np.array([np.average(np.exp(b[i][6:])) for i in range(len(H))])
+    res = scipy.stats.linregress(np.log(H), np.log(np.log(avg_factor_xi_n)))
+    gamma = res[0]
+    C = np.exp(res[1])
+    print(f"A good fit is achieved using xi_n = exp({np.round(np.exp(C), 4)} * H^{np.round(gamma, 4)}) * exp(-{alpha}/(H*A) * sqrt(N))")
+    plt.plot(H, np.log(avg_factor_xi_n), label="True log-factor")
+    plt.plot(H, C * H**gamma, label="regression")
+    plt.xlabel("H")
+    plt.ylabel("Logarithm of average factor by which xi_n differs from its optimum")
+    plt.legend(loc="upper left")
+    plt.show()
+
+    avg_factor_xi_n = avg_factor_xi_n / np.exp(C * H**gamma)
+    plt.plot(H, np.log(avg_factor_xi_n), label="True log-factor")
+    plt.xlabel("H")
+    plt.ylabel("Logarithm of average factor by which xi_n differs from its optimum")
+    # plt.legend(loc="upper right")
+    plt.show()
+
+    for i in range(len(H)):
+        plt.loglog(N[i][3:], np.exp(error[i][3:]), label=f"H={H[i]}")
+    plt.xlabel("N")
+    plt.ylabel("Factor by which the error differs from its optimum")
+    plt.legend(loc="upper right")
+    plt.show()
+
+    avg_factor_error = np.array([np.average(np.exp(error[i][3:])) for i in range(len(H))])
+    res = scipy.stats.linregress(np.log(H), np.log(np.log(avg_factor_error)))
+    gamma = res[0]
+    C = np.exp(res[1])
+    print(f"A good fit is achieved using error = exp({np.round(np.exp(C), 4)} * H^{np.round(gamma, 4)}) * exp(-{alpha}/A * sqrt(N))")
+    plt.plot(H, np.log(avg_factor_error), label="True log-factor")
+    plt.plot(H, C * H**gamma, label="regression")
+    plt.xlabel("H")
+    plt.ylabel("Logarithm of average factor by which the error differs from its true value")
+    plt.legend(loc="upper left")
+    plt.show()
+
+    avg_factor_error = avg_factor_error / np.exp(C * H**gamma)
+    plt.plot(H, np.log(avg_factor_error), label="True log-factor")
+    plt.xlabel("H")
+    plt.ylabel("Logarithm of average factor by which the error differs from its true value")
+    # plt.legend(loc="upper right")
     plt.show()
 
 
@@ -140,24 +475,24 @@ rBergomi_16 = np.array([0.30225526, 0.30013381, 0.29799969, 0.29585726, 0.293705
                         0.17304590, 0.17063451, 0.16827450, 0.16596925, 0.16371494, 0.16153584,
                         0.15944656])
 
-rBergomi_32 = np.array([0.30448798, 0.30221138, 0.29992409, 0.2976232, 0.29530925, 0.29298094,
+rBergomi_32 = np.array([0.30448798, 0.30221138, 0.29992409, 0.29762320, 0.29530925, 0.29298094,
                         0.29064271, 0.28829284, 0.28592646, 0.28354444, 0.28115215, 0.27874806,
                         0.27633292, 0.27390937, 0.27147717, 0.26903089, 0.26656888, 0.26409849,
                         0.26161619, 0.25912092, 0.25661453, 0.25409455, 0.25156119, 0.24901402,
                         0.24645042, 0.24387062, 0.24127644, 0.23866657, 0.23604051, 0.23340071,
                         0.23074539, 0.22807996, 0.22540203, 0.22270992, 0.22000639, 0.21729123,
-                        0.2145643, 0.21182864, 0.20908149, 0.20632356, 0.20355565, 0.20078378,
+                        0.21456430, 0.21182864, 0.20908149, 0.20632356, 0.20355565, 0.20078378,
                         0.19801083, 0.19524012, 0.19247322, 0.18971951, 0.18698369, 0.18426788,
-                        0.18157419, 0.1788987, 0.17624828, 0.17363767, 0.17106947, 0.16855319,
+                        0.18157419, 0.17889870, 0.17624828, 0.17363767, 0.17106947, 0.16855319,
                         0.16610667, 0.16374242, 0.16147046, 0.15929046, 0.15720677, 0.15523531,
                         0.15338483])
 
 rBergomi_64 = np.array([0.31009601, 0.30756878, 0.30503451, 0.30249607, 0.29995251, 0.29740012,
-                        0.29483877, 0.29227058, 0.28969126, 0.2870982, 0.28449643, 0.28188293,
+                        0.29483877, 0.29227058, 0.28969126, 0.28709820, 0.28449643, 0.28188293,
                         0.27926019, 0.27662655, 0.27398364, 0.27132884, 0.26866268, 0.26598539,
-                        0.2632954, 0.26059775, 0.25789122, 0.255172, 0.25244314, 0.24970178,
-                        0.24694694, 0.24418135, 0.2414026, 0.23860819, 0.23580387, 0.23298832,
-                        0.23015886, 0.2273164, 0.22446544, 0.22160756, 0.21873789, 0.21585969,
+                        0.26329540, 0.26059775, 0.25789122, 0.25517200, 0.25244314, 0.24970178,
+                        0.24694694, 0.24418135, 0.24140260, 0.23860819, 0.23580387, 0.23298832,
+                        0.23015886, 0.22731640, 0.22446544, 0.22160756, 0.21873789, 0.21585969,
                         0.21297178, 0.21007242, 0.20716663, 0.20425301, 0.20133059, 0.19840866,
                         0.19548851, 0.19257604, 0.18967043, 0.18678067, 0.18391097, 0.18106679,
                         0.17825139, 0.17547895, 0.17275316, 0.17008232, 0.16747954, 0.16495641,
