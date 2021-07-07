@@ -2,8 +2,9 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import mpmath as mp
-import QuadratureRulesRoughKernel as qr
 from scipy.optimize import minimize
+import orthopy
+import quadpy
 
 
 def fractional_kernel(H, t):
@@ -42,7 +43,7 @@ def plot_kernel_approximations(H, m, n_vec, a=1., b=1., left=0.0001, right=1., n
     approximations[:, 0] = fractional_kernel(H, time_steps)
 
     for i in range(len(n_vec)):
-        quad_rule = qr.quadrature_rule_geometric(H, m, n_vec[i], a, b)
+        quad_rule = quadrature_rule_geometric(H, m, n_vec[i], a, b)
         quad_nodes = quad_rule[0, :]
         quad_weights = quad_rule[1, :]
         approximations[:, i+1] = 1 / c_H(H) * np.array(
@@ -68,7 +69,7 @@ def error_estimate_fBm(H, m, n, a, b, T):
     H = mp.mpf(H)
     a = mp.mpf(a)
     b = mp.mpf(b)
-    rule = qr.quadrature_rule_geometric_exponential_mpmath(H, m, n, a, b)
+    rule = quadrature_rule_geometric_no_zero_node(H, m, n, a, b)
     nodes = rule[0, :]
     weights = rule[1, :]
     summand = T ** (2 * H) / (2 * H * mp.gamma(H + 0.5) ** 2)
@@ -120,3 +121,106 @@ def optimize_error_fBm(H, T, m, n, a=0., b=0., tol=1e-8):
     a = res.x[0]
     b = res.x[1]
     return np.array([res.fun, error_estimate_fBm(H, m, n, a, b, T)[1], a, b])
+
+
+def quadrature_rule_interval(H, m, a, b):
+    """
+    Returns the nodes and weights of the Gauss quadrature rule level m for the fractional weight function on [a,b]
+    :param H: Hurst parameter
+    :param m: Level of the quadrature rule
+    :param a: Left end of interval
+    :param b: Right end of interval
+    :return: The nodes and weights, in form [[node1, node2, ...], [weight1, weight2, ...]]
+    """
+    c = mp.mpf(c_H(float(H)))
+    moments = np.array(
+        [mp.mpf(c / (mp.mpf(k) + mp.mpf(0.5) - H) * (b ** (mp.mpf(k) + mp.mpf(0.5) - H) - a ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in range(2 * m)])
+    alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
+    points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
+    result = mp.matrix(2, m)
+    result[0, :] = mp.matrix(points.tolist()).transpose()
+    result[1, :] = mp.matrix(weights.tolist()).transpose()
+    return result
+
+
+def quadrature_rule_mpmath(H, m, partition):
+    """
+    Returns the quadrature rule of level m of the fractional kernel with Hurst parameter H on all the partition
+    intervals. The result is an mpmath matrix.
+    :param H: Hurst parameter
+    :param m: Level of the quadrature rule
+    :param partition: The partition points
+    :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
+    """
+
+    number_intervals = len(partition) - 1
+    rule = mp.matrix(2, m * number_intervals)
+    for i in range(0, number_intervals):
+        rule[:, m * i:m * (i + 1)] = quadrature_rule_interval(H, m, partition[i], partition[i + 1])
+    return rule
+
+
+def quadrature_rule_geometric_no_zero_node(H, m, n, a, b):
+    accuracy = int(a+b) + 50
+    if accuracy < 50:
+        accuracy = 50
+    mp.mp.dps = accuracy
+    partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(0, n + 1)])
+    return quadrature_rule_mpmath(H, m, partition)
+
+
+def quadrature_rule_geometric_mpmath(H, m=1, n=10, a=0., b=0., N=10, T=1., mode="observation"):
+    w_0 = error_estimate_fBm(H, m, n, a, b, T)[1]
+    accuracy = int(a+b) + 50
+    if accuracy < 50:
+        accuracy = 50
+    mp.mp.dps = accuracy
+    partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(0, n + 1)])
+    rule = mp.matrix(2, m*n+1)
+    rule[0, m*n] = mp.mpf(0)
+    rule[1, m*n] = mp.mpf(w_0)
+    rule[:, :-1] = quadrature_rule_mpmath(H, m, partition)
+    return rule
+
+
+def quadrature_rule_geometric(H, m, n, a=1., b=1., N=10, T=1., mode="observation"):
+    """
+    Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
+    on n geometrically spaced subintervals. The result is a numpy array, but the computations are done using the
+    mpmath library.
+    :param H: Hurst parameter
+    :param m: Level of the quadrature rule
+    :param n: Number of subintervals
+    :param a: Can shift the left end-point of the total interval
+    :param b: Can shift the right end-point of the total interval
+    :param T: Final time
+    :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
+    """
+    rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, N, T, mode)
+    return np.array([[float(rule[i, j]) for j in range(n*m)] for i in range(2)])
+
+
+def get_parameters(H, N, T, mode):
+    a = 0.
+    b = 0.
+    beta = 0.
+    A = mp.sqrt(1/H + 1/(1.5-H))
+
+    if mode == "theorem":
+        beta = 0.4275
+        alpha = 1.06418
+        gamma = np.exp(alpha*beta)
+        exponent = 1/(3*gamma/(8*(gamma-1)) + 6*H - 4*H*H)
+        base_0 = ((9-6*H)/(2*H))**(gamma/(8*(gamma-1))) * (5*np.pi**3/768 * gamma * (gamma-1) * A**(2-2*H) * (3-2*H) * float(N)**(1-H) / (beta**(2-2*H) * H))**(2*H)
+        a = -mp.log(T**(-1) * base_0**exponent * mp.exp(-alpha/((1.5-H)*A) * np.sqrt(N)))
+        base_n = ((9-6*H)/(2*H))**(gamma/(8*(gamma-1))) * (5*np.pi**3/1152 * gamma * (gamma-1) * A**(2-2*H) * float(N)**(1-H) / (beta**(2-2*H)))**(2*H-3)
+        b = mp.log(T**(-1) * base_n**exponent * mp.exp(alpha/(H*A) * np.sqrt(N)))
+    elif mode == "observation":
+        beta = 0.9
+        alpha = 1.8
+        a = -mp.log(0.65 * T**(-1) * mp.exp(3.1*H) * mp.exp(-alpha / ((1.5-H)*A) * np.sqrt(N)))
+        b = mp.log(T**(-1) * mp.exp(3 * H**(-0.4)) * mp.exp(alpha/(H*A) * np.sqrt(N)))
+
+    m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
+    n = int(np.round(N / m))
+    return m, n, a, b

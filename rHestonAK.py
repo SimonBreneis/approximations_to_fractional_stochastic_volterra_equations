@@ -2,7 +2,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import ComputationalFinance as cf
-import QuadratureRulesRoughKernel
+import RoughKernel as rk
 import rBergomiAK
 
 
@@ -56,7 +56,7 @@ def plot_rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0
     :return: Nothing, plots a realization of the stock price and variance process
     """
     dt = T / N
-    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric_mpmath(H, m, n, a, b)
+    quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = quad_rule[0, :]
     weights = quad_rule[1, :]
     k = len(nodes)
@@ -117,7 +117,7 @@ def rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.3, theta=0.02, nu=0.3, V
     :return: A numpy array containing the final stock values
     """
     dt = T / N
-    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric_mpmath(H, m, n, a, b)
+    quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = quad_rule[0, :]
     weights = quad_rule[1, :]
     k = len(nodes)

@@ -1,6 +1,6 @@
 import mpmath as mp
 import numpy as np
-import QuadratureRulesRoughKernel
+import RoughKernel as rk
 
 
 def sqrt_cov_matrix_fBm_approximation_mpmath(H, dt, nodes):
@@ -83,7 +83,7 @@ def strong_error_fBm_approximation_MC(H, T, m, n, samples, a=1., b=1.):
     """
     mp.mp.dps = int(np.maximum(20., (m * n) ** 2 / 20.))
 
-    quad_rule = QuadratureRulesRoughKernel.quadrature_rule_geometric_mpmath(H, m, n, a, b)
+    quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = quad_rule[0, :]
     weights = quad_rule[1, :]
 
