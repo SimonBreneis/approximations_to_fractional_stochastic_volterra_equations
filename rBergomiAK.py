@@ -26,8 +26,7 @@ def sqrt_cov_matrix_rBergomi_AK_mpmath(dt=1., nodes=None):
     cov_matrix = mp.matrix(k + 1, k + 1)
     for i in range(0, k):
         for j in range(0, k):
-            cov_matrix[i, j] = (1 - mp.exp(-dt * (nodes[i] + nodes[j]))) / (
-                    nodes[i] + nodes[j])
+            cov_matrix[i, j] = (1 - mp.exp(-dt * (nodes[i] + nodes[j]))) / (nodes[i] + nodes[j])
     for i in range(0, k):
         entry = (1 - mp.exp(-dt * nodes[i])) / nodes[i]
         cov_matrix[k, i] = entry
@@ -74,14 +73,14 @@ def rBergomi_AK_variance_integral(nodes, weights, t):
     weight_matrix = mp.matrix([[weight_i * weight_j for weight_j in weights] for weight_i in weights])
     node_matrix = mp.matrix([[node_i + node_j for node_j in nodes] for node_i in nodes])
     result = np.empty(shape=(len(t),))
-    for time_index in range(len(t)):
+    for t_ in range(len(t)):
         expression = mp.matrix([[weight_matrix[i, j] / node_matrix[i, j] * (
-                1 - mp.exp(-node_matrix[i, j] * mp.mpf(t[time_index]))) for j in range(len(nodes))] for i in
+                1 - mp.exp(-node_matrix[i, j] * mp.mpf(t[t_]))) for j in range(len(nodes))] for i in
                                 range(len(nodes))])
         expression_np = np.array([[expression[i, j] for j in range(len(nodes))] for i in range(len(nodes))])
-        result[time_index] = np.sum(expression_np.flatten())
-        result[time_index] += w_0**2 * t[time_index]
-        result[time_index] += 2 * w_0 * np.sum(np.array([weights[i]/nodes[i] * (1-mp.exp(-nodes[i]*t[time_index])) for i in range(len(nodes))]))
+        result[t_] = np.sum(expression_np.flatten())
+        result[t_] = result[t_] + w_0**2 * t[t_]
+        result[t_] = result[t_] + 2 * w_0 * np.sum(np.array([weights[i]/nodes[i] * (1-mp.exp(-nodes[i]*t[t_])) for i in range(len(nodes))]))
     return result
 
 
@@ -152,7 +151,10 @@ def rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     :return: An array containing the final stock prices
     """
     dt = T / N_time
+    print(np.exp(-float(a)))
+    print(np.exp(float(b)))
     quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
+    print(quad_rule)
     nodes = quad_rule[0, :]
     weights_mp = quad_rule[1, :]
     sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes[:-1])
@@ -176,8 +178,8 @@ def rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
         V = V_0 * np.exp(W_1_fBm - variances)
         W_2_diff = np.sqrt(dt) * np.random.normal(0, 1, size=(M, N_time))
         log_S = np.log(S_0) * np.ones(shape=(M,))
-        for i in range(1, N_time + 1):
-            log_S = log_S + np.sqrt(V[:, i - 1]) * (rho * W_1_diff[:, i - 1] + np.sqrt(1 - rho ** 2) * W_2_diff[:, i - 1]) - V[:, i - 1] / 2 * dt
+        for i in range(N_time):
+            log_S = log_S + np.sqrt(V[:, i]) * (rho * W_1_diff[:, i] + np.sqrt(1 - rho ** 2) * W_2_diff[:, i]) - V[:, i] / 2 * dt
         S[rd * M:(rd + 1) * M] = np.exp(log_S)
     return S
 

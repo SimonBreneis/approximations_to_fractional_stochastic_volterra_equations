@@ -41,15 +41,18 @@ def plot_kernel_approximations(H, m, n_vec, a=1., b=1., left=0.0001, right=1., n
     time_steps = left + dt*np.arange(number_time_steps+1)
     approximations = np.empty(shape=(number_time_steps+1, len(n_vec)+1))
     approximations[:, 0] = fractional_kernel(H, time_steps)
+    plt.plot(time_steps, approximations[:, 0], label=f"N=infinity")
 
     for i in range(len(n_vec)):
-        quad_rule = quadrature_rule_geometric(H, m, n_vec[i], a, b)
+        quad_rule = quadrature_rule_geometric(H, int(m[i]), int(n_vec[i]), a[i], b[i])
+        print(quad_rule)
         quad_nodes = quad_rule[0, :]
         quad_weights = quad_rule[1, :]
         approximations[:, i+1] = 1 / c_H(H) * np.array(
             [fractional_kernel_laplace(H, t, quad_nodes) for t in time_steps]).dot(quad_weights)
-
-    plt.plot(time_steps, approximations)
+        plt.plot(time_steps, approximations[:, i+1], label=f"N={int(n_vec[i]*m[i])}")
+    #  plt.plot(time_steps, approximations)
+    plt.legend(loc="upper right")
     plt.show()
 
 
@@ -197,7 +200,7 @@ def quadrature_rule_geometric(H, m, n, a=1., b=1., N=10, T=1., mode="observation
     :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
     """
     rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, N, T, mode)
-    return np.array([[float(rule[i, j]) for j in range(n*m)] for i in range(2)])
+    return np.array([[float(rule[i, j]) for j in range(n*m+1)] for i in range(2)])
 
 
 def get_parameters(H, N, T, mode):
@@ -218,8 +221,8 @@ def get_parameters(H, N, T, mode):
     elif mode == "observation":
         beta = 0.9
         alpha = 1.8
-        a = -mp.log(0.65 * T**(-1) * mp.exp(3.1*H) * mp.exp(-alpha / ((1.5-H)*A) * np.sqrt(N)))
-        b = mp.log(T**(-1) * mp.exp(3 * H**(-0.4)) * mp.exp(alpha/(H*A) * np.sqrt(N)))
+        a = -mp.log(0.65 * 1/T * mp.exp(3.1*H) * mp.exp(-alpha / ((1.5-H)*A) * np.sqrt(N)))
+        b = mp.log(1/T * mp.exp(3 * H**(-0.4)) * mp.exp(alpha/(H*A) * np.sqrt(N)))
 
     m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
     n = int(np.round(N / m))

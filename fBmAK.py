@@ -81,8 +81,6 @@ def strong_error_fBm_approximation_MC(H, T, m, n, samples, a=1., b=1.):
     :param b: Can shift right end-point of total interval of the quadrature rule
     :return: The estimated error and a 95% confidence interval, i.e. [error, 1.96*std/sqrt(samples)]
     """
-    mp.mp.dps = int(np.maximum(20., (m * n) ** 2 / 20.))
-
     quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = quad_rule[0, :]
     weights = quad_rule[1, :]
