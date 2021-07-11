@@ -151,36 +151,26 @@ def rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     :return: An array containing the final stock prices
     """
     dt = T / N_time
-    print(np.exp(-float(a)))
-    print(np.exp(float(b)))
     quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
-    print(quad_rule)
     nodes = quad_rule[0, :]
-    weights_mp = quad_rule[1, :]
+    weights = quad_rule[1, :]
     sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes[:-1])
-    weights = np.array([float(weight) for weight in weights_mp])
-    exp_vector = np.exp(np.array([-float(node) * dt for node in nodes]))
+    weights = np.array([float(weight) for weight in weights])
+    exp_vector = np.exp(-dt * np.array([float(node) for node in nodes]))
     eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
         H + 0.5)  # the sqrt is in the model, the Gamma takes care of the c_H in the weights of the quadrature rule
-    times = np.arange(N_time + 1) * dt
-    variances = eta_transformed ** 2 / 2 * rBergomi_AK_variance_integral(nodes, weights, times)
+    variances = eta_transformed ** 2 / 2 * rBergomi_AK_variance_integral(nodes, weights, np.arange(N_time) * dt)
     S = np.empty(shape=(M * rounds))
     for rd in range(rounds):
         W_1_diff = np.array([sqrt_cov.dot(np.random.normal(0., 1., size=(m * n + 1, N_time))) for _ in range(M)])
-        # W_1_diff = np.transpose(sqrt_cov.dot(np.random.normal(0., 1., size=(M, m*n+1, N))), [1, 0, 2]) is slower
-        W_1_fBm = np.zeros(shape=(M, m * n + 1, N_time + 1))
-        for i in range(1, N_time + 1):
-            W_1_fBm[:, :, i] = exp_vector * W_1_fBm[:, :, i - 1] + W_1_diff[:, :, i - 1]
-        for i in range(len(weights)):
-            W_1_fBm[:, i, :] = weights[i] * W_1_fBm[:, i, :]
-        W_1_fBm = eta_transformed * np.sum(W_1_fBm, axis=1)
-        W_1_diff = W_1_diff[:, -1, :]
+        # W_1_diff = np.transpose(sqrt_cov.dot(np.random.normal(0., 1., size=(M, m*n+1, N_time))), [1, 0, 2]) is slower
+        W_1_fBm = np.zeros(shape=(M, m * n + 1, N_time))
+        for i in range(N_time-1):
+            W_1_fBm[:, :, i+1] = exp_vector * W_1_fBm[:, :, i] + W_1_diff[:, :, i]
+        W_1_fBm = eta_transformed * np.dot(weights, W_1_fBm)
         V = V_0 * np.exp(W_1_fBm - variances)
-        W_2_diff = np.sqrt(dt) * np.random.normal(0, 1, size=(M, N_time))
-        log_S = np.log(S_0) * np.ones(shape=(M,))
-        for i in range(N_time):
-            log_S = log_S + np.sqrt(V[:, i]) * (rho * W_1_diff[:, i] + np.sqrt(1 - rho ** 2) * W_2_diff[:, i]) - V[:, i] / 2 * dt
-        S[rd * M:(rd + 1) * M] = np.exp(log_S)
+        W_2_diff = np.random.normal(0, np.sqrt(1 - rho ** 2) * np.sqrt(dt), size=(M, N_time))
+        S[rd * M:(rd + 1) * M] = np.exp(np.log(S_0) + np.sum(np.sqrt(V) * (rho * W_1_diff[:, -1, :] + W_2_diff) - V / 2 * dt, axis=1))
     return S
 
 
@@ -199,10 +189,13 @@ def implied_volatility_call_rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0
     :param K: The strike price
     :param m: Order of the quadrature rule
     :param n: Number of intervals in the quadrature rule
+    :param N: Total number of points in the quadrature rule, N=n*m
     :param a: Can be used to shift the left endpoint of the total quadrature interval
     :param b: Can be used to shift the right endpoint of the total quadrature interval
     :param M: Number of samples
     :param rounds: Actually uses M*rounds samples, but only m at a time to avoid excessive memory usage
+    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
+    theorem. If actual, use the values that have been specified.
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
     if mode != "actual":
