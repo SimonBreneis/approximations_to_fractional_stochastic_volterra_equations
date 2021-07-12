@@ -12,6 +12,17 @@ def MC(samples):
     return np.average(samples, axis=-1), 1.95 * np.std(samples, axis=-1) / np.sqrt(samples.shape[-1])
 
 
+def BS(sigma=0.2, T=1., N=1000):
+    """
+    Simulates N samples of a Black-Scholes price at time T.
+    :param sigma: Volatility
+    :param T: Final time
+    :param N: Number of samples
+    :return: Array of final stock values
+    """
+    return np.exp(np.random.normal(-sigma*sigma/2*T, sigma*np.sqrt(T), N))
+
+
 def BS_d1(S=1., K=1., sigma=1., r=0., T=1.):
     """
     Computes the first of the two nodes of the Black-Scholes model where the CDF is evaluated.
@@ -139,3 +150,30 @@ def volatility_smile_call(samples, K, T=1., S_0=1.):
     implied_volatility_lower = implied_volatility_call(S_0, K, 0, T, price_estimate - price_stat)
     implied_volatility_upper = implied_volatility_call(S_0, K, 0, T, price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
+
+
+def fourier_transform_payoff(K, u):
+    """
+    Returns the value of the Fourier transform of the payoff of a European put or call option (same Fourier transform).
+    Is a complex number.
+    :param K: Strike price
+    :param u: Argument of the Fourier transform
+    :return: hat(f)(u)
+    """
+    j = complex(0, 1)
+    return np.exp(np.log(K)*(1+j*u))/(j*u*(1+j*u))
+
+
+def pricing_fourier_inversion(mgf, K, R=2, L=1000., N=1000**2):
+    """
+    Computes the option price using Fourier inversion.
+    :param mgf: The moment generating function of the final log-price
+    :param R: The (dampening) shift that we use
+    :param K: The strike price
+    :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
+    :param N: The number of points used in the trapezoidal rule for the approximation of the integral
+    :return: The estimate of the option price
+    """
+    u = -L + np.arange(N+1)*2*L/N
+    values = mgf(R-complex(0, 1)*u)*fourier_transform_payoff(K, u + complex(0, 1)*R)
+    return np.real(1/(2*np.pi) * np.trapz(values, dx=2*L/N))
