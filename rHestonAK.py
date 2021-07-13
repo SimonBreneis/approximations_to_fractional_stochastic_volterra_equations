@@ -181,7 +181,7 @@ def implied_volatility_call_rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.
     return cf.volatility_smile_call(samples, K, T, S_0)
 
 
-def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000, m=1, n=10, a=1., b=1.):
+def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000, nodes=None, weights=None):
     """
     Solves the Riccati equation in the exponent of the characteristic function of the approximation of the rough Heston
     model. Does not return psi but rather F(z, psi(., z)).
@@ -201,11 +201,8 @@ def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000,
 
     def F(x):
         return 0.5*(z*z-z) + lambda_*(rho*nu*z-1)*x + (lambda_*nu)**2/2*x**2
-
+    '''
     dt = T / N_Riccati
-    rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
-    nodes = rule[0, :]
-    weights = rule[1, :]
     psi_x = mp.matrix([0. for _ in range(len(nodes))])
     F_psi = mp.matrix([0. for _ in range(N_Riccati+1)])
 
@@ -219,6 +216,28 @@ def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000,
         for j in range(len(nodes)):
             psi_x[j] = F_psi[i]*div_nodes[j] + psi_x[j]*exp_nodes[j]
             psi = psi + weights[j]*psi_x[j]
+        F_psi[i+1] = F(psi)
+    F_psi = np.array([complex(F_psi[i]) for i in range(len(F_psi))])
+    return F_psi
+    '''
+    dt = T / N_Riccati
+    psi_x = np.zeros(len(nodes), dtype=np.clongdouble)
+    F_psi = np.zeros(N_Riccati+1, dtype=np.clongdouble)
+
+    exp_nodes = mp.matrix([mp.exp(-nodes[j]*dt) for j in range(len(nodes))])
+    div_nodes = mp.matrix([0. for _ in range(len(nodes))])
+    div_nodes[:-1] = mp.matrix([(1-exp_nodes[j])/nodes[j] for j in range(len(nodes)-1)])
+    div_nodes[-1] = dt
+    exp_nodes = np.array([np.longdouble(x) for x in exp_nodes])
+    div_nodes = np.array([np.longdouble(x) for x in div_nodes])
+    print(weights[0])
+    weights = np.array([np.longdouble(x) for x in weights])
+    print(weights[0])
+    print(np.double(weights[0]))
+
+    for i in range(N_Riccati):
+        psi_x = F_psi[i]*div_nodes + psi_x*exp_nodes
+        psi = np.dot(weights, psi_x)
         F_psi[i+1] = F(psi)
     F_psi = np.array([complex(F_psi[i]) for i in range(len(F_psi))])
     return F_psi
@@ -256,7 +275,7 @@ def mgf(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.04, V_0=0.04, T=1., N_R
     g = g + V_0
 
     for i in range(len(z)):
-        Fz = solve_Riccati(z[i], H, lambda_, rho, nu, T, N_Riccati, m, n, a, b)
+        Fz = solve_Riccati(z[i], H, lambda_, rho, nu, T, N_Riccati, nodes, weights)
         res[i] = np.trapz(Fz*g, dx=T/N_Riccati)
 
     return np.exp(res)
@@ -327,6 +346,7 @@ def implied_volatility_Fourier(K, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.
         [m, n, a, b] = rk.get_parameters(H, N, T, mode)
     implied_volatilities = np.zeros(len(K))
     for i in range(len(K)):
+        print(i)
         price = call(K[i], H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_fourier, m, n, a, b)
         implied_volatilities[i] = cf.implied_volatility_call(S=1., K=K[i], r=0., T=T, price=price)
     return implied_volatilities
