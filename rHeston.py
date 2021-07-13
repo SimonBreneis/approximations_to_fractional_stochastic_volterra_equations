@@ -261,8 +261,6 @@ def implied_volatility_Fourier(K, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.
     """
     implied_volatilities = np.zeros(len(K))
     for i in range(len(K)):
-        print(i)
-        print(K[i])
         tic = time.perf_counter()
         price = call(K[i], H, lambda_, rho, nu, theta, V_0, T, N, R, L, N_fourier)
         implied_volatilities[i] = cf.implied_volatility_call(S=1., K=K[i], r=0., T=T, price=price)

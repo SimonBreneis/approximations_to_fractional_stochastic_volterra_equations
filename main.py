@@ -15,9 +15,7 @@ import fBmAK
 import RoughKernel as rk
 
 
-k_vec = -0.3 + 0.01*np.arange(51)
+k_vec = -1.3 + 0.02*np.arange(81)
 K_vec = np.exp(k_vec)
-implied_volatilities = rHeston.implied_volatility_Fourier(K=K_vec, L=200, N=1000, N_fourier=200**2, T=0.1)
+implied_volatilities = rHestonAK.implied_volatility_Fourier(K=K_vec, L=200, N_Riccati=1000, N_fourier=200**2, T=1., nu=1., lambda_=0.3, rho=-0.7, theta=0.02, V_0=0.02)
 print(implied_volatilities)
-plt.plot(k_vec, implied_volatilities)
-plt.show()

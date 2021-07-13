@@ -4,6 +4,7 @@ import numpy as np
 import ComputationalFinance as cf
 import RoughKernel as rk
 import rBergomiAK
+import mpmath as mp
 
 
 def sqrt_cov_matrix_rHeston_AK_mpmath(dt=1., nodes=None):
@@ -178,3 +179,155 @@ def implied_volatility_call_rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.
         f"Generating {M * rounds} approximate rHeston samples with N={N} and n*m={n * m} takes {np.round(toc - tic, 2)}"
         f" seconds.")
     return cf.volatility_smile_call(samples, K, T, S_0)
+
+
+def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000, m=1, n=10, a=1., b=1.):
+    """
+    Solves the Riccati equation in the exponent of the characteristic function of the approximation of the rough Heston
+    model. Does not return psi but rather F(z, psi(., z)).
+    :param z: Argument of the moment generating function
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param T: Final time
+    :param N_Riccati: Number of time steps used
+    :param m: Order of the quadrature rule
+    :param n: Number of intervals in the quadrature rule
+    :param a: Can shift the left end-point of the total interval of the quadrature rule
+    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    :return: An approximation of F applied to the solution of the Riccati equation. Is an array with N+1 values.
+    """
+
+    def F(x):
+        return 0.5*(z*z-z) + lambda_*(rho*nu*z-1)*x + (lambda_*nu)**2/2*x**2
+
+    dt = T / N_Riccati
+    rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
+    nodes = rule[0, :]
+    weights = rule[1, :]
+    psi_x = mp.matrix([0. for _ in range(len(nodes))])
+    F_psi = mp.matrix([0. for _ in range(N_Riccati+1)])
+
+    exp_nodes = mp.matrix([mp.exp(-nodes[j]*dt) for j in range(len(nodes))])
+    div_nodes = mp.matrix([0. for _ in range(len(nodes))])
+    div_nodes[:-1] = mp.matrix([(1-exp_nodes[j])/nodes[j] for j in range(len(nodes)-1)])
+    div_nodes[-1] = dt
+
+    for i in range(N_Riccati):
+        psi = 0.
+        for j in range(len(nodes)):
+            psi_x[j] = F_psi[i]*div_nodes[j] + psi_x[j]*exp_nodes[j]
+            psi = psi + weights[j]*psi_x[j]
+        F_psi[i+1] = F(psi)
+    F_psi = np.array([complex(F_psi[i]) for i in range(len(F_psi))])
+    return F_psi
+
+
+def mgf(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.04, V_0=0.04, T=1., N_Riccati=1000, m=1, n=10, a=1., b=1.):
+    """
+    Gives the moment generating function of the log-price in the rough Heston model.
+    :param z: Argument of the moment generating function (assumed to be a vector)
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time
+    :param N_Riccati: Number of time steps used
+    :param m: Order of the quadrature rule
+    :param n: Number of intervals in the quadrature rule
+    :param a: Can shift the left end-point of the total interval of the quadrature rule
+    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    :return: The moment generating function
+    """
+    res = np.zeros(shape=(len(z)), dtype=complex)
+    rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
+    nodes = rule[0, :]
+    weights = rule[1, :]
+    times = T/N_Riccati * mp.matrix([N_Riccati-i for i in range(N_Riccati+1)])
+    g = np.zeros(N_Riccati+1)
+    for i in range(n*m):
+        for t in range(len(times)):
+            g[t] += weights[i]/nodes[i] * (1-mp.exp(-nodes[i]*times[t]))
+    g = g + weights[-1]*times
+    g = lambda_*theta*g
+    g = g + V_0
+
+    for i in range(len(z)):
+        Fz = solve_Riccati(z[i], H, lambda_, rho, nu, T, N_Riccati, m, n, a, b)
+        res[i] = np.trapz(Fz*g, dx=T/N_Riccati)
+
+    return np.exp(res)
+
+
+def call(K, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.04, V_0=0.04, T=1., N_Riccati=100, R=2, L=100., N_fourier=100 ** 2, m=1, n=10, a=1., b=1.):
+    """
+    Gives the price of a European call option in the approximated, Markovian rough Heston model.
+    Uses Fourier inversion.
+    :param K: Strike price
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_Riccati: Number of time steps used in the solution of the fractional Riccati equation
+    :param R: The (dampening) shift that we use for the Fourier inversion
+    :param L: The value at which we cut off the Fourier integral, so we do not integrate over the reals,
+    but only over [-L, L]
+    :param N_fourier: The number of points used in the trapezoidal rule for the approximation of the Fourier integral
+    :param m: Order of the quadrature rule
+    :param n: Number of intervals in the quadrature rule
+    :param a: Can shift the left end-point of the total interval of the quadrature rule
+    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    return: The price of the call option
+    """
+    def mgf_(u):
+        """
+        Moment generating function of the log-price.
+        :param u: Argument
+        :return: Value
+        """
+        return mgf(u, H, lambda_, rho, nu, theta, V_0, T, N_Riccati, m, n, a, b)
+
+    return cf.pricing_fourier_inversion(mgf_, K, R, L, N_fourier)
+
+
+def implied_volatility_Fourier(K, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.04, V_0=0.04, T=1., N_Riccati=100, R=2, L=100., N_fourier=100 ** 2, m=1, n=10, N=10, a=1., b=1., mode="observation"):
+    """
+    Gives the implied volatility of the European call option in the rough Heston model
+    as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
+    Uses Fourier inversion.
+    :param K: Strike price, assumed to be a vector
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_Riccati: Number of time steps used in the solution of the fractional Riccati equation
+    :param R: The (dampening) shift that we use for the Fourier inversion
+    :param L: The value at which we cut off the Fourier integral, so we do not integrate over the reals,
+    but only over [-L, L]
+    :param N_fourier: The number of points used in the trapezoidal rule for the approximation of the Fourier integral
+    :param m: Order of the quadrature rule
+    :param n: Number of intervals in the quadrature rule
+    :param N: Total number of points in the quadrature rule, N=n*m
+    :param a: Can shift the left end-point of the total interval of the quadrature rule
+    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
+    theorem. If actual, use the values that have been specified.
+    return: The price of the call option
+    """
+    if mode != "actual":
+        [m, n, a, b] = rk.get_parameters(H, N, T, mode)
+    implied_volatilities = np.zeros(len(K))
+    for i in range(len(K)):
+        price = call(K[i], H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_fourier, m, n, a, b)
+        implied_volatilities[i] = cf.implied_volatility_call(S=1., K=K[i], r=0., T=T, price=price)
+    return implied_volatilities
+
