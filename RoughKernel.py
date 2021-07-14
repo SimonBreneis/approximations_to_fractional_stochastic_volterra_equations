@@ -172,7 +172,7 @@ def quadrature_rule_geometric_no_zero_node(H, m, n, a, b):
     return quadrature_rule_mpmath(H, m, partition)
 
 
-def quadrature_rule_geometric_mpmath(H, m=1, n=10, a=0., b=0., N=10, T=1., mode="observation"):
+def quadrature_rule_geometric_mpmath(H, m=1, n=10, a=0., b=0., T=1.):
     w_0 = error_estimate_fBm(H, m, n, a, b, T)[1]
     accuracy = int(a+b) + 50
     if accuracy < 50:
@@ -186,7 +186,7 @@ def quadrature_rule_geometric_mpmath(H, m=1, n=10, a=0., b=0., N=10, T=1., mode=
     return rule
 
 
-def quadrature_rule_geometric(H, m, n, a=1., b=1., N=10, T=1., mode="observation"):
+def quadrature_rule_geometric(H, m, n, a=1., b=1., T=1.):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
     on n geometrically spaced subintervals. The result is a numpy array, but the computations are done using the
@@ -199,7 +199,7 @@ def quadrature_rule_geometric(H, m, n, a=1., b=1., N=10, T=1., mode="observation
     :param T: Final time
     :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
     """
-    rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, N, T, mode)
+    rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     return np.array([[float(rule[i, j]) for j in range(n*m+1)] for i in range(2)])
 
 

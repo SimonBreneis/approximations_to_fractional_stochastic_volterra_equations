@@ -5,6 +5,7 @@ import ComputationalFinance as cf
 import RoughKernel as rk
 import rBergomiAK
 import mpmath as mp
+from joblib import Parallel, delayed
 
 
 def sqrt_cov_matrix_rHeston_AK_mpmath(dt=1., nodes=None):
@@ -181,7 +182,7 @@ def implied_volatility_call_rHeston_AK(H=0.1, T=1., N=1000, rho=-0.9, lambda_=0.
     return cf.volatility_smile_call(samples, K, T, S_0)
 
 
-def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000, nodes=None, weights=None):
+def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000, exp_nodes=None, div_nodes=None, weights=None):
     """
     Solves the Riccati equation in the exponent of the characteristic function of the approximation of the rough Heston
     model. Does not return psi but rather F(z, psi(., z)).
@@ -200,7 +201,7 @@ def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000,
     """
 
     def F(x):
-        return 0.5*(z*z-z) + lambda_*(rho*nu*z-1)*x + (lambda_*nu)**2/2*x**2
+        return 0.5*(z*z-z) + lambda_*(rho*nu*z-1)*x + (lambda_*nu)**2/2*x*x
     '''
     dt = T / N_Riccati
     psi_x = mp.matrix([0. for _ in range(len(nodes))])
@@ -220,23 +221,34 @@ def solve_Riccati(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, T=1., N_Riccati=1000,
     F_psi = np.array([complex(F_psi[i]) for i in range(len(F_psi))])
     return F_psi
     '''
+    '''
     dt = T / N_Riccati
     psi_x = np.zeros(len(nodes), dtype=np.clongdouble)
     F_psi = np.zeros(N_Riccati+1, dtype=np.clongdouble)
 
     exp_nodes = mp.matrix([mp.exp(-nodes[j]*dt) for j in range(len(nodes))])
-    div_nodes = mp.matrix([0. for _ in range(len(nodes))])
-    div_nodes[:-1] = mp.matrix([(1-exp_nodes[j])/nodes[j] for j in range(len(nodes)-1)])
-    div_nodes[-1] = dt
+    div_nodes = np.zeros(len(nodes))
+    div_nodes[:-1] = np.array([np.longdouble((1-exp_nodes[j])/nodes[j]) for j in range(len(nodes)-1)])
+    div_nodes[-1] = np.longdouble(dt)
     exp_nodes = np.array([np.longdouble(x) for x in exp_nodes])
-    div_nodes = np.array([np.longdouble(x) for x in div_nodes])
-    print(weights[0])
     weights = np.array([np.longdouble(x) for x in weights])
-    print(weights[0])
-    print(np.double(weights[0]))
 
     for i in range(N_Riccati):
         psi_x = F_psi[i]*div_nodes + psi_x*exp_nodes
+        psi = np.dot(weights, psi_x)
+        F_psi[i+1] = F(psi)
+    F_psi = np.array([complex(F_psi[i]) for i in range(len(F_psi))])
+    return F_psi
+    '''
+    psi_x = np.zeros(len(weights), dtype=np.clongdouble)
+    F_psi = np.zeros(N_Riccati+1, dtype=np.clongdouble)
+    F_psi[0] = F(np.clongdouble(0))
+    psi = np.clongdouble(0)
+
+    for i in range(N_Riccati):
+        psi_xP = F_psi[i]*div_nodes + psi_x*exp_nodes
+        psi_P = 0.5*(psi + np.dot(weights, psi_xP))
+        psi_x = F(psi_P)*div_nodes + psi_x*exp_nodes
         psi = np.dot(weights, psi_x)
         F_psi[i+1] = F(psi)
     F_psi = np.array([complex(F_psi[i]) for i in range(len(F_psi))])
@@ -261,11 +273,12 @@ def mgf(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.04, V_0=0.04, T=1., N_R
     :param b: Can shift the right end-point of the total interval of the quadrature rule
     :return: The moment generating function
     """
+    dt = T/N_Riccati
     res = np.zeros(shape=(len(z)), dtype=complex)
     rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = rule[0, :]
     weights = rule[1, :]
-    times = T/N_Riccati * mp.matrix([N_Riccati-i for i in range(N_Riccati+1)])
+    times = dt * mp.matrix([N_Riccati-i for i in range(N_Riccati+1)])
     g = np.zeros(N_Riccati+1)
     for i in range(n*m):
         for t in range(len(times)):
@@ -274,9 +287,16 @@ def mgf(z, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.04, V_0=0.04, T=1., N_R
     g = lambda_*theta*g
     g = g + V_0
 
+    exp_nodes = mp.matrix([mp.exp(-nodes[j] * dt) for j in range(len(nodes))])
+    div_nodes = np.zeros(len(nodes))
+    div_nodes[:-1] = np.array([np.longdouble((1 - exp_nodes[j]) / nodes[j]) for j in range(len(nodes) - 1)])
+    div_nodes[-1] = np.longdouble(dt)
+    exp_nodes = np.array([np.longdouble(x) for x in exp_nodes])
+    weights = np.array([np.longdouble(x) for x in weights])
+
     for i in range(len(z)):
-        Fz = solve_Riccati(z[i], H, lambda_, rho, nu, T, N_Riccati, nodes, weights)
-        res[i] = np.trapz(Fz*g, dx=T/N_Riccati)
+        Fz = solve_Riccati(z[i], H, lambda_, rho, nu, T, N_Riccati, exp_nodes, div_nodes, weights)
+        res[i] = np.trapz(Fz*g, dx=dt)
 
     return np.exp(res)
 
@@ -344,10 +364,9 @@ def implied_volatility_Fourier(K, H=0.1, lambda_=2., rho=-0.5, nu=0.05, theta=0.
     """
     if mode != "actual":
         [m, n, a, b] = rk.get_parameters(H, N, T, mode)
+    prices = Parallel(n_jobs=len(K))(delayed(call)(K[i], H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_fourier, m, n, a, b) for i in range(len(K)))
     implied_volatilities = np.zeros(len(K))
     for i in range(len(K)):
-        print(i)
-        price = call(K[i], H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_fourier, m, n, a, b)
-        implied_volatilities[i] = cf.implied_volatility_call(S=1., K=K[i], r=0., T=T, price=price)
+        implied_volatilities[i] = cf.implied_volatility_call(S=1., K=K[i], r=0., T=T, price=prices[i])
     return implied_volatilities
 
