@@ -10,9 +10,13 @@ import rHestonAK
 import RoughKernel as rk
 
 
-k_rHeston = -1.3 + 0.02 * np.arange(81)
-approx = rHestonAK.implied_volatility(K=np.exp(k_rHeston), lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02, T=1., N_Riccati=500, N_fourier=1000, N=8)
-plt.plot(k_rHeston, Data.rHeston)
-plt.plot(k_rHeston, approx)
-plt.plot(k_rHeston, Data.rHeston_8)
-plt.show()
+K = np.exp(-1.3 + 0.02 * np.arange(81))
+tic = time.perf_counter()
+rHeston.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02, T=1.)
+toc = time.perf_counter()
+print(f"Generating the true smile took {toc-tic} seconds.")
+for N in [1, 2, 4, 8, 16, 32]:
+    tic = time.perf_counter()
+    rHestonAK.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02, T=1., N=N)
+    toc = time.perf_counter()
+    print(f"Generating the approximated smile with N={N} took {toc-tic} seconds.")

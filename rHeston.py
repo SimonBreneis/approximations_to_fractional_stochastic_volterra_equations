@@ -18,8 +18,7 @@ def solve_fractional_Riccati(a, H, lambda_, rho, nu, T=1., N_Riccati=1000):
     """
 
     def F(x):
-        return 0.5 * (-a * a - complex(0, 1) * a) + lambda_ * (complex(0, 1) * a * rho * nu - 1) * x + (
-                    lambda_ * nu) ** 2 / 2 * x ** 2
+        return 0.5 * (-a * a - complex(0, 1) * a) + (complex(0, 1) * a * rho * nu - lambda_) * x + nu*nu*x*x/2
 
     dt = T / N_Riccati
     coefficient = dt ** (H + 0.5) / math.gamma(H + 2.5)
@@ -71,7 +70,7 @@ def characteristic_function(a, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=
         fractional_weights[-1] = 0.5*temporary_weights[-1]
         fractional_integral = np.dot(fractional_weights, h)
         integral = np.trapz(h, dx=dt)
-        res[i] = np.exp(theta*lambda_*integral + V_0*fractional_integral)
+        res[i] = np.exp(theta*integral + V_0*fractional_integral)
     return res
 
 
