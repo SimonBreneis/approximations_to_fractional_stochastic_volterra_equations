@@ -1,5 +1,3 @@
-import time
-import matplotlib.pyplot as plt
 import mpmath as mp
 import numpy as np
 import scipy
@@ -8,7 +6,7 @@ import ComputationalFinance as cf
 import RoughKernel as rk
 
 
-def sqrt_cov_matrix_rBergomi_AK_mpmath(dt=1., nodes=None):
+def sqrt_cov_matrix_mpmath(dt, nodes):
     """
     Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
     Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
@@ -35,7 +33,7 @@ def sqrt_cov_matrix_rBergomi_AK_mpmath(dt=1., nodes=None):
     return mp.cholesky(cov_matrix)
 
 
-def sqrt_cov_matrix_rBergomi_AK(dt=1., nodes=None):
+def sqrt_cov_matrix(dt, nodes):
     """
     Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
     Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
@@ -48,7 +46,7 @@ def sqrt_cov_matrix_rBergomi_AK(dt=1., nodes=None):
     :param nodes: The nodes of the quadrature rule approximation
     :return: The Cholesky decomposition of the above covariance matrix
     """
-    cov_root_mp = sqrt_cov_matrix_rBergomi_AK_mpmath(dt, nodes)
+    cov_root_mp = sqrt_cov_matrix_mpmath(dt, nodes)
     num = len(nodes) + 1
     cov_root = np.empty(shape=(num, num))
     for i in range(0, num):
@@ -57,7 +55,7 @@ def sqrt_cov_matrix_rBergomi_AK(dt=1., nodes=None):
     return cov_root
 
 
-def rBergomi_AK_variance_integral(nodes, weights, t):
+def variance_integral(nodes, weights, t):
     """
     Computes an integral that appears in the rBergomi approximation that is inspired by Alfonsi and Kebaier. Computes
     the integral int_0^t ( sum_i w_i exp(-x_i (t-s)) )^2 ds. Takes a vector in t. May take as an input mpmath elements,
@@ -84,54 +82,7 @@ def rBergomi_AK_variance_integral(nodes, weights, t):
     return result
 
 
-def plot_rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, m=1, n=10, a=1., b=1.):
-    """
-    Plots a path of the rough Bergomi model together with the variance process (approximation inspired by Alfonsi and
-    Kebaier, with discretization points taken from Harms).
-    :param H: Hurst parameter
-    :param T: Final time
-    :param N_time: Number of time discretization steps
-    :param eta:
-    :param V_0: Initial variance
-    :param S_0: Initial stock price
-    :param rho: Correlation between the Brownian motions driving the variance process and the stock price
-    :param m: Order of the quadrature rule
-    :param n: Number of intervals in the quadrature rule
-    :param a: Can shift the left end-point of the total interval of the quadrature rule
-    :param b: Can shift the right end-point of the total interval of the quadrature rule
-    :return: Nothing, plots a realization of the stock price and the volatility
-    """
-    dt = T / N_time
-    quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
-    nodes = quad_rule[0, :]
-    weights_mp = quad_rule[1, :]
-    sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes)
-    weights = np.array([float(weight) for weight in weights_mp])
-    W_1_diff = sqrt_cov.dot(np.random.normal(0., 1., size=(m * n + 1, N_time)))
-    eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
-        H + 0.5)  # the sqrt is in the model, the Gamma takes care of the c_H in the weights of the quadrature rule
-    exp_vector = np.exp(np.array([-float(node) * dt for node in nodes]))
-    W_1_fBm = np.zeros(shape=(m * n, N_time + 1))
-    for i in range(1, N_time + 1):
-        W_1_fBm[:, i] = exp_vector * W_1_fBm[:, i - 1] + W_1_diff[:-1, i - 1]
-    W_1_fBm = eta_transformed * np.dot(weights, W_1_fBm)
-    W_1_diff = W_1_diff[-1, :]
-    times = np.arange(N_time + 1) * dt
-    variances = eta_transformed ** 2 / 2 * rBergomi_AK_variance_integral(nodes, weights, times)
-    V = V_0 * np.exp(W_1_fBm - variances)
-    W_2_diff = np.sqrt(dt) * np.random.normal(0, 1, size=N_time)
-    S = np.empty(shape=(N_time + 1,))
-    S[0] = S_0
-    for i in range(1, N_time + 1):
-        S[i] = S[i - 1] * np.exp(
-            np.sqrt(V[i - 1]) * (rho * W_1_diff[i - 1] + np.sqrt(1 - rho ** 2) * W_2_diff[i - 1]) - V[i - 1] / 2 * dt)
-    plt.plot(times, V)
-    plt.plot(times, S)
-    plt.show()
-
-
-def rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, m=1, n=10, a=1., b=1., M=1000,
-                rounds=1):
+def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1., rounds=1):
     """
     Computes M final stock prices of an approximation of the rough Bergomi model (approximation inspired by Alfonsi and
     Kebaier, with discretization points taken from Harms).
@@ -142,29 +93,25 @@ def rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     :param V_0: Initial variance
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the variance process and the stock price
-    :param m: Order of the quadrature rule
-    :param n: Number of intervals in the quadrature rule
-    :param a: Can shift the left end-point of the total interval of the quadrature rule
-    :param b: Can shift the right end-point of the total interval of the quadrature rule
+    :param nodes: The nodes of the approximation
+    :param weights: The weights of the approximation
     :param M: Number of final stock prices
     :param rounds: Actually computes M*rounds samples, but only M at a time to avoid excessive memory usage.
     :return: An array containing the final stock prices
     """
     dt = T / N_time
-    quad_rule = rk.quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
-    nodes = quad_rule[0, :]
-    weights = quad_rule[1, :]
-    sqrt_cov = sqrt_cov_matrix_rBergomi_AK(dt, nodes[:-1])
+    sqrt_cov = sqrt_cov_matrix(dt, nodes[:-1])
     weights = np.array([float(weight) for weight in weights])
     exp_vector = np.exp(-dt * np.array([float(node) for node in nodes]))
     eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
         H + 0.5)  # the sqrt is in the model, the Gamma takes care of the c_H in the weights of the quadrature rule
-    variances = eta_transformed ** 2 / 2 * rBergomi_AK_variance_integral(nodes, weights, np.arange(N_time) * dt)
+    variances = eta_transformed ** 2 / 2 * variance_integral(nodes, weights, np.arange(N_time) * dt)
     S = np.empty(shape=(M * rounds))
     for rd in range(rounds):
-        W_1_diff = np.array([sqrt_cov.dot(np.random.normal(0., 1., size=(m * n + 1, N_time))) for _ in range(M)])
-        # W_1_diff = np.transpose(sqrt_cov.dot(np.random.normal(0., 1., size=(M, m*n+1, N_time))), [1, 0, 2]) is slower
-        W_1_fBm = np.zeros(shape=(M, m * n + 1, N_time))
+        W_1_diff = np.array([sqrt_cov.dot(np.random.normal(0., 1., size=(len(nodes), N_time))) for _ in range(M)])
+        # W_1_diff = np.transpose(sqrt_cov.dot(np.random.normal(0, 1, size=(M, len(nodes), N_time))), [1, 0, 2])
+        # is slower
+        W_1_fBm = np.zeros(shape=(M, len(nodes), N_time))
         for i in range(N_time-1):
             W_1_fBm[:, :, i+1] = exp_vector * W_1_fBm[:, :, i] + W_1_diff[:, :, i]
         W_1_fBm = eta_transformed * np.dot(weights, W_1_fBm)
@@ -174,8 +121,8 @@ def rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     return S
 
 
-def implied_volatility_call_rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., m=1, n=10,
-                                        N=10, a=1., b=1., M=1000, rounds=1, mode="observation"):
+def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., N=10, M=1000,
+                       rounds=1, mode="observation"):
     """
     Computes the implied volatility of the European call option under the rough Bergomi model, using the approximation
     inspired by Alfonsi and Kebaier.
@@ -187,22 +134,15 @@ def implied_volatility_call_rBergomi_AK(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the volatility and the stock
     :param K: The strike price
-    :param m: Order of the quadrature rule
-    :param n: Number of intervals in the quadrature rule
     :param N: Total number of points in the quadrature rule, N=n*m
-    :param a: Can be used to shift the left endpoint of the total quadrature interval
-    :param b: Can be used to shift the right endpoint of the total quadrature interval
     :param M: Number of samples
     :param rounds: Actually uses M*rounds samples, but only m at a time to avoid excessive memory usage
     :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
-    theorem. If actual, use the values that have been specified.
+    theorem.
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
-    if mode != "actual":
-        [m, n, a, b] = rk.get_parameters(H, N, T, mode)
-    tic = time.perf_counter()
-    samples = rBergomi_AK(H, T, N_time, eta, V_0, S_0, rho, m, n, a, b, M, rounds)
-    toc = time.perf_counter()
-    print(f"Generating {M * rounds} approximate rBergomi samples with N={N_time} and n*m={n * m} takes "
-          f"{np.round(toc - tic, 2)} seconds.")
+    quad_rule = rk.quadrature_rule_geometric_good(H, N, T, mode)
+    nodes = quad_rule[0, :]
+    weights = quad_rule[1, :]
+    samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0, rounds)
     return cf.volatility_smile_call(samples, K, T, S_0)

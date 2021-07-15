@@ -164,16 +164,20 @@ def fourier_transform_payoff(K, u):
     return np.exp(np.log(K)*(1+j*u))/(j*u*(1+j*u))
 
 
-def pricing_fourier_inversion(mgf, K, R=2, L=1000., N=1000**2):
+def pricing_fourier_inversion(mgf, K, R=2., L=1000., N=1000**2):
     """
     Computes the option price using Fourier inversion.
     :param mgf: The moment generating function of the final log-price
     :param R: The (dampening) shift that we use
-    :param K: The strike price
+    :param K: The strike prices, assumed to be a vector
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
     u = -L + np.arange(N+1)*2*L/N
-    values = mgf(R-complex(0, 1)*u)*fourier_transform_payoff(K, u + complex(0, 1)*R)
-    return np.real(1/(2*np.pi) * np.trapz(values, dx=2*L/N))
+    mgf_values = mgf(R-complex(0, 1)*u)
+    prices = np.zeros(len(K))
+    for i in range(len(K)):
+        values = mgf_values*fourier_transform_payoff(K[i], u + complex(0, 1)*R)
+        prices[i] = np.real(1/(2*np.pi) * np.trapz(values, dx=2*L/N))
+    return prices
