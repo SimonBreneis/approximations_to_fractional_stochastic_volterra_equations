@@ -191,7 +191,7 @@ def quadrature_rule_geometric_mpmath(H, m, n, a, b, T=1.):
     """
     w_0 = error_estimate_fBm(H, m, n, a, b, T)[1]
     mp.mp.dps = int(np.fmax(a+b + 50, 50))
-    partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(0, n + 1)])
+    partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(n + 1)])
     rule = mp.matrix(2, m*n+1)
     rule[0, m*n] = mp.mpf(0)
     rule[1, m*n] = mp.mpf(w_0)

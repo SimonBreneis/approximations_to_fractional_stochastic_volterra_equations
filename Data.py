@@ -123,7 +123,7 @@ fBm_errors_reg_bound = [1.307860, 1.041449, 0.874442, 0.754638, 0.589374, 0.4785
 fBm_errors_Harms_1 = [np.nan, 1.408506, 1.355444, 1.318878, 1.269295, 1.235692, 1.200116, 1.160442, 1.124180, 1.092909,
                       1.062220, 1.032075, 1.003400, 0.976870, 0.951093, 0.926378, 0.902669, 0.879856, 0.857899,
                       0.836708]
-fBm_errors_Harms_10 = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0.996490, np.nan, 0.836713, 0.632356, 0.521569,
+fBm_errors_Harms_10 = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0.836713, 0.632356, 0.521569,
                        0.398268, 0.304157, 0.238136, 0.191739, 0.150077, 0.120818, 0.095788, 0.076117, 0.060342]
 fBm_errors_AK = [1.093956, 1.038641, 1.008279, 0.987654, 0.959794, 0.940801, 0.920437, 0.897258, 0.875517, 0.856277,
                  0.836913, 0.817406, 0.798393, 0.780402, 0.762558, 0.745117, 0.728091, 0.711447, 0.695196, 0.679308]
@@ -148,8 +148,8 @@ def plot_fBm_errors():
 
     plt.loglog(fBm_n[0], fBm_errors_thm, 'b-', label="Theorem")
     plt.loglog(fBm_n[0], fBm_errors_bound, 'b--', label="Bound")
-    plt.loglog(fBm_n[0], fBm_errors_opt_1, 'r-', label="Optimal xi, same m")
-    plt.loglog(fBm_n[0], fBm_errors_opt_2, 'g-', label="Optimal xi and m")
+    plt.loglog(fBm_n[0], fBm_errors_opt_1, 'r-', label=r"Optimal $\xi$, same m")
+    plt.loglog(fBm_n[0], fBm_errors_opt_2, 'g-', label=r"Optimal $\xi$ and m")
     plt.legend(loc="lower left")
     plt.xlabel("Number of nodes N")
     plt.ylabel("Error")
@@ -159,7 +159,7 @@ def plot_fBm_errors():
     plt.loglog(fBm_n[0], fBm_errors_bound, 'b--', label="Theorem bound")
     plt.loglog(fBm_n[0], fBm_errors_reg, 'r-', label="Estimates")
     plt.loglog(fBm_n[0], fBm_errors_reg_bound, 'r--', label="Estimates bound")
-    plt.loglog(fBm_n[0], fBm_errors_opt_2, 'g-', label="Optimal xi and m")
+    plt.loglog(fBm_n[0], fBm_errors_opt_2, 'g-', label=r"Optimal $\xi$ and m")
     plt.legend(loc="upper right")
     plt.xlabel("Number of nodes")
     plt.ylabel("Error")
@@ -170,7 +170,7 @@ def plot_fBm_errors():
     plt.loglog(fBm_n[0], fBm_errors_Harms_10, 'm-', label="Harms, m=10")
     plt.loglog(fBm_n[0], fBm_errors_thm, 'b-', label="Theorem")
     plt.loglog(fBm_n[0], fBm_errors_reg, 'r-', label="Estimates")
-    plt.loglog(fBm_n[0], fBm_errors_opt_2, 'g-', label="Optimal xi and m")
+    plt.loglog(fBm_n[0], fBm_errors_opt_2, 'g-', label=r"Optimal $\xi$ and m")
     plt.legend(loc="lower left")
     plt.xlabel("Number of nodes")
     plt.ylabel("Error")
@@ -727,16 +727,16 @@ rBergomi_AK_16 = np.array([0.30371212, 0.30157470, 0.29943079, 0.29728268, 0.295
                            0.15722911])
 
 rBergomi_Harms_8_16 = np.array([0.29133591, 0.28970038, 0.28805877, 0.28641074, 0.28475876, 0.28309352,
-                        0.28142104, 0.27974161, 0.27805547, 0.27636271, 0.27466345, 0.27295576,
-                        0.27123737, 0.26951191, 0.26778095, 0.26603849, 0.26428380, 0.26252040,
-                        0.26075058, 0.25897655, 0.25720139, 0.25541391, 0.25361976, 0.25181598,
-                        0.25000329, 0.24818233, 0.24635593, 0.24451796, 0.24266937, 0.24080880,
-                        0.23893800, 0.23705793, 0.23516849, 0.23326658, 0.23135528, 0.22943290,
-                        0.22749953, 0.22555657, 0.22360830, 0.22165055, 0.21968262, 0.21770245,
-                        0.21571000, 0.21370584, 0.21168755, 0.20965704, 0.20761593, 0.20556579,
-                        0.20350155, 0.20142772, 0.19934538, 0.19724831, 0.19513755, 0.19301577,
-                        0.19088036, 0.18873390, 0.18657440, 0.18440176, 0.18221648, 0.18002737,
-                        0.17782914])
+                                0.28142104, 0.27974161, 0.27805547, 0.27636271, 0.27466345, 0.27295576,
+                                0.27123737, 0.26951191, 0.26778095, 0.26603849, 0.26428380, 0.26252040,
+                                0.26075058, 0.25897655, 0.25720139, 0.25541391, 0.25361976, 0.25181598,
+                                0.25000329, 0.24818233, 0.24635593, 0.24451796, 0.24266937, 0.24080880,
+                                0.23893800, 0.23705793, 0.23516849, 0.23326658, 0.23135528, 0.22943290,
+                                0.22749953, 0.22555657, 0.22360830, 0.22165055, 0.21968262, 0.21770245,
+                                0.21571000, 0.21370584, 0.21168755, 0.20965704, 0.20761593, 0.20556579,
+                                0.20350155, 0.20142772, 0.19934538, 0.19724831, 0.19513755, 0.19301577,
+                                0.19088036, 0.18873390, 0.18657440, 0.18440176, 0.18221648, 0.18002737,
+                                0.17782914])
 
 
 def plot_rBergomi_smiles():
