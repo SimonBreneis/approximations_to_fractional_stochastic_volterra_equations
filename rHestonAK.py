@@ -63,7 +63,7 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T, N_Riccati=1000, R=2
     for i in range(len(nodes) - 1):
         for t in range(len(times)):
             g[t] += weights[i] / nodes[i] * (1 - mp.exp(-nodes[i] * times[t]))
-    g = theta * (g + weights[-1] * times) + V_0
+    g = theta * (g + weights[len(weights)-1] * times) + V_0
 
     exp_nodes = mp.matrix([mp.exp(-nodes[j] * dt) for j in range(len(nodes))])
     div_nodes = np.zeros(len(nodes))
