@@ -25,15 +25,3 @@ for N in [1, 2, 3, 4, 5, 6, 7, 8]:
     toc = time.perf_counter()
     print(approximated_heston)
     print(f"Generating the approximated smile with N={N} took {toc-tic} seconds.")
-    #error_int = np.sqrt(np.sum((true_heston - approximated_heston)**2))
-    #print(f"Error: {error_int}")
-    '''
-    print("Approximation with N nodes, AE scheme:")
-    tic = time.perf_counter()
-    approximated_heston_AE = rHestonAK.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02, T=1., N=N, mode="AE")
-    toc = time.perf_counter()
-    print(approximated_heston)
-    print(f"Generating the approximated smile with N={N} took {toc - tic} seconds.")
-    error_int = np.sqrt(np.sum((true_heston - approximated_heston) ** 2))
-    print(f"Error: {error_int}")
-    '''

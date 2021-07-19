@@ -22,10 +22,10 @@ def sqrt_cov_matrix_mpmath(dt, nodes):
     k = len(nodes)
     mp.mp.dps = int(np.amax(np.array([20., k ** 2, mp.mp.dps])))
     cov_matrix = mp.matrix(k + 1, k + 1)
-    for i in range(0, k):
-        for j in range(0, k):
+    for i in range(k):
+        for j in range(k):
             cov_matrix[i, j] = (1 - mp.exp(-dt * (nodes[i] + nodes[j]))) / (nodes[i] + nodes[j])
-    for i in range(0, k):
+    for i in range(k):
         entry = (1 - mp.exp(-dt * nodes[i])) / nodes[i]
         cov_matrix[k, i] = entry
         cov_matrix[i, k] = entry
@@ -49,8 +49,8 @@ def sqrt_cov_matrix(dt, nodes):
     cov_root_mp = sqrt_cov_matrix_mpmath(dt, nodes)
     num = len(nodes) + 1
     cov_root = np.empty(shape=(num, num))
-    for i in range(0, num):
-        for j in range(0, num):
+    for i in range(num):
+        for j in range(num):
             cov_root[i, j] = float(cov_root_mp[i, j])
     return cov_root
 
