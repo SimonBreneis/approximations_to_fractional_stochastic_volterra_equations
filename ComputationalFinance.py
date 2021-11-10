@@ -46,7 +46,7 @@ def BS_d2(S=1., K=1., sigma=1., r=0., T=1.):
     :param T: Final time
     :return: The second node
     """
-    return BS_d1(S, K, sigma, r, T) - sigma * np.sqrt(T)
+    return (np.log(S / K) + (r - sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
 
 
 def BS_call_price(S=1., K=1., sigma=1., r=0., T=1.):

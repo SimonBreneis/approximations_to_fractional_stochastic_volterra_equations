@@ -1649,7 +1649,7 @@ def rHeston_smiles_precise():
     plt.show()
 
     def relative_error(x, y):
-        return np.abs((x-y)/x)
+        return np.abs((x - y) / x)
 
     plt.plot(k_rrHeston[80:], relative_error(rrHeston[80:], rrHeston_1[80:]), label="N=1")
     plt.plot(k_rrHeston[80:], relative_error(rrHeston[80:], rrHeston_2[80:]), label="N=2")
