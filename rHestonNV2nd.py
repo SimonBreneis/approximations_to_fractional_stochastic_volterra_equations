@@ -55,9 +55,7 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     """
     dt = T/N_time
     log_S = mp.log(S_0)
-    rule = rk.quadrature_rule_geometric_good(H, N, T, mode)
-    nodes = rule[0, :]
-    weights = rule[1, :]
+    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
     N = len(nodes)
     weight_sum = mp.fsum(weights)
     # print(f"weight_sum: {weight_sum}")
@@ -134,7 +132,7 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
         V = solve_drift_ODE(V)
         S_values[i] = float(log_S)
         V_values[i] = float(mp.fdot(weights, V))
-        V_components[:, i] = np.array([float(v) for v in V])
+        V_components[:, i] = rk.mp_to_np(V)
 
     return np.exp(S_values), V_values, V_components
 
@@ -156,9 +154,7 @@ def get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode
     """
     dt = T/N_time
     log_S = np.log(S_0)
-    rule = rk.quadrature_rule_geometric_good(H, N, T, mode)
-    nodes = rule[0, :]
-    weights = rule[1, :]
+    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
     N = len(nodes)
     weight_sum = mp.fsum(weights)
     V = mp.matrix([V_0/(N*weight) for weight in weights])
@@ -170,9 +166,9 @@ def get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode
 
     weight_sum = float(weight_sum)
     V = np.array([[float(v) for _ in range(m)] for v in V])
-    weights = np.array([float(weight) for weight in weights])
-    eAt = np.array([[float(eAt[i, j]) for j in range(eAt.cols)] for i in range(eAt.rows)])
-    Ainv_eAt_id_b = np.array([float(x) for x in Ainv_eAt_id_b])
+    weights = rk.mp_to_np(weights)
+    eAt = rk.mp_to_np(eAt)
+    Ainv_eAt_id_b = rk.mp_to_np(Ainv_eAt_id_b)
 
     def solve_drift_ODE(V):
         """
@@ -283,9 +279,7 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_time=1000, mo
     theorem.
     return: The price of the call option
     """
-    rule = rk.quadrature_rule_geometric_good(H, N, T, mode)
-    nodes = rule[0, :]
-    weights = rule[1, :]
+    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N_time=N_time,
                   nodes=nodes, weights=weights)
     return cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)

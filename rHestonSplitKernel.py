@@ -2,6 +2,125 @@ import numpy as np
 import ComputationalFinance as cf
 import RoughKernel as rk
 import mpmath as mp
+from scipy.optimize import fsolve
+import matplotlib.pyplot as plt
+
+
+def solve_Riccati_high_mean_reversion(u, nodes, weights, lambda_, nu, N_Riccati=10, T=0.1, adaptive=True):
+    N = len(nodes)
+    if not adaptive:
+        dt = T/N_Riccati*np.ones(N_Riccati)
+    else:
+        dt = []
+        timescale = 0
+        for i in range(N):
+            prev_timescale = timescale
+            timescale = np.fmin(10/nodes[-i-1], T)
+            if timescale > prev_timescale:
+                dt = dt + [(timescale - prev_timescale) / (10 * N_Riccati)] * (10 * N_Riccati)
+        dt = np.array(dt)
+    print(len(dt))
+
+    psis = np.zeros((2*N, len(dt)+1))
+    psi = np.zeros((2, len(dt)+1))
+    u_r = u.real
+    u_i = u.imag
+
+    time_elapsed = 0.
+    for i in range(len(dt)):
+
+        def eq(p):
+            p_r = p[:N]
+            p_i = p[N:]
+            psi[0, i+1] = np.dot(weights, p_r)
+            psi[1, i+1] = np.dot(weights, p_i)
+            result = p - psis[:, i]
+            result[:N] += - u_r*(np.exp(-nodes*time_elapsed) - np.exp(-nodes*(time_elapsed+dt[i]))) + nodes*p_r*dt[i] + lambda_*psi[0, i+1]*dt[i] - nu**2*(psi[0, i+1]**2 - psi[1, i+1]**2)*dt[i]/2
+            result[N:] += - u_i*(np.exp(-nodes*time_elapsed) - np.exp(-nodes*(time_elapsed+dt[i]))) + nodes*p_i*dt[i] + lambda_*psi[1, i+1]*dt[i] - nu**2*psi[0, i+1]*psi[1, i+1]*dt[i]
+            return result
+
+        def der(p):
+            p_r = p[:N]
+            p_i = p[N:]
+            psi[0, i + 1] = np.dot(weights, p_r)
+            psi[1, i + 1] = np.dot(weights, p_i)
+            result = np.eye(2*N)
+            result[:N, :N] += np.diag(nodes*dt[i])
+            result[N:, N:] += np.diag(nodes*dt[i])
+            temp = weights*dt[i]
+            temp = np.repeat(temp[..., None], N, axis=1)
+            result[:N, :N] += temp*lambda_
+            result[N:, N:] += temp*lambda_
+            result[:N, :N] -= nu**2*psi[0, i+1]*temp
+            result[N:, :N] += nu**2*psi[1, i+1]*temp
+            result[N:, N:] -= 2*nu**2*psi[0, i+1]*temp
+            result[:N, N:] -= 2*nu**2*psi[1, i+1]*temp
+            return result
+
+        psis[:, i+1] = fsolve(func=eq, x0=psis[:, i], fprime=der, col_deriv=True)
+        time_elapsed += dt[i]
+
+    times = np.zeros(len(dt)+1)
+    times[1:] = np.cumsum(dt)
+    return times, psi
+
+
+def psi_integrals(t, psi):
+    real_1 = np.trapz(psi[0, :], x=t)
+    imag_1 = np.trapz(psi[1, :], x=t)
+    real_2 = np.trapz(psi[0, :]**2 - psi[1, :]**2, x=t)
+    imag_2 = np.trapz(psi[0, :]*psi[1, :], x=t)
+    return real_1 + imag_1*1j, real_2 + imag_2*1j
+
+
+def multiple_psi_integrals(us, nodes, weights, lambda_, nu, T=0.1, N_Riccati=10, adaptive=True):
+    integrals = np.empty((2, len(us)), dtype=np.complex_)
+    for i in range(len(us)):
+        print(f'{i} of {len(us)}')
+        ints = psi_integrals(*solve_Riccati_high_mean_reversion(us[i], nodes, weights, lambda_, nu, N_Riccati, T, adaptive))
+        integrals[0, i] = ints[0]
+        integrals[1, i] = ints[1]
+    return integrals
+
+
+def chararacteristic_function_high_mean_reversion(us, p, nodes, weights, lambda_, nu, theta, T=0.1, N_Riccati=10, adaptive=True):
+    ints = multiple_psi_integrals(us, nodes, weights, lambda_, nu, T, N_Riccati, adaptive)
+    return ints[0, :]*(theta-lambda_*p) + ints[1, :]*nu**2*p/2
+
+
+def regress_for_varying_p(us=np.linspace(-5, 5, 101), ps=np.array([0., 0.01, 0.1, 1.]), H=0.1, N=6, lambda_=0.3, nu=0.3, theta=0.02, T=1, N_Riccati=10, reversion_cutoff=100, adaptive=True):
+    nodes, weights = rk.quadrature_rule_geometric_good(H, N)
+    nodes = rk.mp_to_np(nodes)
+    weights = rk.mp_to_np(weights)
+    nodes = nodes[:-1]
+    weights = weights[:-1]
+    i = np.sum(nodes < reversion_cutoff)
+    nodes = nodes[i:]
+    weights = weights[i:]
+    T = 10/np.amin(nodes)
+
+    ints = multiple_psi_integrals(us*1j, nodes, weights, lambda_, nu, T, N_Riccati, adaptive)
+
+    for i in range(len(ps)):
+        cf = ints[0, :]*(theta-lambda_*ps[i]) + ints[1, :]*nu**2*ps[i]/2
+        cfr = cf.real
+        cfi = cf.imag
+        mu_ests = np.sum(us*cfi)/np.sum(us**2)
+        sigma_ests = np.sum(us**2 * cfr)/np.sum(us**4)
+        plt.plot(us, cfi, 'b-', label='imaginary part')
+        plt.plot(us, mu_ests*us, 'b--')
+        plt.plot(us, cfr, 'r-', label='real part')
+        plt.plot(us, sigma_ests*us**2, 'r--')
+        plt.legend(loc='best')
+        plt.xlabel(r'$u$')
+        plt.title(f'Logarithm of characteristic function, p={ps[i]}')
+        plt.show()
+    return
+
+
+
+
+
 
 
 def solve_Riccati(z, lambda_, rho, nu, exp_nodes, div_nodes, weights, N_Riccati=1000):
@@ -112,9 +231,7 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=1000,
     theorem.
     return: The price of the call option
     """
-    rule = rk.quadrature_rule_geometric_good(H, N, T, mode)
-    nodes = rule[0, :]
-    weights = rule[1, :]
+    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N_Riccati=N_Riccati, R=R, L=L,
                   N_fourier=N_fourier, nodes=nodes, weights=weights)
     return cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)

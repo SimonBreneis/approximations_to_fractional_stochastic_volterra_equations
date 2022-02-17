@@ -47,12 +47,7 @@ def sqrt_cov_matrix(dt, nodes):
     :return: The Cholesky decomposition of the above covariance matrix
     """
     cov_root_mp = sqrt_cov_matrix_mpmath(dt, nodes)
-    num = len(nodes) + 1
-    cov_root = np.empty(shape=(num, num))
-    for i in range(num):
-        for j in range(num):
-            cov_root[i, j] = float(cov_root_mp[i, j])
-    return cov_root
+    return rk.mp_to_np(cov_root_mp)
 
 
 def variance_integral(nodes, weights, t):
@@ -101,8 +96,8 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
     """
     dt = T / N_time
     sqrt_cov = sqrt_cov_matrix(dt, nodes[:-1])
-    weights = np.array([float(weight) for weight in weights])
-    exp_vector = np.exp(-dt * np.array([float(node) for node in nodes]))
+    weights = rk.mp_to_np(weights)
+    exp_vector = np.exp(-dt * rk.mp_to_np(nodes))
     eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
         H + 0.5)  # the sqrt is in the model, the Gamma takes care of the c_H in the weights of the quadrature rule
     variances = eta_transformed ** 2 / 2 * variance_integral(nodes, weights, np.arange(N_time) * dt)
@@ -141,8 +136,6 @@ def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1.
     theorem.
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
-    quad_rule = rk.quadrature_rule_geometric_good(H, N, T, mode)
-    nodes = quad_rule[0, :]
-    weights = quad_rule[1, :]
+    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
     samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0, rounds)
     return cf.volatility_smile_call(samples, K, T, S_0)

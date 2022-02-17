@@ -209,10 +209,13 @@ def quadrature_rule_geometric_good(H, N, T=1., mode="observation"):
     :param T: Final time
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
     parameters from the theorem.
-    :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
+    :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
     [m, n, a, b] = get_parameters(H, N, T, mode)
-    return quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
+    rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
+    nodes = rule[0, :]
+    weights = rule[1, :]
+    return nodes, weights
 
 
 def quadrature_rule_geometric(H, m, n, a, b, T=1.):
@@ -229,7 +232,7 @@ def quadrature_rule_geometric(H, m, n, a, b, T=1.):
     :return: All the nodes and weights, in the form [[node1, node2, ...], [weight1, weight2, ...]]
     """
     rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
-    return np.array([[float(rule[i, j]) for j in range(n*m+1)] for i in range(2)])
+    return mp_to_np(rule)
 
 
 def get_parameters(H, N, T, mode):
@@ -256,3 +259,18 @@ def get_parameters(H, N, T, mode):
     m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
     n = int(np.round(N / m))
     return m, n, a, b
+
+
+def mp_to_np(x):
+    """
+    Converts a mpmath matrix to a numpy array.
+    :param x: The mpmath matrix to convert
+    return: The converted numpy array.
+    """
+    y = np.array(x.tolist())
+    shape = y.shape
+    y = y.flatten()
+    y = np.array([float(z) for z in y])
+    if len(shape) == 2 and (shape[0] == 1 or shape[1] == 1):
+        return y
+    return y.reshape(shape)

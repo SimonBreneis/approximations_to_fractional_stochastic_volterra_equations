@@ -1,278 +1,142 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-import Data
+# import Data
 import ComputationalFinance as cf
-import rBergomiBFG
-import rBergomiAK
+import Data
+import rBergomi
+import rBergomiMarkov
 import rHeston
-import rHestonAK
+import rHestonMarkov
 import RoughKernel as rk
 import rHestonNinomiyaVictoir as nv
 import rHestonNV2nd as nv2
 import mpmath as mp
 import rHestonImplicitEuler as ie
+import rHestonSplitKernel as sk
 
 
-A = -mp.matrix([[1.2, 0.1, 0.3, 0.2], [0.2, 2.1, 0.3, 0.2], [0.2, 0.1, 3.3, 0.2], [0.2, 0.1, 0.3, 4.2]])
-print(mp.expm(A))
-print(nv.exp_matrix(mp.eig(A)))
+nodes, weights = rk.quadrature_rule_geometric_good(0.1, 6)
+nodes = rk.mp_to_np(nodes)
+weights = rk.mp_to_np(weights)
+nodes = nodes[:-1]
+weights = weights[:-1]
+i = np.sum(nodes < 200)
+nodes = nodes[i:]
+weights = weights[i:]
+print(nodes)
 
-print("--------------------------------------------------------")
-
-b = mp.matrix([1., 2.5, -2., 0.2])
-print(nv.ODE_drift(mp.eig(A), b))  # A^{-1} (exp(A) - Id) b
-print(mp.inverse(A) * (mp.expm(A) - mp.eye(4)) * b)
-
-print("--------------------------------------------------------")
-
-weights = mp.matrix([0.2, 0.5, 1., 2.])
-print(nv.ODE_S_drift(mp.eig(A), b, weights.T))  # w/2 cdot (A^{-2} exp(A) b  - A^{-2} b - A^{-1} b)
-print(mp.fdot(weights/2, mp.inverse(A) * (mp.inverse(A) * mp.expm(A) * b - mp.inverse(A) * b - b)))
-
-print("--------------------------------------------------------")
-
-print(nv.ODE_S_mult(mp.eig(A), weights.T))  # w/2 cdot A^{-1} exp(A)
-print((mp.inverse(A) * mp.expm(A)).T * weights/2)
-
-'''
-Diagonalization tests
-nodes = mp.matrix([1., 2., 3., 4.])
-weights = mp.matrix([0.2, 0.1, 0.3, 0.2])
-A = -mp.matrix([[1.2, 0.1, 0.3, 0.2], [0.2, 2.1, 0.3, 0.2], [0.2, 0.1, 3.3, 0.2], [0.2, 0.1, 0.3, 4.2]])
-D, U = mp.eig(A)
-for i in range(4):
-    U[:, i] = U[:, i]/mp.norm(U[:, i])
-eigvalues, eigvectors = nv.diagonalize(nodes, weights, 1.)
-
-A_1 = mp.zeros(4)
-for i in range(4):
-    A_1[:, i] = mp.lu_solve(U.T, ((U*mp.diag(D)).T)[:, i])
-A_1 = A_1.T
-# print(A_1)
-A_2 = mp.zeros(4)
-for i in range(4):
-    A_2[:, i] = mp.lu_solve(eigvectors.T, ((eigvectors*mp.diag(eigvalues)).T)[:, i])
-A_2 = A_2.T
-# print(A_2)
-
-# for i in range(4):
-#     print(A * eigvectors[:, i] - eigvalues[i] * eigvectors[:, i])
-
-
-print(mp.norm(A - A_1))
-print(mp.norm(A - A_2))
-
-N = 50
-rule = rk.quadrature_rule_geometric_good(0.1, N-1)
-nodes = rule[0, :]
-weights = rule[1, :]
-N = len(nodes)
-print(N)
-print(mp.eps)
-A = -mp.diag(nodes) - mp.matrix([[w for w in weights] for _ in range(N)])
-D, U = mp.eig(A)
-print(D)
-for i in range(N):
-    U[:, i] = U[:, i]/mp.norm(U[:, i])
-# eigvalues, eigvectors = nv.diagonalize(nodes, weights, 1.)
-
-A_1 = mp.zeros(N)
-for i in range(N):
-    A_1[:, i] = mp.lu_solve(U.T, ((U*mp.diag(D)).T)[:, i])
-A_1 = A_1.T
-# print(A_1)
-
-print(mp.norm(A - A_1))
-
-
-time.sleep(3600)
-'''
-
-print("rule:")
-print(rk.quadrature_rule_geometric_good(0.1, 1, 1.))
-
-K = np.linspace(0.7, 1.2, 150)
-k = np.log(K)
-H, lambda_, rho, nu, theta, V_0, T, N = 0.49, 0.3, -0.7, 0.3, 0.02, 0.02, 1., 3
-smile, lower, upper = nv2.calll(K, H, lambda_, rho, nu, theta, V_0, T, N, m=100000, N_time=1000)
-s = rHestonAK.implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N)
-plt.plot(k, s, label="Fourier inversion")
-plt.plot(k, smile, label="Ninomiya-Victoir")
-plt.plot(k, lower, 'k--', label="confidence interval")
-plt.plot(k, upper, 'k--')
-plt.legend(loc="upper right")
-plt.show()
-time.sleep(3600)
-
-N_time = 100000
-S, V, V_comp = nv2.get_sample_path(0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1., 6, N_time=N_time)
-# plt.plot(np.linspace(0, 1, 1001), S, label="stock price")
-plt.plot(np.linspace(0, 1, N_time+1), np.sqrt(V), label="sqrt volatility")
-plt.plot(np.linspace(0, 1, N_time+1), np.sqrt(0.02)*np.ones(N_time+1), "k--", label="sqrt(0.02) (mean reversion level of var)")
-plt.plot(np.linspace(0, 1, N_time+1), V_comp[-1, :], label="low mean reversion")
-plt.plot(np.linspace(0, 1, N_time+1), V_comp[-2, :], label="high mean reversion")
-plt.plot(np.linspace(0, 1, N_time+1), S, label="stock price")
-plt.legend(loc="upper left")
+T = 10/np.amin(nodes)
+N_Riccati = 2000
+times, psi = sk.solve_Riccati_high_mean_reversion(2j, nodes, weights, lambda_=0.3, nu=0.3, N_Riccati=10, T=T, adaptive=True)
+plt.plot(times, psi[0, :], label='real part')
+plt.plot(times, psi[1, :], label='imaginary part')
+plt.legend(loc='best')
+plt.xlabel('t')
+plt.ylabel(r'$\psi(t)$')
 plt.show()
 
-N_time = 100000
-S, V, V_comp = nv.get_sample_path(0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1., 1, N_time=N_time)
-# plt.plot(np.linspace(0, 1, 1001), S, label="stock price")
-plt.plot(np.linspace(0, 1, N_time+1), np.sqrt(V), label="sqrt volatility")
-plt.plot(np.linspace(0, 1, N_time+1), np.sqrt(0.02)*np.ones(N_time+1), "k--", label="sqrt(0.02) (mean reversion level of var)")
-plt.plot(np.linspace(0, 1, N_time+1), V_comp[-1, :], label="low mean reversion")
-plt.plot(np.linspace(0, 1, N_time+1), V_comp[-2, :], label="high mean reversion")
-plt.legend(loc="upper left")
+'''
+true_psi = sk.solve_Riccati_high_mean_reversion(2j, nodes, weights, lambda_=0.3, nu=0.3, N_Riccati=1048576, T=T, adaptive=False)
+true_ints = sk.psi_integrals(true_psi, T)
+print(true_ints)
+N_Riccatis = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536])
+approx_ints = np.empty((2, len(N_Riccatis)), dtype=np.complex_)
+for i in range(len(N_Riccatis)):
+    approx_ints[:, i] = sk.psi_integrals(sk.solve_Riccati_high_mean_reversion(2j, nodes, weights, lambda_=0.3, nu=0.3, N_Riccati=N_Riccatis[i], T=T, adaptive=False), T)
+print(approx_ints)
+errors = np.array([[np.abs(approx_ints[i, j] - true_ints[i]) for j in range(len(N_Riccatis))] for i in range(2)])
+a1, b1, _, _, _ = Data.log_linear_regression(N_Riccatis, errors[0, :])
+a2, b2, _, _, _ = Data.log_linear_regression(N_Riccatis, errors[1, :])
+print(a1, b1)
+print(a2, b2)
+plt.loglog(N_Riccatis, errors[0, :], 'b-', label='error of the first moment')
+plt.loglog(N_Riccatis, b1*N_Riccatis**a1, 'b--')
+plt.loglog(N_Riccatis, errors[1, :], 'r-', label='error of the second moment')
+plt.loglog(N_Riccatis, b2*N_Riccatis**a2, 'r--')
+plt.legend(loc='best')
+plt.xlabel('Number of time steps')
+plt.ylabel('Error')
+plt.show()
+'''
+
+true_ints = sk.psi_integrals(*sk.solve_Riccati_high_mean_reversion(2j, nodes, weights, lambda_=0.3, nu=0.3, N_Riccati=1024, T=T, adaptive=True))
+print(true_ints)
+N_Riccatis = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256])
+approx_ints = np.empty((2, len(N_Riccatis)), dtype=np.complex_)
+for i in range(len(N_Riccatis)):
+    approx_ints[:, i] = sk.psi_integrals(*sk.solve_Riccati_high_mean_reversion(2j, nodes, weights, lambda_=0.3, nu=0.3, N_Riccati=N_Riccatis[i], T=T, adaptive=True))
+print(approx_ints)
+errors = np.array([[np.abs(approx_ints[i, j] - true_ints[i]) for j in range(len(N_Riccatis))] for i in range(2)])
+a1, b1, _, _, _ = Data.log_linear_regression(N_Riccatis, errors[0, :])
+a2, b2, _, _, _ = Data.log_linear_regression(N_Riccatis[4:], errors[1, 4:])
+print(a1, b1)
+print(a2, b2)
+plt.loglog(40*N_Riccatis, errors[0, :], 'b-', label='error of the first moment')
+plt.loglog(40*N_Riccatis, b1*N_Riccatis**a1, 'b--')
+plt.loglog(40*N_Riccatis, errors[1, :], 'r-', label='error of the second moment')
+plt.loglog(40*N_Riccatis, b2*N_Riccatis**a2, 'r--')
+plt.legend(loc='best')
+plt.xlabel('Number of time steps')
+plt.ylabel('Error')
 plt.show()
 
-K = np.linspace(0.7, 1.2, 150)
-k = np.log(K)
-H, lambda_, rho, nu, theta, V_0, T, N = 0.49, 0.3, -0.7, 0.3, 0.02, 0.02, 1., 3
-smile, lower, upper = nv.calll(K, H, lambda_, rho, nu, theta, V_0, T, N, m=100000, N_time=1000)
-# s = rHestonAK.implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N)
-# plt.plot(k, s, label="Fourier inversion")
-plt.plot(k, smile, label="Ninomiya-Victoir")
-plt.plot(k, lower, 'k--', label="confidence interval")
-plt.plot(k, upper, 'k--')
-plt.legend(loc="upper right")
+
+'''
+ints = sk.psi_integrals(psi, T)
+print(2j - 0.3*ints[0] + 0.3**2*ints[1]/2)
+us = np.linspace(-5, 5, 100)
+cf = sk.chararacteristic_function_high_mean_reversion(us*1j, 1., nodes, weights, lambda_=0.3, nu=0.3, theta=0.02, T=T, N_Riccati=N_Riccati)
+plt.plot(us, cf.real)
+plt.plot(us, cf.imag)
 plt.show()
-time.sleep(3600)
-
-print("Hello World!")
-Data.rHeston_smiles_precise()
-Data.plot_rBergomi_smiles()
-time.sleep(3600)
-
-
-K = np.exp(-1.3 + 0.01 * np.arange(161))
-print("True rough Heston:")
-tic = time.perf_counter()
-true_heston = rHeston.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02, T=0.01,
-                                         N_Riccati=3000, N_fourier=10000, L=50.)
-toc = time.perf_counter()
-print(true_heston)
-print(f"Generating the true smile took {toc - tic} seconds.")
-
-for N in [1, 2, 3, 4, 5, 6, 7, 8]:
-    print(f"Approximation with {N} nodes, our scheme:")
-    tic = time.perf_counter()
-    approximated_heston = rHestonAK.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02,
-                                                       T=0.01, N=N, N_Riccati=3000, N_fourier=10000, L=50.)
-    toc = time.perf_counter()
-    print(approximated_heston)
-    print(f"Generating the approximated smile with N={N} took {toc - tic} seconds.")
-
-
-
-
-
-
-
-
-
-
-
-import time
-import numpy as np
-import matplotlib.pyplot as plt
-import Data
-import ComputationalFinance as cf
-import rBergomiBFG
-import rBergomiAK
-import rHeston
-import rHestonAK
-import RoughKernel as rk
-import rHestonNinomiyaVictoir as nv
-import mpmath as mp
-
-print(np.repeat(np.array([[1], [2]]), 3, axis=1))
-import rHestonImplicitEuler as ie
-
-A = -mp.matrix([[1.2, 0.1, 0.3, 0.2], [0.2, 2.1, 0.3, 0.2], [0.2, 0.1, 3.3, 0.2], [0.2, 0.1, 0.3, 4.2]])
-print(mp.expm(A))
-print(nv.exp_matrix(mp.eig(A), 1.))
-
-print("--------------------------------------------------------")
-
-b = mp.matrix([1., 2.5, -2., 0.2])
-dt = 0.1
-print(nv.ODE_drift(mp.eig(A), b, dt / 2))  # A^{-1} (exp(A dt/2) - Id) b
-print(mp.inverse(A) * (mp.expm(A * dt / 2) - mp.eye(4)) * b)
-
-print("--------------------------------------------------------")
-
-weights = mp.matrix([0.2, 0.5, 1., 2.])
-print(nv.ODE_S_drift(mp.eig(A), b, dt / 2, weights.T))  # w/2 cdot (A^{-2} exp(A dt/2) b  - A^{-2} b - A^{-1} b dt/2)
-print(mp.fdot(weights / 2, mp.inverse(A) * (mp.inverse(A) * mp.expm(A * dt / 2) * b - mp.inverse(A) * b - b * dt / 2)))
-
-print("--------------------------------------------------------")
-
-print(nv.ODE_S_mult(mp.eig(A), dt / 2, weights.T))  # w/2 cdot A^{-1} exp(A dt/2)
-print((mp.inverse(A) * mp.expm(A * dt / 2)).T * weights / 2)
-
-'''
-Diagonalization tests
-nodes = mp.matrix([1., 2., 3., 4.])
-weights = mp.matrix([0.2, 0.1, 0.3, 0.2])
-A = -mp.matrix([[1.2, 0.1, 0.3, 0.2], [0.2, 2.1, 0.3, 0.2], [0.2, 0.1, 3.3, 0.2], [0.2, 0.1, 0.3, 4.2]])
-D, U = mp.eig(A)
-for i in range(4):
-    U[:, i] = U[:, i]/mp.norm(U[:, i])
-eigvalues, eigvectors = nv.diagonalize(nodes, weights, 1.)
-
-A_1 = mp.zeros(4)
-for i in range(4):
-    A_1[:, i] = mp.lu_solve(U.T, ((U*mp.diag(D)).T)[:, i])
-A_1 = A_1.T
-# print(A_1)
-A_2 = mp.zeros(4)
-for i in range(4):
-    A_2[:, i] = mp.lu_solve(eigvectors.T, ((eigvectors*mp.diag(eigvalues)).T)[:, i])
-A_2 = A_2.T
-# print(A_2)
-
-# for i in range(4):
-#     print(A * eigvectors[:, i] - eigvalues[i] * eigvectors[:, i])
-
-
-print(mp.norm(A - A_1))
-print(mp.norm(A - A_2))
-
-N = 50
-rule = rk.quadrature_rule_geometric_good(0.1, N-1)
-nodes = rule[0, :]
-weights = rule[1, :]
-N = len(nodes)
-print(N)
-print(mp.eps)
-A = -mp.diag(nodes) - mp.matrix([[w for w in weights] for _ in range(N)])
-D, U = mp.eig(A)
-print(D)
-for i in range(N):
-    U[:, i] = U[:, i]/mp.norm(U[:, i])
-# eigvalues, eigvectors = nv.diagonalize(nodes, weights, 1.)
-
-A_1 = mp.zeros(N)
-for i in range(N):
-    A_1[:, i] = mp.lu_solve(U.T, ((U*mp.diag(D)).T)[:, i])
-A_1 = A_1.T
-# print(A_1)
-
-print(mp.norm(A - A_1))
-
-
-time.sleep(3600)
 '''
 
+sk.regress_for_varying_p()
+time.sleep(360000)
+
 '''
+S, V, _ = ie.get_sample_path(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, vol_behaviour='multiple time scales')
+plt.plot(np.linspace(0, 1, 1001), S, label='stock price')
+plt.plot(np.linspace(0, 1, 1001), V, label='volatility')
+plt.xlabel('t')
+plt.title('Sample path of multiple time scales implementation')
+plt.show()
+
+Data.plot_rHeston_IE_smiles()
+
+S, V, _ = ie.get_sample_path(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, S_0=1., vol_behaviour='hyperplane reset')
+plt.plot(np.linspace(0, 1, 1001), S, label='stock price')
+plt.plot(np.linspace(0, 1, 1001), V, label='volatility')
+plt.xlabel('t')
+plt.title('Sample path of hyperplane reflection implementation')
+plt.show()
+'''
+
 K = np.exp(Data.k_rrHeston)
+N = 6
 tic = time.perf_counter()
-vol, lower, upper = ie.call(K, m=200000, bounce_vol=True)
+vol, lower, upper = ie.call(K, N=N, N_time=1000, m=200000, vol_behaviour='multiple time scales')
 toc = time.perf_counter()
-plt.plot(np.log(K), vol, 'k-')
-plt.plot(np.log(K), lower, 'k--')
-plt.plot(np.log(K), upper, 'k--')
+print(toc-tic)
+print(vol)
+print(lower)
+print(upper)
+np.savetxt(f'rHestonIE mutiple time scales, vol.txt', vol, delimiter=',', header=f'time: {toc - tic}')
+np.savetxt(f'rHestonIE multiple time scales, lower.txt', lower, delimiter=',', header=f'time: {toc - tic}')
+np.savetxt(f'rHestonIE multiple time scales, upper.txt', upper, delimiter=',', header=f'time: {toc - tic}')
+time.sleep(360000)
+
+for N_time in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]:
+    K = np.exp(-1.1 + 0.01 * np.arange(171))
+    N = 12
+    tic = time.perf_counter()
+    vol, lower, upper = ie.call(K, N=N, N_time=N_time, m=1000000, bounce_vol=False)
+    toc = time.perf_counter()
+    np.savetxt(f'rHestonIE N={N}, N_time={N_time}, vol.txt', vol, delimiter=',', header=f'time: {toc - tic}')
+    np.savetxt(f'rHestonIE N={N}, N_time={N_time}, lower.txt', lower, delimiter=',', header=f'time: {toc - tic}')
+    np.savetxt(f'rHestonIE N={N}, N_time={N_time}, upper.txt', upper, delimiter=',', header=f'time: {toc - tic}')
+'''
 
 tic_ = time.perf_counter()
 vol_, lower_, upper_ = ie.call(K, m=200000, bounce_vol=False)
@@ -291,228 +155,9 @@ print(vol_)
 print(lower_)
 print(upper_)
 time.sleep(360000)
-'''
-duration = 3594.0693
 
-vol = np.array([0.49990642, 0.49645114, 0.49300103, 0.48956375, 0.48614694, 0.48275102,
-                0.47936615, 0.47599658, 0.47264186, 0.46930649, 0.46599066, 0.46268921,
-                0.45940016, 0.45612925, 0.45287146, 0.4496269, 0.44639667, 0.44318875,
-                0.43999088, 0.43681144, 0.43364873, 0.43049944, 0.42736865, 0.42425768,
-                0.42117699, 0.41811364, 0.41506535, 0.41203811, 0.40903508, 0.40604997,
-                0.4030834, 0.40014233, 0.39722944, 0.39434161, 0.39148034, 0.38864319,
-                0.38581372, 0.38300284, 0.38020589, 0.37742584, 0.37467338, 0.37194789,
-                0.36925887, 0.36659178, 0.36396216, 0.3613568, 0.35877155, 0.35620677,
-                0.35366749, 0.35113924, 0.34863122, 0.34613704, 0.34366236, 0.34120953,
-                0.33877582, 0.33635261, 0.33394291, 0.33155028, 0.32918393, 0.32683724,
-                0.32449748, 0.32216838, 0.31983194, 0.3175021, 0.3152002, 0.31290854,
-                0.31061918, 0.30834231, 0.3060946, 0.30385877, 0.30163053, 0.29942023,
-                0.29721891, 0.2950102, 0.29279271, 0.29057501, 0.28836239, 0.28615437,
-                0.28395358, 0.28174723, 0.27953421, 0.27731571, 0.27509463, 0.27286803,
-                0.27063353, 0.26839283, 0.26614527, 0.26389809, 0.2616422, 0.25938637,
-                0.25712511, 0.25485775, 0.25257727, 0.25029215, 0.24799454, 0.24568779,
-                0.24337963, 0.24106076, 0.23874244, 0.23641308, 0.23407015, 0.23172078,
-                0.22936578, 0.22699554, 0.22460255, 0.22219874, 0.21978458, 0.21736222,
-                0.21492661, 0.2124728, 0.21000308, 0.20751201, 0.20500808, 0.20249194,
-                0.19995153, 0.19739247, 0.19480744, 0.19220451, 0.18958221, 0.18695215,
-                0.18430626, 0.18164579, 0.17898293, 0.17631999, 0.1736539, 0.17098546,
-                0.16831605, 0.16565249, 0.16298879, 0.16033982, 0.15772212, 0.15514191,
-                0.15259386, 0.15007683, 0.14759492, 0.14517794, 0.14281609, 0.14052424,
-                0.13831072, 0.13619251, 0.13418312, 0.13229522, 0.1305199, 0.12887322,
-                0.12735955, 0.1259978, 0.12478513, 0.12372379, 0.12282723, 0.12209829,
-                0.12154071, 0.12114906, 0.12088788, 0.12074556, 0.12070695, 0.12073709,
-                0.12085191, 0.12106102, 0.12134018, 0.12166956, 0.12205733])
 
-lower = np.array([1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                  1.36379788e-10, 2.57021498e-01, 2.69234651e-01, 2.76201397e-01,
-                  2.80889013e-01, 2.84198797e-01, 2.86634453e-01, 2.88423763e-01,
-                  2.89741997e-01, 2.90696474e-01, 2.91350197e-01, 2.91735767e-01,
-                  2.91902809e-01, 2.91890750e-01, 2.91741911e-01, 2.91461350e-01,
-                  2.91042369e-01, 2.90507233e-01, 2.89838802e-01, 2.89072945e-01,
-                  2.88252254e-01, 2.87355398e-01, 2.86377638e-01, 2.85340505e-01,
-                  2.84272484e-01, 2.83152897e-01, 2.81980220e-01, 2.80772275e-01,
-                  2.79520458e-01, 2.78207232e-01, 2.76834864e-01, 2.75417628e-01,
-                  2.73964833e-01, 2.72478287e-01, 2.70963325e-01, 2.69406777e-01,
-                  2.67809618e-01, 2.66175322e-01, 2.64509107e-01, 2.62809286e-01,
-                  2.61074803e-01, 2.59309112e-01, 2.57512863e-01, 2.55695340e-01,
-                  2.53847684e-01, 2.51980604e-01, 2.50089105e-01, 2.48173435e-01,
-                  2.46227017e-01, 2.44259864e-01, 2.42264419e-01, 2.40245086e-01,
-                  2.38210731e-01, 2.36152237e-01, 2.34082057e-01, 2.31988631e-01,
-                  2.29869941e-01, 2.27733994e-01, 2.25582121e-01, 2.23404890e-01,
-                  2.21195090e-01, 2.18965491e-01, 2.16717009e-01, 2.14452233e-01,
-                  2.12166393e-01, 2.09854791e-01, 2.07520153e-01, 2.05157275e-01,
-                  2.02775122e-01, 2.00374645e-01, 1.97943910e-01, 1.95488874e-01,
-                  1.93002423e-01, 1.90492940e-01, 1.87959181e-01, 1.85413055e-01,
-                  1.82846614e-01, 1.80261294e-01, 1.77669519e-01, 1.75073746e-01,
-                  1.72471039e-01, 1.69862297e-01, 1.67249027e-01, 1.64638167e-01,
-                  1.62023795e-01, 1.59420897e-01, 1.56846126e-01, 1.54305772e-01,
-                  1.51794525e-01, 1.49311234e-01, 1.46860018e-01, 1.44470767e-01,
-                  1.42133604e-01, 1.39863397e-01, 1.37668420e-01, 1.35565610e-01,
-                  1.33568421e-01, 1.31689460e-01, 1.29919622e-01, 1.28274832e-01,
-                  1.26759293e-01, 1.25391810e-01, 1.24169310e-01, 1.23093793e-01,
-                  1.22178634e-01, 1.21426588e-01, 1.20841406e-01, 1.20417667e-01,
-                  1.20119335e-01, 1.19934476e-01, 1.19847471e-01, 1.19821905e-01,
-                  1.19873647e-01, 1.20012337e-01, 1.20212488e-01, 1.20452415e-01,
-                  1.20739745e-01, ])
-
-upper = np.array([0.5681805, 0.56409666, 0.56001708, 0.55594533, 0.55188499, 0.54783632,
-                  0.54379479, 0.53976243, 0.53573909, 0.53172695, 0.52772621, 0.5237345,
-                  0.51975093, 0.51577836, 0.51181446, 0.50785935, 0.50391368, 0.49998147,
-                  0.49605682, 0.492144, 0.4882423, 0.48435022, 0.48047046, 0.47660387,
-                  0.47275605, 0.46892063, 0.46509663, 0.4612874, 0.45749487, 0.45371602,
-                  0.44995145, 0.44620521, 0.44247916, 0.43877204, 0.4350851, 0.43141743,
-                  0.42776016, 0.42411973, 0.42049382, 0.41688448, 0.41329842, 0.40973583,
-                  0.40620305, 0.402692, 0.39921279, 0.39575807, 0.39232582, 0.38891681,
-                  0.38553486, 0.38217119, 0.37883224, 0.3755143, 0.37222163, 0.36895639,
-                  0.36571733, 0.36249893, 0.35930369, 0.35613456, 0.35299868, 0.34989191,
-                  0.34680537, 0.34374205, 0.34068865, 0.33765564, 0.33465966, 0.33168757,
-                  0.32873333, 0.32580505, 0.32291637, 0.32005385, 0.31721416, 0.31440591,
-                  0.31162189, 0.3088484, 0.30608394, 0.30333547, 0.30060735, 0.29789907,
-                  0.29521281, 0.29253721, 0.28987096, 0.28721477, 0.28457091, 0.2819364,
-                  0.27930877, 0.27668917, 0.27407663, 0.27147745, 0.26888297, 0.26630094,
-                  0.26372596, 0.26115705, 0.25858727, 0.25602421, 0.25346008, 0.2508977,
-                  0.24834407, 0.24579002, 0.24324599, 0.24070058, 0.23815097, 0.23560375,
-                  0.23305938, 0.23050825, 0.22794272, 0.22537404, 0.22280242, 0.22022966,
-                  0.21765057, 0.21506001, 0.21245998, 0.20984483, 0.20722269, 0.20459396,
-                  0.20194653, 0.19928569, 0.19660402, 0.19390927, 0.19119981, 0.18848698,
-                  0.18576261, 0.1830278, 0.1802945, 0.17756491, 0.17483587, 0.17210805,
-                  0.16938274, 0.16666665, 0.16395374, 0.16125876, 0.15859814, 0.15597805,
-                  0.15339316, 0.15084229, 0.14832957, 0.14588472, 0.14349801, 0.14118433,
-                  0.13895204, 0.13681817, 0.13479627, 0.13289908, 0.13111787, 0.1294688,
-                  0.12795642, 0.12659969, 0.12539601, 0.1243478, 0.12346856, 0.12276118,
-                  0.1222293, 0.12186743, 0.1216406, 0.12153736, 0.12154291, 0.12162348,
-                  0.12179486, 0.12206639, 0.1224147, 0.12282124, 0.12329423])
-
-duration_ = 3378.70300559
-
-vol_ = np.array([1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                 1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 2.56902567e-01,
-                 2.82672929e-01, 2.92588720e-01, 2.98623033e-01, 3.02733452e-01,
-                 3.05701604e-01, 3.07931560e-01, 3.09590360e-01, 3.10781829e-01,
-                 3.11581698e-01, 3.12063642e-01, 3.12317646e-01, 3.12364813e-01,
-                 3.12236914e-01, 3.11990630e-01, 3.11606401e-01, 3.11107701e-01,
-                 3.10497268e-01, 3.09786813e-01, 3.08978424e-01, 3.08096233e-01,
-                 3.07160937e-01, 3.06196330e-01, 3.05176931e-01, 3.04094978e-01,
-                 3.02943881e-01, 3.01754612e-01, 3.00525015e-01, 2.99259565e-01,
-                 2.97961874e-01, 2.96640143e-01, 2.95290478e-01, 2.93907432e-01,
-                 2.92484630e-01, 2.91034185e-01, 2.89550623e-01, 2.88039917e-01,
-                 2.86510740e-01, 2.84961785e-01, 2.83372347e-01, 2.81742849e-01,
-                 2.80076208e-01, 2.78384576e-01, 2.76663506e-01, 2.74925189e-01,
-                 2.73163532e-01, 2.71380534e-01, 2.69584062e-01, 2.67764426e-01,
-                 2.65924608e-01, 2.64056453e-01, 2.62172913e-01, 2.60266880e-01,
-                 2.58340736e-01, 2.56396421e-01, 2.54423108e-01, 2.52430114e-01,
-                 2.50412021e-01, 2.48372144e-01, 2.46314920e-01, 2.44240105e-01,
-                 2.42135772e-01, 2.40010786e-01, 2.37866645e-01, 2.35704654e-01,
-                 2.33529485e-01, 2.31329241e-01, 2.29103768e-01, 2.26862241e-01,
-                 2.24606143e-01, 2.22323245e-01, 2.20009796e-01, 2.17666213e-01,
-                 2.15291229e-01, 2.12880288e-01, 2.10437800e-01, 2.07968426e-01,
-                 2.05480501e-01, 2.02970372e-01, 2.00432806e-01, 1.97873990e-01,
-                 1.95282684e-01, 1.92662138e-01, 1.90013185e-01, 1.87335445e-01,
-                 1.84639317e-01, 1.81919118e-01, 1.79179425e-01, 1.76420760e-01,
-                 1.73641111e-01, 1.70834154e-01, 1.68006701e-01, 1.65159308e-01,
-                 1.62294496e-01, 1.59409312e-01, 1.56508573e-01, 1.53601930e-01,
-                 1.50687349e-01, 1.47775381e-01, 1.44871153e-01, 1.41982940e-01,
-                 1.39130420e-01, 1.36333458e-01, 1.33609997e-01, 1.30972630e-01,
-                 1.28442254e-01, 1.26046622e-01, 1.23810906e-01, 1.21764253e-01,
-                 1.19921150e-01, 1.18293411e-01, 1.16900845e-01, 1.15728307e-01,
-                 1.14781741e-01, 1.14051319e-01, 1.13530823e-01, 1.13213182e-01,
-                 1.13033580e-01, 1.13013312e-01, 1.13118852e-01, 1.13334462e-01,
-                 1.13636919e-01, 1.14042807e-01, 1.14534014e-01, 1.15075570e-01,
-                 1.15637073e-01, 1.16268481e-01, 1.16969412e-01, 1.17719637e-01,
-                 1.18538815e-01])
-
-lower_ = np.array([1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 1.36379788e-10, 1.36379788e-10, 1.36379788e-10,
-                   1.36379788e-10, 2.24727529e-01, 2.36382596e-01, 2.43093351e-01,
-                   2.47564215e-01, 2.50749187e-01, 2.53061268e-01, 2.54752377e-01,
-                   2.55984462e-01, 2.56849818e-01, 2.57381805e-01, 2.57634837e-01,
-                   2.57653500e-01, 2.57485851e-01, 2.57148148e-01, 2.56675624e-01,
-                   2.56074269e-01, 2.55358952e-01, 2.54549825e-01, 2.53642930e-01,
-                   2.52649514e-01, 2.51566140e-01, 2.50414167e-01, 2.49189875e-01,
-                   2.47900400e-01, 2.46551745e-01, 2.45134927e-01, 2.43663702e-01,
-                   2.42134701e-01, 2.40554127e-01, 2.38929056e-01, 2.37261122e-01,
-                   2.35539145e-01, 2.33774476e-01, 2.31970204e-01, 2.30129056e-01,
-                   2.28257193e-01, 2.26343103e-01, 2.24387746e-01, 2.22401765e-01,
-                   2.20387561e-01, 2.18333182e-01, 2.16235573e-01, 2.14095966e-01,
-                   2.11913786e-01, 2.09685033e-01, 2.07414897e-01, 2.05108739e-01,
-                   2.02775599e-01, 2.00412178e-01, 1.98013563e-01, 1.95586472e-01,
-                   1.93119840e-01, 1.90617352e-01, 1.88080194e-01, 1.85508296e-01,
-                   1.82912472e-01, 1.80287225e-01, 1.77637421e-01, 1.74963800e-01,
-                   1.72264538e-01, 1.69533450e-01, 1.66777580e-01, 1.63997646e-01,
-                   1.61196324e-01, 1.58370770e-01, 1.55525930e-01, 1.52671588e-01,
-                   1.49805760e-01, 1.46939082e-01, 1.44076715e-01, 1.41226949e-01,
-                   1.38409487e-01, 1.35644188e-01, 1.32948955e-01, 1.30336297e-01,
-                   1.27827021e-01, 1.25448794e-01, 1.23226694e-01, 1.21189796e-01,
-                   1.19352486e-01, 1.17726499e-01, 1.16331649e-01, 1.15152658e-01,
-                   1.14195482e-01, 1.13450267e-01, 1.12910852e-01, 1.12570300e-01,
-                   1.12363082e-01, 1.12310842e-01, 1.12379634e-01, 1.12553421e-01,
-                   1.12808320e-01, 1.13161329e-01, 1.13593910e-01, 1.14069708e-01,
-                   1.14556126e-01, 1.15104752e-01, 1.15715226e-01, 1.16366136e-01,
-                   1.17078736e-01])
-
-upper_ = np.array([0.52091173, 0.51723326, 0.51356013, 0.5098991, 0.50624399, 0.50259789,
-                   0.49896793, 0.49534884, 0.49174148, 0.48814498, 0.48456034, 0.48098574,
-                   0.47742317, 0.47387052, 0.47032568, 0.46679956, 0.46328981, 0.45979161,
-                   0.45631474, 0.4528548, 0.44940927, 0.44598194, 0.44256751, 0.43916729,
-                   0.43577547, 0.43239981, 0.42903501, 0.42568883, 0.42236332, 0.41905871,
-                   0.41577423, 0.41250718, 0.40925683, 0.40603501, 0.40284089, 0.39966922,
-                   0.39652202, 0.3934052, 0.39031279, 0.38723802, 0.3841752, 0.38112379,
-                   0.37809347, 0.37508029, 0.37208503, 0.36911927, 0.36617129, 0.36324396,
-                   0.36033351, 0.35743999, 0.35456002, 0.35170038, 0.34886793, 0.34607254,
-                   0.34330027, 0.34054471, 0.33779946, 0.33507898, 0.33238043, 0.32970476,
-                   0.32705262, 0.32442777, 0.32182658, 0.31924409, 0.31667437, 0.3141239,
-                   0.31158743, 0.30906764, 0.30656951, 0.304091, 0.30161526, 0.29914073,
-                   0.29666787, 0.29420467, 0.29174629, 0.2893013, 0.28686369, 0.28443399,
-                   0.28201774, 0.27960587, 0.27719983, 0.27479157, 0.27239127, 0.26999182,
-                   0.26759438, 0.26519979, 0.26279748, 0.2603949, 0.2579863, 0.25557387,
-                   0.25316093, 0.25074657, 0.24831902, 0.24588576, 0.24344758, 0.24100508,
-                   0.23856214, 0.23610692, 0.23363869, 0.23116566, 0.22868877, 0.22619582,
-                   0.22368266, 0.22114918, 0.21859367, 0.21601123, 0.2134057, 0.21078121,
-                   0.20814555, 0.20549482, 0.2028236, 0.20013763, 0.19742559, 0.19469036,
-                   0.19193251, 0.18915139, 0.18635706, 0.18354369, 0.1807156, 0.17787315,
-                   0.17501416, 0.17213219, 0.16923385, 0.16631956, 0.1633917, 0.16044723,
-                   0.15749085, 0.15453209, 0.15156888, 0.14861168, 0.14566561, 0.14273893,
-                   0.13985129, 0.13702258, 0.13427076, 0.13160852, 0.12905686, 0.12664359,
-                   0.12439398, 0.12233724, 0.12048795, 0.11885799, 0.11746714, 0.11630037,
-                   0.11536359, 0.11464695, 0.11414415, 0.11384795, 0.11369415, 0.11370366,
-                   0.11384328, 0.11409746, 0.11444349, 0.11489743, 0.11544143, 0.11604159,
-                   0.11666925, 0.11737261, 0.11815098, 0.11898482, 0.11989205])
-
-k = Data.k_rrHeston
-plt.plot(k, vol)
-plt.plot(k, vol_)
-plt.plot(k, Data.rrHeston_6)
-plt.plot(k, lower_, 'k--')
-plt.plot(k, upper_, 'k--')
-plt.show()
+Data.plot_rHeston_IE_smiles()
 
 S, V, V_comp = ie.get_sample_path(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6,
                                   bounce_vol=True)
@@ -541,8 +186,9 @@ print(f"Generating the true smile took {toc - tic} seconds.")
 for N in [1, 2, 3, 4, 5, 6, 7, 8]:
     print(f"Approximation with {N} nodes, our scheme:")
     tic = time.perf_counter()
-    approximated_heston = rHestonAK.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02,
+    approximated_heston = rHestonMarkov.implied_volatility(K=K, lambda_=0.3, rho=-0.7, nu=0.3, H=0.1, V_0=0.02, theta=0.02,
                                                        T=0.01, N=N, N_Riccati=3000, N_fourier=10000, L=50.)
     toc = time.perf_counter()
     print(approximated_heston)
     print(f"Generating the approximated smile with N={N} took {toc - tic} seconds.")
+'''
