@@ -1,7 +1,6 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-# import Data
 import ComputationalFinance as cf
 import Data
 import rBergomi
@@ -16,6 +15,26 @@ import rHestonImplicitEuler as ie
 import rHestonSplitKernel as sk
 
 
+Data.plot_rHeston_IE_smiles()
+
+K = np.exp(Data.k_rrHeston)
+N = 6
+tic = time.perf_counter()
+vol, lower, upper = ie.call(K, N=N, N_time=1000, m=200000, vol_behaviour='split kernel')
+toc = time.perf_counter()
+print(toc-tic)
+print(vol)
+print(lower)
+print(upper)
+time.sleep(360000)
+
+S, V, _ = ie.get_sample_path(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, vol_behaviour='split kernel')
+plt.plot(np.linspace(0, 1, 1001), S, label='stock price')
+plt.plot(np.linspace(0, 1, 1001), V, label='volatility')
+plt.xlabel('t')
+plt.title('Sample path of split kernel implementation')
+plt.show()
+
 nodes, weights = rk.quadrature_rule_geometric_good(0.1, 6)
 nodes = rk.mp_to_np(nodes)
 weights = rk.mp_to_np(weights)
@@ -25,6 +44,48 @@ i = np.sum(nodes < 200)
 nodes = nodes[i:]
 weights = weights[i:]
 print(nodes)
+
+sr = sk.smooth_root(nodes, weights, 0.02, 0.3, 0.3)
+ps = np.exp(np.linspace(-20, 2, 1000))
+plt.plot(ps, np.sqrt(ps))
+plt.plot(ps, np.array([sr(p) for p in ps]))
+plt.show()
+
+us = np.linspace(-5, 5, 101)
+ps = np.exp(np.linspace(-10, 1, 200))
+tic = time.perf_counter()
+mus, sigmas, mu_a, mu_b, sigma_a, sigma_b = sk.normal_approximation_parameter_regression(us, ps, nodes, weights, 0.02, 0.3, 0.3)
+print(time.perf_counter() - tic)
+
+corrected_ps, std_ps = sk.root_normal_correction(ps, lambda p: mu_a*p+mu_b, lambda p: np.sqrt(np.fmax(sigma_a*p+sigma_b, 0)), M=1000000)
+plt.plot(ps, np.sqrt(ps), 'b-', label=r'$\sqrt{p}$')
+plt.plot(ps, corrected_ps, 'r-', label=r'$\mathbb{E}\sqrt{(p + Z)^+}$')
+plt.plot(ps, np.fmax(corrected_ps - std_ps, 0), 'r--')
+plt.plot(ps, corrected_ps + std_ps, 'r--')
+plt.legend(loc='best')
+plt.xlabel(r'$p$')
+plt.show()
+
+plt.plot(ps, corrected_ps - np.sqrt(ps), 'b-', label=r'$\mathbb{E}\sqrt{(p + Z)^+} - \sqrt{p}$')
+plt.plot(ps, corrected_ps - std_ps - np.sqrt(ps), 'b--')
+plt.plot(ps, corrected_ps + std_ps - np.sqrt(ps), 'b--')
+plt.legend(loc='best')
+plt.xlabel(r'$p$')
+plt.show()
+
+
+
+plt.plot(ps, mus, 'b-')
+plt.plot(ps, mu_a*ps + mu_b, 'k--')
+plt.plot()
+plt.xlabel(r'$p$')
+plt.ylabel('Estimate for ' + r'$\mu$')
+plt.show()
+plt.plot(ps, sigmas, 'r-')
+plt.plot(ps, np.sqrt(np.abs(sigma_a*ps + sigma_b)), 'k--')
+plt.xlabel(r'$p$')
+plt.ylabel('Estimate for ' + r'$\sigma$')
+plt.show()
 
 T = 10/np.amin(nodes)
 N_Riccati = 2000
@@ -60,6 +121,7 @@ plt.ylabel('Error')
 plt.show()
 '''
 
+'''
 true_ints = sk.psi_integrals(*sk.solve_Riccati_high_mean_reversion(2j, nodes, weights, lambda_=0.3, nu=0.3, N_Riccati=1024, T=T, adaptive=True))
 print(true_ints)
 N_Riccatis = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256])
@@ -80,6 +142,7 @@ plt.legend(loc='best')
 plt.xlabel('Number of time steps')
 plt.ylabel('Error')
 plt.show()
+'''
 
 
 '''
@@ -92,7 +155,6 @@ plt.plot(us, cf.imag)
 plt.show()
 '''
 
-sk.regress_for_varying_p()
 time.sleep(360000)
 
 '''

@@ -5,6 +5,7 @@ import ComputationalFinance as cf
 import RoughKernel as rk
 import mpmath as mp
 from scipy.optimize import fsolve
+import rHestonSplitKernel as sk
 
 '''
 def eq(p):
@@ -113,7 +114,7 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     S_values[0] = S_0
     V_values[0] = V_0
     V_components = np.zeros(shape=(N, N_time+1))
-    V_components[:, 0] = V_0/(N*weights)
+    V_components[0, 0] = V_0/weights[0]
     b_comp = nodes * V_components[:, 0] * dt + theta * dt
 
     def b(vol, dw):
@@ -238,6 +239,39 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
             dB = np.random.normal() * sqrt_dt
             S_values[i] = S_values[i - 1] + np.sqrt(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
 
+    elif vol_behaviour == 'split kernel':
+        N = np.sum(nodes < 2/dt)
+        fast_nodes = nodes[N:]
+        fast_weights = weights[N:]
+        nodes = nodes[:N]
+        weights = weights[:N]
+        V_components = V_components[:N, :]
+        mu_a, mu_b, sr = sk.smooth_root(nodes=fast_nodes, weights=fast_weights, theta=theta, lambda_=lambda_, nu=nu,
+                            us=np.linspace(-5, 5, 101), ps=np.exp(np.linspace(-10, 1, 100)), q=10, N_Riccati=10,
+                            adaptive=True, M=1000000)
+
+        A = mp.eye(N) + mp.diag(nodes) * dt + mp.mpf(lambda_ * (1 + mu_a)) * mp.matrix(
+            [[weights[i] for i in range(N)] for _ in range(N)]) * dt
+        A_inv = rk.mp_to_np(mp.inverse(A))
+
+        b_comp = nodes * V_components[:, 0] * dt + (theta-lambda_*mu_b) * dt
+
+        def b(vol, dw):
+            return b_comp + vol + nu * sr(np.dot(weights, vol)) * dw
+
+        weights_norm = np.dot(weights, weights)
+        rescaled_weights = weights / weights_norm
+        for i in range(1, N_time + 1):
+            dW = np.random.normal() * sqrt_dt
+            dB = np.random.normal() * sqrt_dt
+            V_components[:, i] = A_inv @ b(V_components[:, i - 1], dW)
+            V_values[i] = np.dot(weights, V_components[:, i])
+            if V_values[i] < 0:
+                V_components[:, i] = V_components[:, i] - V_values[i] * rescaled_weights
+                V_values[i] = 0
+            S_values[i] = S_values[i - 1] + sr(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
+        return S_values, np.array([sr(v) for v in V_values]), V_components
+
     return S_values, np.sqrt(V_values), V_components
 
 
@@ -247,7 +281,8 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
     rho_bar = np.sqrt(1-rho**2)
     S = S_0
     V = V_0
-    V_components = V_0 / (N * weights)
+    V_components = np.zeros(len(weights))
+    V_components[0] = V_0 / weights[0]
     V_original = V_components.copy()
 
     b_comp = nodes * V_components * dt + theta * dt
@@ -355,15 +390,36 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
                         V = 0
             dB = np.random.normal() * sqrt_dt
             S = S + np.sqrt(V_old) * S * (rho * dW + rho_bar * dB)
+
+    elif vol_behaviour == 'split kernel':
+        mu_b = params['mu_b']
+        sr = params['sr']
+        b_comp = nodes * V_components * dt + (theta-lambda_*mu_b) * dt
+
+        def b(vol, dw):
+            return b_comp + vol + nu * sr(np.dot(weights, vol)) * dw
+
+        weights_norm = np.dot(weights, weights)
+        rescaled_weights = weights / weights_norm
+        for i in range(1, N_time + 1):
+            dW = np.random.normal() * sqrt_dt
+            dB = np.random.normal() * sqrt_dt
+            S = S + sr(V) * S * (rho * dW + rho_bar * dB)
+            V_components = A_inv @ b(V_components, dW)
+            V = np.dot(weights, V_components)
+            if V < 0:
+                V_components = V_components - V * rescaled_weights
+                V = 0
+
     return S
 
 
 def samples(H, lambda_, rho, nu, theta, V_0, T, N, m=1000, S_0=1., N_time=1000, mode="observation", vol_behaviour='sticky'):
     dt = T / N_time
     nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
+    N = len(nodes)
     nodes_mp = mp.matrix([nodes[N-1]] + [nodes[i] for i in range(len(nodes)-1)])  # zero node in front
     weights_mp = mp.matrix([weights[N-1]] + [weights[i] for i in range(len(weights)-1)])
-    N = len(nodes)
 
     A = mp.eye(N) + mp.diag(nodes) * dt + lambda_ * mp.matrix([[weights[i] for i in range(N)] for _ in range(N)]) * dt
     A_inv = rk.mp_to_np(mp.inverse(A))
@@ -401,9 +457,30 @@ def samples(H, lambda_, rho, nu, theta, V_0, T, N, m=1000, S_0=1., N_time=1000, 
 
         params = {'eta': eta, 'L': L, 'n_trivial_intervals': n_trivial_intervals, 'dt_loc': dt_loc}
 
+    elif vol_behaviour == 'split kernel':
+        print(nodes)
+        N = np.sum(nodes < 2/dt)
+        fast_nodes = nodes[N:]
+        fast_weights = weights[N:]
+        nodes = nodes[:N]
+        weights = weights[:N]
+        print(fast_nodes)
+        print(nodes)
+        mu_a, mu_b, sr = sk.smooth_root(nodes=fast_nodes, weights=fast_weights, theta=theta, lambda_=lambda_, nu=nu,
+                            us=np.linspace(-5, 5, 101), ps=np.exp(np.linspace(-10, 1, 100)), q=10, N_Riccati=10,
+                            adaptive=True, M=1000000)
+
+        # A = mp.eye(N) + mp.diag(nodes) * dt + mp.mpf(lambda_ * (1 + mu_a)) * mp.matrix(
+        #    [[weights[i] for i in range(N)] for _ in range(N)]) * dt
+        A = mp.eye(N) + mp.diag(nodes) * dt + mp.mpf(lambda_) * mp.matrix(
+            [[weights[i] for i in range(N)] for _ in range(N)]) * dt
+        A_inv = rk.mp_to_np(mp.inverse(A))
+        # params = {'mu_a': mu_a, 'mu_b': mu_b, 'sr': sr}
+        params = {'mu_a': 0, 'mu_b': 0, 'sr': lambda x: np.sqrt(np.abs(x))}
+
     sample_vec = np.zeros(m)
     for i in range(m):
-        if i % 1 == 0:
+        if i % 100 == 0:
             print(f'{i} of {m} generated')
         sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0, N_time, vol_behaviour, params)
     return sample_vec

@@ -218,6 +218,31 @@ def quadrature_rule_geometric_good(H, N, T=1., mode="observation"):
     return nodes, weights
 
 
+def quadrature_rule_geometric_standard(H, N, T=1., mode="observation"):
+    """
+    Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
+    on n geometrically spaced subintervals. The result is an instance of a numpy array, with nodes ordered in increasing
+    order. Here, n, m, xi_0 and xi_n are chosen according to the mode.
+    :param H: Hurst parameter
+    :param N: Total number of nodes, N=nm
+    :param T: Final time
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+    parameters from the theorem.
+    :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
+    """
+    nodes, weights = quadrature_rule_geometric_good(H=H, N=N, T=T, mode=mode)
+    nodes = mp_to_np(nodes)
+    weights = mp_to_np(weights)
+    N = len(nodes)
+    nodes_ = np.empty(N)
+    nodes_[0] = nodes[-1]
+    nodes_[1:] = nodes[:-1]
+    weights_ = np.empty(N)
+    weights_[0] = weights[-1]
+    weights_[1:] = weights[:-1]
+    return nodes_, weights_
+
+
 def quadrature_rule_geometric(H, m, n, a, b, T=1.):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
@@ -274,3 +299,29 @@ def mp_to_np(x):
     if len(shape) == 2 and (shape[0] == 1 or shape[1] == 1):
         return y
     return y.reshape(shape)
+
+
+def adaptive_time_steps(nodes, T=1., q=10, N_time=10):
+    """
+    Computes a vector of time step sizes that can be used to solve (deterministic) Volterra equations.
+    :param nodes: The nodes used in the approximation
+    :param T: Final time in the Volterra equation
+    :param q: Contributions of order e^(-q) are considered negligible
+    :param N_time: Uses len(nodes)*q*N_time time steps
+    return: The time steps and the cumulative time vector
+    """
+    N = len(nodes)
+    dt = []
+    timescale = 0
+    for i in range(N):
+        if timescale < T:
+            prev_timescale = timescale
+            if i < N - 1:
+                timescale = np.fmin(q / nodes[-i - 1], T)
+            else:
+                timescale = T
+            dt = dt + [(timescale - prev_timescale) / (q * N_time)] * (q * N_time)
+    dt = np.array(dt)
+    times = np.zeros(len(dt)+1)
+    times[1:] = np.cumsum(dt)
+    return dt, times
