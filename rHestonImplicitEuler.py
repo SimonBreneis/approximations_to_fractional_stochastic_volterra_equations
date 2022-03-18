@@ -8,7 +8,7 @@ from scipy.optimize import fsolve
 import rHestonSplitKernel as sk
 
 
-def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="observation", vol_behaviour='sticky'):
+def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, WB=None, m=1, mode="observation", vol_behaviour='sticky'):
     """
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -24,98 +24,124 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     theorem.
     """
     dt = T/N_time
-    sqrt_dt = np.sqrt(dt)
-    rho_bar = np.sqrt(1-rho*rho)
     nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
     N = len(nodes)
 
     A = mp.eye(N) + mp.diag(nodes)*dt + lambda_*mp.matrix([[weights[i] for i in range(N)] for _ in range(N)])*dt
     A_inv = rk.mp_to_np(mp.inverse(A))
 
-    S_values = np.zeros(N_time+1)
-    V_values = np.zeros(N_time+1)
-    S_values[0] = S_0
-    V_values[0] = V_0
-    V_components = np.zeros(shape=(N, N_time+1))
-    V_components[0, 0] = V_0/weights[0]
-    b_comp = nodes * V_components[:, 0] * dt + theta * dt
+    if WB is None:
+        dW = np.random.normal(0, np.sqrt(dt), (m, N_time))
+        dB = np.random.normal(0, np.sqrt(dt), (m, N_time))
+    else:
+        dW = WB[0, :, :]
+        dB = WB[1, :, :]
+        N_time = len(dW[0, :])
+        m = len(dW[:, 0])
+    S_BM = rho*dW + np.sqrt(1-rho**2)*dB
+
+    S_values = np.zeros((m, N_time+1))
+    V_values = np.zeros((m, N_time+1))
+    S_values[:, 0] = S_0*np.ones(m)
+    V_values[:, 0] = V_0*np.ones(m)
+    V_components = np.zeros(shape=(m, N, N_time+1))
+    V_components[:, 0, 0] = V_0/weights[0]*np.ones(m)
+    b_comp = nodes * V_components[0, :, 0] * dt + theta * dt
 
     def b(vol, dw):
         return b_comp + vol + nu * np.sqrt(np.fmax(np.dot(weights, vol), 0)) * dw
 
     if vol_behaviour == 'sticky':
-        for i in range(1, N_time + 1):
-            dW = np.random.normal() * sqrt_dt
-            dB = np.random.normal() * sqrt_dt
-            V_components[:, i] = A_inv @ b(V_components[:, i - 1], dW)
-            V_values[i] = np.fmax(np.dot(weights, V_components[:, i]), 0)
-            S_values[i] = S_values[i - 1] + np.sqrt(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
+        for j in range(m):
+            print(j)
+            for i in range(1, N_time + 1):
+                V_components[j, :, i] = A_inv @ b(V_components[j, :, i - 1], dW[j, i-1])
+                V_values[j, i] = np.fmax(np.dot(weights, V_components[j, :, i]), 0)
+                S_values[j, i] = S_values[j, i - 1] + np.sqrt(V_values[j, i - 1]) * S_values[j, i - 1] * S_BM[j, i-1]
+    elif vol_behaviour == 'constant':
+        for j in range(m):
+            print(j)
+            for i in range(1, N_time + 1):
+                S_values[j, i] = S_values[j, i - 1] + np.sqrt(0.02) * S_values[j, i - 1] * S_BM[j, i-1]
     elif vol_behaviour == 'mean reversion':
-        zero_vol = V_0 <= 0
-        for i in range(1, N_time+1):
-            dW = np.random.normal()*sqrt_dt
-            dB = np.random.normal()*sqrt_dt
-            V_components[:, i] = A_inv@b(V_components[:, i-1], dW)
-            V_values[i] = np.fmax(np.dot(weights, V_components[:, i]), 0)
-            if zero_vol:
-                while V_values[i] <= 0:
-                    V_components[:, i] = A_inv@b(V_components[:, i], dW)
-                    V_values[i] = np.fmax(np.dot(weights, V_components[:, i]), 0)
-            zero_vol = V_values[i] <= 0
-            S_values[i] = S_values[i-1] + np.sqrt(V_values[i-1])*S_values[i-1]*(rho*dW + rho_bar*dB)
+        for j in range(m):
+            zero_vol = V_0 <= 0
+            for i in range(1, N_time+1):
+                V_components[j, :, i] = A_inv@b(V_components[j, :, i-1], dW[j, i-1])
+                V_values[j, i] = np.fmax(np.dot(weights, V_components[j, :, i]), 0)
+                if zero_vol:
+                    while V_values[j, i] <= 0:
+                        V_components[j, :, i] = A_inv@b(V_components[j, :, i], dW[j, i-1])
+                        V_values[j, i] = np.fmax(np.dot(weights, V_components[j, :, i]), 0)
+                zero_vol = V_values[j, i] <= 0
+                S_values[j, i] = S_values[j, i-1] + np.sqrt(V_values[j, i-1])*S_values[j, i-1]*S_BM[j, i-1]
     elif vol_behaviour == 'hyperplane reset':
         weights_norm = np.dot(weights, weights)
         rescaled_weights = weights / weights_norm
-        for i in range(1, N_time + 1):
-            dW = np.random.normal() * sqrt_dt
-            dB = np.random.normal() * sqrt_dt
-            V_components[:, i] = A_inv @ b(V_components[:, i - 1], dW)
-            V_values[i] = np.dot(weights, V_components[:, i])
-            if V_values[i] < 0:
-                V_components[:, i] = V_components[:, i] - V_values[i] * rescaled_weights
-                V_values[i] = 0
-            S_values[i] = S_values[i - 1] + np.sqrt(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
+        for j in range(m):
+            print(j)
+            for i in range(1, N_time + 1):
+                V_components[j, :, i] = A_inv @ b(V_components[j, :, i - 1], dW[j, i-1])
+                V_values[j, i] = np.dot(weights, V_components[j, :, i])
+                if V_values[j, i] < 0:
+                    V_components[j, :, i] = V_components[j, :, i] - V_values[j, i] * rescaled_weights
+                    V_values[j, i] = 0
+                S_values[j, i] = S_values[j, i - 1] + np.sqrt(V_values[j, i - 1]) * S_values[j, i - 1] * S_BM[j, i-1]
     elif vol_behaviour == 'hyperplane reflection':
         weights_norm = np.dot(weights, weights)
         rescaled_weights = weights / weights_norm
-        for i in range(1, N_time + 1):
-            dW = np.random.normal() * sqrt_dt
-            dB = np.random.normal() * sqrt_dt
-            V_components[:, i] = A_inv @ b(V_components[:, i - 1], dW)
-            V_values[i] = np.dot(weights, V_components[:, i])
-            if V_values[i] < 0:
-                V_components[:, i] = V_components[:, i] - 2 * V_values[i] * rescaled_weights
-                V_values[i] = -V_values[i]
-            S_values[i] = S_values[i - 1] + np.sqrt(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
+        for j in range(m):
+            for i in range(1, N_time + 1):
+                V_components[j, :, i] = A_inv @ b(V_components[j, :, i - 1], dW[j, i-1])
+                V_values[j, i] = np.dot(weights, V_components[j, :, i])
+                if V_values[j, i] < 0:
+                    V_components[j, :, i] = V_components[j, :, i] - 2 * V_values[j, i] * rescaled_weights
+                    V_values[j, i] = -V_values[j, i]
+                S_values[j, i] = S_values[j, i - 1] + np.sqrt(V_values[j, i - 1]) * S_values[j, i - 1] * S_BM[j, i-1]
     elif vol_behaviour == 'adaptive':
+        max_iter = 5
+        weights_norm = np.dot(weights, weights)
+        rescaled_weights = weights / weights_norm
 
-        def nested_step(V_comp_loc, dW_loc, dt_loc):
+        def nested_step(V_comp_loc, dW_loc, dt_loc, iter):
             dW_mid = dW_loc / 2 + np.random.normal() * np.sqrt(dt_loc / 4)
             dt_loc = dt_loc / 2
 
-            b = nodes * V_components[:, 0] * dt_loc + theta * dt_loc + V_comp_loc + nu * np.sqrt(np.fmax(np.dot(weights, V_comp_loc), 0)) * dW_mid
+            b = nodes * V_components[0, :, 0] * dt_loc + theta * dt_loc + V_comp_loc + nu * np.sqrt(np.fmax(np.dot(weights, V_comp_loc), 0)) * dW_mid
             A = mp.eye(len(nodes)) + mp.diag(nodes) * dt_loc + lambda_ * mp.matrix(
                 [[weights[i] for i in range(len(nodes))] for _ in range(len(nodes))]) * dt_loc
             V_comp_loc_updated = rk.mp_to_np(mp.lu_solve(A, b))
-            if np.dot(weights, V_comp_loc_updated) < 0:
-                V_comp_loc_updated = nested_step(V_comp_loc_updated, dW_mid, dt_loc)
+            V_loc_updated = np.dot(weights, V_comp_loc_updated)
+            if V_loc_updated < 0:
+                if iter >= max_iter:
+                    V_comp_loc_updated = V_comp_loc_updated - V_loc_updated * rescaled_weights
+                else:
+                    V_comp_loc_updated = nested_step(V_comp_loc, dW_mid, dt_loc, iter+1)
             dW_second = dW_loc - dW_mid
-            b = nodes * V_components[:, 0] * dt_loc + theta * dt_loc + V_comp_loc_updated + nu * np.sqrt(
+            b = nodes * V_components[0, :, 0] * dt_loc + theta * dt_loc + V_comp_loc_updated + nu * np.sqrt(
                 np.fmax(np.dot(weights, V_comp_loc_updated), 0)) * dW_second
             V_comp_loc_final = rk.mp_to_np(mp.lu_solve(A, b))
-            if np.dot(weights, V_comp_loc_final) < 0:
-                V_comp_loc_final = nested_step(V_comp_loc_final, dW_second, dt_loc)
+            V_loc_final = np.dot(weights, V_comp_loc_final)
+            if V_loc_final < 0:
+                if iter >= max_iter:
+                    V_comp_loc_final = V_comp_loc_final - V_loc_final * rescaled_weights
+                else:
+                    V_comp_loc_final = nested_step(V_comp_loc_updated, dW_second, dt_loc, iter+1)
             return V_comp_loc_final
 
-        for i in range(1, N_time + 1):
-            dW = np.random.normal() * sqrt_dt
-            dB = np.random.normal() * sqrt_dt
-            V_components[:, i] = A_inv @ b(V_components[:, i - 1], dW)
-            V_values[i] = np.dot(weights, V_components[:, i])
-            if V_values[i] < 0:
-                V_components[:, i] = nested_step(V_components[:, i-1], dW, dt)
-                V_values[i] = np.fmax(np.dot(weights, V_components[:, i]), 0)
-            S_values[i] = S_values[i - 1] + np.sqrt(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
+        bad_values = []
+
+        for j in range(m):
+            for i in range(1, N_time + 1):
+                print(f'{j} of {m} samples, {i} of {N_time} time steps')
+                V_components[j, :, i] = A_inv @ b(V_components[j, :, i - 1], dW[j, i-1])
+                V_values[j, i] = np.dot(weights, V_components[j, :, i])
+                if V_values[j, i] < 0:
+                    print('BAD!')
+                    bad_values.append(V_components[j, :, i-1])
+                    V_components[j, :, i] = nested_step(V_components[j, :, i-1], dW[j, i-1], dt, 1)
+                    V_values[j, i] = np.fmax(np.dot(weights, V_components[j, :, i]), 0)
+                S_values[j, i] = S_values[j, i - 1] + np.sqrt(V_values[j, i - 1]) * S_values[j, i - 1] * S_BM[j, i-1]
     elif vol_behaviour == 'multiple time scales':
         weights_norm = np.dot(weights, weights)
         rescaled_weights = weights / weights_norm
@@ -145,22 +171,24 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
 
         # find the different bs
         def bs(j, vol, dw):
-            return np.array((nodes * V_components[:, 0] * dt_loc[j-n_trivial_intervals] + theta * dt_loc[j-n_trivial_intervals] + nu * np.sqrt(np.fmax(np.dot(weights, vol), 0)) * dw)[:(j+1)].tolist() + [0]*(N-j-1)) + vol
+            return np.array((nodes * V_components[0, :, 0] * dt_loc[j-n_trivial_intervals] + theta * dt_loc[j-n_trivial_intervals] + nu * np.sqrt(np.fmax(np.dot(weights, vol), 0)) * dw)[:(j+1)].tolist() + [0]*(N-j-1)) + vol
 
-        for i in range(1, N_time + 1):
-            dW = 0  # total increment of the Brownian motion on that time interval [t_m, t_{m+1}]
-            V_components[:, i] = V_components[:, i-1]
-            for j in range(n_trivial_intervals, N):
-                for _ in range(L):
-                    dW_loc = np.random.normal() * np.sqrt(dt_loc[j-n_trivial_intervals])
-                    dW += dW_loc
-                    V_components[:, i] = A_invs[j-n_trivial_intervals] @ bs(j, V_components[:, i], dW_loc)
-                    V_values[i] = np.dot(weights, V_components[:, i])
-                    if V_values[i] < 0:
-                        V_components[:, i] = V_components[:, i] - V_values[i] * rescaled_weights
-                        V_values[i] = 0
-            dB = np.random.normal() * sqrt_dt
-            S_values[i] = S_values[i - 1] + np.sqrt(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
+        for k in range(m):
+            for i in range(1, N_time + 1):
+                dW_so_far = 0
+                dt_so_far = 0
+                V_components[k, :, i] = V_components[k, :, i-1]
+                for j in range(n_trivial_intervals, N):
+                    for _ in range(L):
+                        dW_loc = np.random.normal((dW[k, i-1]-dW_so_far) * dt_loc[j-n_trivial_intervals]/(dt-dt_so_far), np.sqrt(dt_loc[j-n_trivial_intervals]))
+                        dW_so_far += dW_loc
+                        dt_so_far += dt_loc[j-n_trivial_intervals]
+                        V_components[k, :, i] = A_invs[j-n_trivial_intervals] @ bs(j, V_components[k, :, i], dW_loc)
+                        V_values[k, i] = np.dot(weights, V_components[k, :, i])
+                        if V_values[k, i] < 0:
+                            V_components[k, :, i] = V_components[k, :, i] - V_values[k, i] * rescaled_weights
+                            V_values[k, i] = 0
+                S_values[k, i] = S_values[k, i - 1] + np.sqrt(V_values[k, i - 1]) * S_values[k, i - 1] * S_BM[k, i-1]
 
     elif vol_behaviour == 'split kernel':
         N = np.sum(nodes < 2/dt)
@@ -168,7 +196,7 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
         fast_weights = weights[N:]
         nodes = nodes[:N]
         weights = weights[:N]
-        V_components = V_components[:N, :]
+        V_components = V_components[:, :N, :]
         mu_a, mu_b, sr = sk.smooth_root(nodes=fast_nodes, weights=fast_weights, theta=theta, lambda_=lambda_, nu=nu,
                             us=np.linspace(-5, 5, 101), ps=np.exp(np.linspace(-10, 1, 100)), q=10, N_Riccati=10,
                             adaptive=True, M=1000000)
@@ -177,24 +205,26 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
             [[weights[i] for i in range(N)] for _ in range(N)]) * dt
         A_inv = rk.mp_to_np(mp.inverse(A))
 
-        b_comp = nodes * V_components[:, 0] * dt + (theta-lambda_*mu_b) * dt
+        b_comp = nodes * V_components[0, :, 0] * dt + (theta-lambda_*mu_b) * dt
 
         def b(vol, dw):
             return b_comp + vol + nu * sr(np.dot(weights, vol)) * dw
 
         weights_norm = np.dot(weights, weights)
         rescaled_weights = weights / weights_norm
-        for i in range(1, N_time + 1):
-            dW = np.random.normal() * sqrt_dt
-            dB = np.random.normal() * sqrt_dt
-            V_components[:, i] = A_inv @ b(V_components[:, i - 1], dW)
-            V_values[i] = np.dot(weights, V_components[:, i])
-            if V_values[i] < 0:
-                V_components[:, i] = V_components[:, i] - V_values[i] * rescaled_weights
-                V_values[i] = 0
-            S_values[i] = S_values[i - 1] + sr(V_values[i - 1]) * S_values[i - 1] * (rho * dW + rho_bar * dB)
-        return S_values, np.array([sr(v) for v in V_values]), V_components
+        for j in range(m):
+            print(j)
+            for i in range(1, N_time + 1):
+                V_components[j, :, i] = A_inv @ b(V_components[j, :, i - 1], dW[j, i-1])
+                V_values[j, i] = np.dot(weights, V_components[j, :, i])
+                if V_values[j, i] < 0:
+                    V_components[j, :, i] = V_components[j, :, i] - V_values[j, i] * rescaled_weights
+                    V_values[j, i] = 0
+                S_values[j, i] = S_values[j, i - 1] + sr(V_values[j, i - 1]) * S_values[j, i - 1] * S_BM[j, i-1]
+        return S_values, np.array([[sr(V_values[i, j]) for j in range(len(V_values[0, :]))] for i in range(len(V_values[:, 0]))]), V_components
 
+    if vol_behaviour == 'adaptive':
+        return S_values, np.sqrt(V_values), V_components, bad_values
     return S_values, np.sqrt(V_values), V_components
 
 
@@ -255,8 +285,17 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
                 V_components = V_components - 2 * V * rescaled_weights
                 V = -V
     elif vol_behaviour == 'adaptive':
+        max_iter = params.get('max_iter', 5)
+        weights_norm = np.dot(weights, weights)
+        rescaled_weights = weights / weights_norm
 
-        def nested_step(V_comp_loc, dW_loc, dt_loc):
+        def nested_step(V_comp_loc, dW_loc, dt_loc, iter):
+            '''
+            print(V_comp_loc)
+            print(dW_loc)
+            print(dt_loc)
+            print(np.dot(weights, V_comp_loc))
+            '''
             dW_mid = dW_loc / 2 + np.random.normal() * np.sqrt(dt_loc / 4)
             dt_loc = dt_loc / 2
 
@@ -264,23 +303,33 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
             A = np.eye(len(nodes)) + np.diag(nodes) * dt_loc + lambda_ * np.array(
                 [[weights[i] for i in range(len(nodes))] for _ in range(len(nodes))]) * dt_loc
             V_comp_loc_updated = np.linalg.solve(A, b)
-            if np.dot(weights, V_comp_loc_updated) < 0:
-                V_comp_loc_updated = nested_step(V_comp_loc_updated, dW_mid, dt_loc)
+            V_loc_updated = np.dot(weights, V_comp_loc_updated)
+            if V_loc_updated < 0:
+                if iter >= max_iter:
+                    V_comp_loc_updated = V_comp_loc_updated - V_loc_updated * rescaled_weights
+                else:
+                    V_comp_loc_updated = nested_step(V_comp_loc, dW_mid, dt_loc, iter+1)
             dW_second = dW_loc - dW_mid
             b = nodes * V_original * dt_loc + theta * dt_loc + V_comp_loc_updated + nu * np.sqrt(
                 np.fmax(np.dot(weights, V_comp_loc_updated), 0)) * dW_second
             V_comp_loc_final = np.linalg.solve(A, b)
-            if np.dot(weights, V_comp_loc_final) < 0:
-                V_comp_loc_final = nested_step(V_comp_loc_final, dW_second, dt_loc)
+            V_loc_final = np.dot(weights, V_comp_loc_final)
+            if V_loc_final < 0:
+                if iter >= max_iter:
+                    V_comp_loc_final = V_comp_loc_final - V_loc_final * rescaled_weights
+                else:
+                    V_comp_loc_final = nested_step(V_comp_loc_updated, dW_second, dt_loc, iter+1)
             return V_comp_loc_final
 
         for i in range(N_time):
             S = S + np.sqrt(V) * S * S_BM[i]
-            V_components = A_inv @ b(V_components, dW[i])
-            V = np.dot(weights, V_components)
+            V_components_ = A_inv @ b(V_components, dW[i])
+            V = np.dot(weights, V_components_)
             if V < 0:
-                V_components = nested_step(V_components, dW[i], dt)
-                V = np.fmax(np.dot(weights, V_components), 0)
+                V_components_ = nested_step(V_components, dW[i], dt, 1)
+                V = np.fmax(np.dot(weights, V_components_), 0)
+            V_components = V_components_
+            V = np.dot(weights, V_components)
 
     elif vol_behaviour == 'multiple time scales':
         weights_norm = np.dot(weights, weights)
@@ -401,7 +450,7 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
     sample_vec = np.zeros(m)
     if WB is None:
         for i in range(m):
-            if i % 100 == 0:
+            if i % 10000 == 0:
                 print(f'{i} of {m} generated')
             sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0, N_time, WB, vol_behaviour, params)
     else:
