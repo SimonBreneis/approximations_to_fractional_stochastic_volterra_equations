@@ -54,6 +54,41 @@ def plot_kernel_approximations(H, m, n_vec, a, b, left=0.0001, right=1., number_
     plt.show()
 
 
+def error_estimate_fBm_general(H, nodes, weights, T):
+    """
+    Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
+    on [0, T]. The approximation does NOT contain a constant/Brownian term.
+    :param H: Hurst parameter
+    :param nodes: The nodes of the approximation. Assumed that they are all non-zero
+    :param weights: The weights of the approximation
+    :param T: Final time
+    :return: An error estimate and the optimal weight for the constant term: [error, weight]
+    """
+    if np.amin(mp_to_np(nodes)) <= 0 or np.amin(mp_to_np(weights)) < 0:
+        return 1e+10
+    N = len(nodes)
+    T = mp.mpf(T)
+    H = mp.mpf(H)
+    summand = T ** (2 * H) / (2 * H * mp.gamma(H + 0.5) ** 2)
+    sum_1 = mp.mpf(0)
+    sum_2 = mp.mpf(0)
+    summands_1 = np.empty(shape=(N**2,))
+    summands_2 = np.empty(shape=(N,))
+    for i in range(N):
+        for j in range(N):
+            summands_1[i * N + j] = weights[i] * weights[j] / (nodes[i] + nodes[j]) * (
+                        1 - mp.exp(-(nodes[i] + nodes[j]) * T))
+        summands_2[i] = weights[i] / nodes[i] ** (H + 0.5) * mp.gammainc(H + 0.5, mp.mpf(0.), nodes[i] * T)
+    summands_1.sort()
+    summands_2.sort()
+    for summand_1 in summands_1:
+        sum_1 += summand_1
+    for summand_2 in summands_2:
+        sum_2 += summand_2
+    sum_2 *= 2 / mp.gamma(H + 0.5)
+    return summand + sum_1 - sum_2
+
+
 def error_estimate_fBm(H, m, n, a, b, T):
     """
     Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
@@ -73,6 +108,7 @@ def error_estimate_fBm(H, m, n, a, b, T):
     rule = quadrature_rule_geometric_no_zero_node(H, m, n, a, b)
     nodes = rule[0, :]
     weights = rule[1, :]
+    '''
     summand = T ** (2 * H) / (2 * H * mp.gamma(H + 0.5) ** 2)
     sum_1 = mp.mpf(0)
     sum_2 = mp.mpf(0)
@@ -90,6 +126,8 @@ def error_estimate_fBm(H, m, n, a, b, T):
         sum_2 += summand_2
     sum_2 *= 2 / mp.gamma(H + 0.5)
     c = summand + sum_1 - sum_2
+    '''
+    c = error_estimate_fBm_general(H, nodes, weights, T)
     b = mp.mpf(0)
     for i in range(n*m):
         b += weights[i]/nodes[i] * (1 - mp.exp(-nodes[i]*T))
@@ -98,6 +136,68 @@ def error_estimate_fBm(H, m, n, a, b, T):
     a = T
     w_0 = -b/(mp.mpf(2.)*a)
     return np.array([np.sqrt(np.fmax(float(a*w_0*w_0 + b*w_0 + c), 0.)), float(w_0)])
+
+
+def optimize_error_fBm_general(H, N, T, tol=1e-08):
+    """
+    Optimizes the L^2 strong approximation error with N points for fBm, with no node at 0. Uses the Nelder-Mead
+    optimizer as implemented in scipy with maxiter=10000.
+    :param H: Hurst parameter
+    :param N: Number of points
+    :param T: Final time
+    :param tol: Tolerance in a, b of the optimal values
+    :return: The minimal error together with the associated nodes and weights.
+    """
+
+    def func(x):
+        return error_estimate_fBm_general(H, x[:N], x[N:], T)
+
+    nodes, weights = quadrature_rule_geometric_standard(H, N, T)
+    rule = np.zeros(2*N)
+    if len(nodes) < N:
+        rule[:len(nodes)] = nodes
+        rule[N:N+len(nodes)] = weights
+        for i in range(len(nodes), N):
+            rule[i] = nodes[-1] * 10**(i-len(nodes)+1)
+            rule[N+i] = weights[-1]
+    else:
+        rule[:N] = nodes[:N]
+        rule[N:] = weights[:N]
+    rule[0] = rule[1]/10
+
+    res = minimize(func, rule, method="nelder-mead", options={"xatol": tol, "maxiter": 10000})
+    return res.fun, res.x[:N], res.x[N:]
+
+
+def optimize_error_fBm_bounded_nodes(H, N, bound=1000, T=1., tol=1e-05):
+    def func(x):
+        '''
+        penalty = 0
+        if np.amax(np.exp(x[:N])) > bound:
+            penalty = np.sum(np.fmax(np.exp(x[:N])-bound, 0))/bound
+        '''
+        penalty = 1/N * np.sum(np.exp(x[:N])/(5000*(1+np.exp(-(np.exp(x[:N])-1.5*bound)/(0.15*bound)))))
+        penalty_2 = 1/N * 1/10000 * (np.sum(1/np.exp(x[:N])) + np.sum(1/x[N:]))
+        return error_estimate_fBm_general(H, np.exp(x[:N]), x[N:], T) + penalty + penalty_2
+
+    nodes, weights = quadrature_rule_geometric_standard(H, N, T)
+    rule = np.zeros(2 * N)
+    rule[:N] = np.linspace(0, 6, N)
+    rule[N:] = np.ones(N)
+    '''
+    if len(nodes) < N:
+        rule[:len(nodes)] = nodes
+        rule[N:N + len(nodes)] = weights
+        for i in range(len(nodes), N):
+            rule[i] = nodes[-1] * 10 ** (i - len(nodes) + 1)
+            rule[N + i] = weights[-1]
+    else:
+        rule[:N] = nodes[:N]
+        rule[N:] = weights[:N]
+    rule[0] = rule[1] / 10
+    '''
+    res = minimize(func, rule, method="nelder-mead", options={"xatol": tol, "maxiter": 1000000})
+    return error_estimate_fBm_general(H, np.exp(res.x[:N]), res.x[N:], T), np.exp(res.x[:N]), res.x[N:]
 
 
 def optimize_error_fBm(H, T, m, n, a=0., b=0., tol=1e-8):
@@ -211,6 +311,11 @@ def quadrature_rule_geometric_good(H, N, T=1., mode="observation"):
     parameters from the theorem.
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
+    if mode == "optimized":
+        nodes, weights = quadrature_rule_optimized(H=H, N=N, T=T)
+        nodes = mp.matrix([mp.mpf(node) for node in nodes])
+        weights = mp.matrix([mp.mpf(weight) for weight in weights])
+        return nodes, weights
     [m, n, a, b] = get_parameters(H, N, T, mode)
     rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = rule[0, :]
@@ -230,6 +335,8 @@ def quadrature_rule_geometric_standard(H, N, T=1., mode="observation"):
     parameters from the theorem.
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
+    if mode == "optimized":
+        return quadrature_rule_optimized(H=H, N=N, T=T)
     nodes, weights = quadrature_rule_geometric_good(H=H, N=N, T=T, mode=mode)
     nodes = mp_to_np(nodes)
     weights = mp_to_np(weights)
@@ -258,6 +365,14 @@ def quadrature_rule_geometric(H, m, n, a, b, T=1.):
     """
     rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     return mp_to_np(rule)
+
+
+def quadrature_rule_optimized(H, N, T=1.):
+    _, nodes, weights = optimize_error_fBm_general(H=H, N=N, T=T)
+    permutation = np.argsort(nodes)
+    nodes = nodes[permutation]
+    weights = weights[permutation]
+    return nodes, weights
 
 
 def get_parameters(H, N, T, mode):
@@ -325,3 +440,42 @@ def adaptive_time_steps(nodes, T=1., q=10, N_time=10):
     times = np.zeros(len(dt)+1)
     times[1:] = np.cumsum(dt)
     return dt, times
+
+
+def compare_approximations(H, N, bound=1000, T=1):
+    nodes_observation = [np.empty(1)]*len(N)
+    nodes_optimization = [np.empty(1)]*len(N)
+    nodes_bounded = [np.empty(1)]*len(N)
+    weights_observation = [np.empty(1)]*len(N)
+    weights_optimization = [np.empty(1)]*len(N)
+    weights_bounded = [np.empty(1)]*len(N)
+    errors_observation = np.zeros(len(N))
+    errors_optimization = np.zeros(len(N))
+    errors_bounded = [np.empty(1)]*len(N)
+
+    for i in range(len(N)):
+        '''
+        nodes_observation[i], weights_observation[i] = quadrature_rule_geometric_standard(H, N[i]-1, T)
+        corrector = np.zeros(len(nodes_observation[i]))
+        corrector[0] += 0.00001
+        errors_observation[i] = error_estimate_fBm_general(H, nodes_observation[i] + corrector, weights_observation[i], T)
+        print(f'{N[i]}, observation:')
+        print(nodes_observation[i])
+        print(weights_observation[i])
+        print(np.sqrt(errors_observation[i]))
+
+        errors_optimization[i], nodes_optimization[i], weights_optimization[i] = optimize_error_fBm_general(H, N[i], T)
+        print(f'{N[i]}, optimization:')
+        print(nodes_optimization[i])
+        print(weights_optimization[i])
+        print(np.sqrt(errors_optimization[i]))
+        '''
+        errors_bounded[i], nodes_bounded[i], weights_bounded[i] = optimize_error_fBm_bounded_nodes(H, N[i], bound, T)
+        print(f'{N[i]}, bounded:')
+        print(nodes_bounded[i])
+        print(weights_bounded[i])
+        print(np.sqrt(errors_bounded[i]))
+
+    return nodes_observation, weights_observation, errors_observation, nodes_optimization, weights_optimization, \
+           errors_optimization, nodes_bounded, weights_bounded, errors_bounded
+

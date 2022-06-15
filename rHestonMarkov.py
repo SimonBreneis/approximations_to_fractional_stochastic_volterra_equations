@@ -20,8 +20,12 @@ def solve_Riccati(z, lambda_, rho, nu, nodes, weights, dt):
     :return: An approximation of F applied to the solution of the Riccati equation. Is an array with N+1 values.
     """
 
+    a = nu*nu/2
+    b = rho*nu*z - lambda_
+    c = (z*z-z)/2
+
     def F(x):
-        return (z*z-z)/2 + (rho*nu*z-lambda_)*x + nu*nu*x*x/2
+        return a*x*x + b*x + c
 
     N = len(nodes)
     psi_x = np.zeros(N, dtype=np.cdouble)
@@ -29,11 +33,18 @@ def solve_Riccati(z, lambda_, rho, nu, nodes, weights, dt):
     F_psi[0] = F(np.cdouble(0))
     psi = np.cdouble(0)
 
+    exp_nodes = np.exp(-nodes * dt[0])
+    div_nodes = np.zeros(len(nodes))
+    div_nodes[0] = dt[0] if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
+    div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
+    last_dt = dt[0]
     for i in range(len(dt)):
-        exp_nodes = np.exp(-nodes * dt[i])
-        div_nodes = np.zeros(len(nodes))
-        div_nodes[0] = dt[i] if nodes[0] == 0 else (1 - np.exp(-nodes[0]*dt[i])) / nodes[0]
-        div_nodes[1:] = (1 - np.exp(-nodes[1:]*dt[i])) / nodes[1:]
+        if dt[i] != last_dt:
+            exp_nodes = np.exp(-nodes * dt[i])
+            div_nodes = np.zeros(len(nodes))
+            div_nodes[0] = dt[i] if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
+            div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
+            last_dt = dt[i]
         psi_xP = F_psi[i]*div_nodes + psi_x*exp_nodes
         psi_P = (psi + np.dot(weights, psi_xP))/2
         psi_x = F(psi_P)*div_nodes + psi_x*exp_nodes
@@ -63,11 +74,14 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fo
     """
     N = len(nodes)
     times = np.zeros(len(dt)+1)
-    times[1:] = np.cumsum(dt)
+    times[:-1] = np.flip(np.cumsum(dt))
     g = np.zeros(len(dt) + 1)
     for i in range(1, N):
         g += weights[i] / nodes[i] * (1 - np.exp(-nodes[i] * times))
-    g = theta * (g + weights[0] * times) + V_0
+    if nodes[0] == 0:
+        g = theta * (g + weights[0] * times) + V_0
+    else:
+        g = theta * (g + weights[0] / nodes[0] * (1 - np.exp(-nodes[0] * times))) + V_0
 
     def mgf_(z):
         """
@@ -77,7 +91,7 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fo
         """
         res = np.zeros(shape=(len(z)), dtype=complex)
         for i in range(len(z)):
-            # print(f'{i} of {len(z)}')
+            print(f'{i} of {len(z)}')
             Fz = solve_Riccati(z=z[i], lambda_=lambda_, rho=rho, nu=nu, nodes=nodes, weights=weights, dt=dt)
             res[i] = np.trapz(Fz * g, dx=dt)
         return np.exp(res)
@@ -115,11 +129,9 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, 
     """
     nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
     if adaptive:
-        dt, times = rk.adaptive_time_steps(nodes=nodes, T=T, q=q, N_time=N_Riccati)
+        dt, _ = rk.adaptive_time_steps(nodes=nodes, T=T, q=q, N_time=N_Riccati)
     else:
         dt = np.ones(N_Riccati) * (T/N_Riccati)
-        times = np.zeros(len(dt)+1)
-        times[1:] = np.cumsum(dt)
-    prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, dt=dt, R=R, L=L, N_fourier=N_fourier,
-                  nodes=nodes, weights=weights)
+    prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_fourier=N_fourier,
+                  nodes=nodes, weights=weights, dt=dt)
     return cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)

@@ -8,9 +8,6 @@ import RoughKernel as rk
 import ComputationalFinance as cf
 
 
-
-
-
 def log_linear_regression(x, y):
     """
     Applies log-linear regression of y against x.
@@ -806,7 +803,7 @@ The rHeston implied volatility smiles for European call options. Parameters used
 lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., S_0=1.
 The vector of log-strikes is given below (k_vec).
 rHeston is the Heston smile for the El Euch-Rosenbaum approximation (with log-strikes k_vec).
-rHeston_N is the Bergomi smile for our approximation (with log-strikes k_vec) where N points were used and 
+rHeston_N is the Heston smile for our approximation (with log-strikes k_vec) where N points were used and 
 m and xi were chosen according to the interpolation of the numerical results.
 rHeston_AE_16 is the approximation by Abi Jaber and El Euch with 16 points.
 '''

@@ -290,12 +290,6 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
         rescaled_weights = weights / weights_norm
 
         def nested_step(V_comp_loc, dW_loc, dt_loc, iter):
-            '''
-            print(V_comp_loc)
-            print(dW_loc)
-            print(dt_loc)
-            print(np.dot(weights, V_comp_loc))
-            '''
             dW_mid = dW_loc / 2 + np.random.normal() * np.sqrt(dt_loc / 4)
             dt_loc = dt_loc / 2
 
@@ -327,9 +321,8 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
             V = np.dot(weights, V_components_)
             if V < 0:
                 V_components_ = nested_step(V_components, dW[i], dt, 1)
-                V = np.fmax(np.dot(weights, V_components_), 0)
             V_components = V_components_
-            V = np.dot(weights, V_components)
+            V = np.fmax(np.dot(weights, V_components), 0)
 
     elif vol_behaviour == 'multiple time scales':
         weights_norm = np.dot(weights, weights)
@@ -446,6 +439,9 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
             [[weights[i] for i in range(N)] for _ in range(N)]) * dt
         A_inv = rk.mp_to_np(mp.inverse(A))
         params = {'mu_a': 0, 'mu_b': 0, 'sr': lambda x: np.sqrt(np.abs(x))}
+
+    elif vol_behaviour == 'adaptive':
+        params = {'max_iter': 5}
 
     sample_vec = np.zeros(m)
     if WB is None:

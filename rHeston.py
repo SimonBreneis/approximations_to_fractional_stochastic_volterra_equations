@@ -61,6 +61,7 @@ def characteristic_function(a, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=
     """
     res = np.zeros(shape=(len(a)), dtype=complex)
     for i in range(len(a)):
+        print(f'{i} of {len(a)}')
         dt = T / N_Riccati
         h = solve_fractional_Riccati(a[i], H, lambda_, rho, nu, T, N_Riccati)
         temporary_weights = 1/math.gamma(1.5-H) * ((T - dt * np.arange(N_Riccati)) ** (0.5 - H) - (T - dt * np.arange(1, N_Riccati + 1)) ** (0.5 - H))
