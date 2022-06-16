@@ -74,7 +74,7 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fo
     """
     N = len(nodes)
     times = np.zeros(len(dt)+1)
-    times[:-1] = np.flip(np.cumsum(dt))
+    times[:-1] = np.flip(np.cumsum(np.flip(dt)))
     g = np.zeros(len(dt) + 1)
     for i in range(1, N):
         g += weights[i] / nodes[i] * (1 - np.exp(-nodes[i] * times))
@@ -93,7 +93,7 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fo
         for i in range(len(z)):
             print(f'{i} of {len(z)}')
             Fz = solve_Riccati(z=z[i], lambda_=lambda_, rho=rho, nu=nu, nodes=nodes, weights=weights, dt=dt)
-            res[i] = np.trapz(Fz * g, dx=dt)
+            res[i] = np.trapz(Fz * g, dx=dt)  # np.dot((Fz * g)[:-1] + (Fz * g)[1:], dt)/2
         return np.exp(res)
 
     return cf.pricing_fourier_inversion(mgf_, K, R, L, N_fourier)
@@ -132,6 +132,10 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, 
         dt, _ = rk.adaptive_time_steps(nodes=nodes, T=T, q=q, N_time=N_Riccati)
     else:
         dt = np.ones(N_Riccati) * (T/N_Riccati)
+    # dt = np.flip(dt)
+    np.set_printoptions(threshold=np.inf)
+    print(dt)
+    print(np.sum(dt))
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_fourier=N_fourier,
                   nodes=nodes, weights=weights, dt=dt)
     return cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
