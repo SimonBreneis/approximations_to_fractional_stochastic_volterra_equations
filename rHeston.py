@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import ComputationalFinance as cf
 import scipy.special
@@ -127,20 +128,29 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=200, 
     :param rel_tol: Required maximal relative error in the implied volatility
     return: The price of the call option
     """
+    tic = time.perf_counter()
     prices = call(K, H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_Fourier)
     iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    duration = time.perf_counter() - tic
     prices = call(K, H, lambda_, rho, nu, theta, V_0, T, N_Riccati // 2, R, L / 1.2, N_Fourier // 2)
     iv_approx = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
     error = np.amax(np.abs(iv_approx-iv)/iv)
+
+    print(iv)
 
     while error > rel_tol or np.amin(iv) < 1e-08:
         iv_approx = iv
         L = L * 1.2
         N_Fourier = N_Fourier * 2
         N_Riccati = N_Riccati * 2
-        print('True', error, L, N_Fourier, N_Riccati)
+        print('True', error, L, N_Fourier, N_Riccati, duration, time.strftime("%H:%M:%S", time.localtime()))
+        tic = time.perf_counter()
         prices = call(K, H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_Fourier)
         iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+        duration = time.perf_counter() - tic
         error = np.amax(np.abs(iv_approx - iv)/iv)
+        print(iv)
+        print(np.abs(iv_approx-iv)/iv)
+        print(error)
 
     return iv

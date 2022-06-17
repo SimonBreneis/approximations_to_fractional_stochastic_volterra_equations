@@ -4,12 +4,13 @@ import numpy as np
 import ComputationalFinance as cf
 import RoughKernel as rk
 import mpmath as mp
-from scipy.optimize import fsolve
 import rHestonSplitKernel as sk
 
 
-def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, WB=None, m=1, mode="observation", vol_behaviour='sticky'):
+def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, WB=None, m=1, mode="best",
+                     vol_behaviour='sticky'):
     """
+    Simulates paths under the Markovian approximation of the rough Heston model.
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -17,11 +18,36 @@ def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000,
     :param theta: Mean variance
     :param V_0: Initial variance
     :param T: Final time/Time of maturity
-    :param N_time: Number of time steps used in the solution of the fractional Riccati equation
-    :param N: Total number of points in the quadrature rule, N=n*m
+    :param N_time: Number of time steps
+    :param N: Total number of points in the quadrature rule
     :param S_0: Initial stock price
-    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
-    theorem.
+    :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param vol_behaviour: The behaviour of the volatility at 0. The following options are possible:
+        - sticky: If V becomes negative, resets V to 0 without resetting the components of V
+        - constant: Uses constant volatility V_0, as in the Black-Scholes model
+        - mean reversion: If V becomes negative, inserts as much fictitious time as needed until the components have
+            reverted enough to ensure positive V. The fictitious time is only for the dt component, as the dW and dB
+            components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
+            intervals
+        - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
+            reset by adding the correct multiple of the weights vector
+        - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
+            This ensures that V changes sign and does not stay 0
+        - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued
+            recursively until V is non-negative, but at most 5 consecutive times (i.e. an interval is divided into at
+            most 32 intervals)
+        - multiple time scales: Solves for the components on different time scales corresponding to their mean
+            reversions. If V becomes negative, applies the hyperplane reset method
+        - split kernel: Uses the invariant measure of the high mean-reversion components instead of actually simulating
+            them. In practice, this is essentially equivalent to a certain smoothing of the square root. If V becomes
+            negative, applies the hyperplane reset method
+    :return: Three numpy arrays, the stock sample paths, the square roots of the volatility sample paths, and the
+        sample paths of the components of the volatility. If vol_behaviour is adaptive, also returns a list of the
+        values of the components of the volatility where the volatility became negative
     """
     dt = T/N_time
     nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
@@ -62,7 +88,7 @@ def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000,
         for j in range(m):
             print(j)
             for i in range(1, N_time + 1):
-                S_values[j, i] = S_values[j, i - 1] + np.sqrt(0.02) * S_values[j, i - 1] * S_BM[j, i-1]
+                S_values[j, i] = S_values[j, i - 1] + np.sqrt(V_0) * S_values[j, i - 1] * S_BM[j, i-1]
     elif vol_behaviour == 'mean reversion':
         for j in range(m):
             zero_vol = V_0 <= 0
@@ -228,7 +254,53 @@ def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000,
     return S_values, np.sqrt(V_values), V_components
 
 
-def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, WB=None, vol_behaviour='sticky', params=None):
+def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=1., N_time=1000, WB=None,
+                  vol_behaviour='sticky', params=None):
+    """
+    Simulates (the final stock price) of a single sample path under the Markovian approximation of the rough Heston
+    model.
+    :param A_inv: The (already inverted) matrix for solving the implicit Euler scheme
+    :param nodes: The nodes of the quadrature rule
+    :param weights: The weights of the quadrature rule
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_time: Number of time steps
+    :param S_0: Initial stock price
+    :param WB: Brownian increments. Has shape (2, N_time). First components are the dW, second the dB
+    :param vol_behaviour: The behaviour of the volatility at 0. The following options are possible:
+        - sticky: If V becomes negative, resets V to 0 without resetting the components of V
+        - constant: Uses constant volatility V_0, as in the Black-Scholes model
+        - mean reversion: If V becomes negative, inserts as much fictitious time as needed until the components have
+            reverted enough to ensure positive V. The fictitious time is only for the dt component, as the dW and dB
+            components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
+            intervals
+        - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
+            reset by adding the correct multiple of the weights vector
+        - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
+            This ensures that V changes sign and does not stay 0
+        - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued
+            recursively until V is non-negative, but at most 5 consecutive times (i.e. an interval is divided into at
+            most 32 intervals)
+        - multiple time scales: Solves for the components on different time scales corresponding to their mean
+            reversions. If V becomes negative, applies the hyperplane reset method
+        - split kernel: Uses the invariant measure of the high mean-reversion components instead of actually simulating
+            them. In practice, this is essentially equivalent to a certain smoothing of the square root. If V becomes
+            negative, applies the hyperplane reset method
+    :param params: None or a dictionary. If vol_behaviour is adaptive, may have a key called max_iter, defining how
+        often an interval may be halved. If this is not specified, chooses max_iter = 5. If vol_behaviour is
+        multiple time scales, must be a dictionary with the keys:
+        - eta: For how long a component should be calculated. Relative error committed is roughly e^(-eta)
+        - L: Number of time steps per component
+        - n_trivial_intervals: How many components have a slow enough mean reversion so that accurate simulation is
+            possible without further subdivisions (i.e. L=1 is possible for these components)
+        - dt_loc: Vector of step sizes reflecting the subdivisions of each interval
+    :return: The final stock price
+    """
+    N = len(nodes)
     dt = T/N_time
     S = S_0
     V = V_0
@@ -373,7 +445,46 @@ def sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0
     return S
 
 
-def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, m=100000, S_0=1., N_time=1000, WB=None, mode="observation", vol_behaviour='sticky'):
+def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, m=100000, S_0=1., N_time=1000,
+            WB=None, mode="best", vol_behaviour='sticky'):
+    """
+    Simulates (the final stock prices) of sample paths under the Markovian approximation of the rough Heston model.
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_time: Number of time steps
+    :param N: Total number of points in the quadrature rule
+    :param S_0: Initial stock price
+    :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param vol_behaviour: The behaviour of the volatility at 0. The following options are possible:
+        - sticky: If V becomes negative, resets V to 0 without resetting the components of V
+        - constant: Uses constant volatility V_0, as in the Black-Scholes model
+        - mean reversion: If V becomes negative, inserts as much fictitious time as needed until the components have
+            reverted enough to ensure positive V. The fictitious time is only for the dt component, as the dW and dB
+            components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
+            intervals
+        - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
+            reset by adding the correct multiple of the weights vector
+        - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
+            This ensures that V changes sign and does not stay 0
+        - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued
+            recursively until V is non-negative, but at most 5 consecutive times (i.e. an interval is divided into at
+            most 32 intervals)
+        - multiple time scales: Solves for the components on different time scales corresponding to their mean
+            reversions. If V becomes negative, applies the hyperplane reset method
+        - split kernel: Uses the invariant measure of the high mean-reversion components instead of actually simulating
+            them. In practice, this is essentially equivalent to a certain smoothing of the square root. If V becomes
+            negative, applies the hyperplane reset method
+    :return: Numpy array of the final stock prices
+    """
     dt = T / N_time
     nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
     N = len(nodes)
@@ -458,20 +569,46 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
     return sample_vec
 
 
-def call(K, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, H=0.1, N=6, S_0=1., T=1., m=1000, N_time=1000, WB=None, mode='observation', vol_behaviour='sticky'):
+def call(K, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, H=0.1, N=6, S_0=1., T=1., m=1000, N_time=1000, WB=None,
+         mode='best', vol_behaviour='sticky'):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
-    Uses the Ninomiya-Victoir scheme.
+    Uses the implicit Euler scheme.
     :param K: Strike prices, assumed to be a vector
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
     :param theta: Mean variance
     :param V_0: Initial variance
+    :param H: Hurst parameter
+    :param N: Number of quadrature points
+    :param S_0: Initial stock price
     :param T: Final time/Time of maturity
-    :param N_time: Number of time steps used in the solution of the fractional Riccati equation
-    :param nodes: The nodes used in the approximation
-    :param weights: The weights used in the approximation
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param N_time: Number of time steps used in simulation
+    :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param vol_behaviour: The behaviour of the volatility at 0. The following options are possible:
+        - sticky: If V becomes negative, resets V to 0 without resetting the components of V
+        - constant: Uses constant volatility V_0, as in the Black-Scholes model
+        - mean reversion: If V becomes negative, inserts as much fictitious time as needed until the components have
+            reverted enough to ensure positive V. The fictitious time is only for the dt component, as the dW and dB
+            components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
+            intervals
+        - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
+            reset by adding the correct multiple of the weights vector
+        - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
+            This ensures that V changes sign and does not stay 0
+        - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued
+            recursively until V is non-negative, but at most 5 consecutive times (i.e. an interval is divided into at
+            most 32 intervals)
+        - multiple time scales: Solves for the components on different time scales corresponding to their mean
+            reversions. If V becomes negative, applies the hyperplane reset method
+        - split kernel: Uses the invariant measure of the high mean-reversion components instead of actually simulating
+            them. In practice, this is essentially equivalent to a certain smoothing of the square root. If V becomes
+            negative, applies the hyperplane reset method
     return: The prices of the call option for the various strike prices in K
     """
     S = samples(H, lambda_, rho, nu, theta, V_0, T, N, m, S_0, N_time, WB, mode, vol_behaviour)

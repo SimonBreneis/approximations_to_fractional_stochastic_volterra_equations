@@ -54,6 +54,31 @@ def plot_kernel_approximations(H, m, n_vec, a, b, left=0.0001, right=1., number_
     plt.show()
 
 
+def gradient_of_error(H, T, nodes, weights):
+    """
+    Computes the gradient nabla int_0^T |K(t) - hat{K}(t)|^2 dt, where nabla acts on the nodes and weights,
+    assuming that there is no node at 0.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param nodes: Nodes of the quadrature rule
+    :param weights: Weights of the quadrature rule
+    :return: The gradient
+    """
+    N = len(nodes)
+    gamma_ints = scipy.special.gammainc(H+1/2, nodes*T)
+    grad = np.empty(2*N)
+    node_matrix = nodes[:, None] + nodes[None, :]
+    exp_node_matrix = np.exp(-node_matrix*T)
+    weight_matrix = np.outer(weights, weights)
+    first_summands = weight_matrix / (node_matrix * node_matrix) * (1-(1-node_matrix*T)*exp_node_matrix)
+    second_summands = weights * (T**(H+1/2) / nodes * np.exp(-nodes*T) / scipy.special.gamma(H+1/2) - (H+1/2) * nodes**(-(H+3/2)) * gamma_ints)
+    grad[:N] = -2 * np.sum(first_summands, axis=1) - 2 * second_summands
+    third_summands = ((1-exp_node_matrix)/node_matrix) @ weights
+    forth_summands = nodes ** (-(H+1/2)) * gamma_ints
+    grad[N:] = 2 * third_summands - 2 * forth_summands
+    return grad
+
+
 def error_estimate_fBm_general(H, nodes, weights, T):
     """
     Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
@@ -119,7 +144,7 @@ def error_estimate_fBm(H, m, n, a, b, T):
     return np.array([np.sqrt(np.fmax(float(a*w_0*w_0 + b*w_0 + c), 0.)), float(w_0)])
 
 
-def optimize_error_fBm_general(H, N, T, tol=1e-04):
+def optimize_error_fBm_general(H, N, T, tol=1e-04, grad=True, bound=None):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
     optimizer as implemented in scipy.
@@ -127,6 +152,8 @@ def optimize_error_fBm_general(H, N, T, tol=1e-04):
     :param N: Number of points
     :param T: Final time
     :param tol: Error tolerance
+    :param grad: If True, uses the gradient in the optimization
+    :param bound: Upper bound on the nodes. If no upper bound is desired, use None
     :return: The minimal error together with the associated nodes and weights.
     """
 
@@ -147,7 +174,13 @@ def optimize_error_fBm_general(H, N, T, tol=1e-04):
     rule[0] = rule[1]/10
 
     kernel_l2_norm = T**(2*H) / (2*H*scipy.special.gamma(H+1/2)**2)
-    res = minimize(func, rule, method="nelder-mead", options={"fatol": tol**2 * kernel_l2_norm, "maxiter": 10000})
+    bounds = ((0, bound)*N) + ((0, None)*N)
+    if grad:
+        res = minimize(func, rule, method="BFGS", jac=lambda x: gradient_of_error(H=H, T=T, nodes=x[:N], weights=x[N:]),
+                       options={"fatol": tol**2 * kernel_l2_norm, "maxiter": 10000}, bounds=bounds)
+    else:
+        res = minimize(func, rule, method="nelder-mead", options={"fatol": tol**2 * kernel_l2_norm, "maxiter": 10000},
+                       bounds=bounds)
     return res.fun, res.x[:N], res.x[N:]
 
 

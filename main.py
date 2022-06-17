@@ -18,16 +18,18 @@ import scipy
 
 c = ['r', 'C1', 'y', 'g', 'b']
 
-k = np.linspace(-0.7, 0.35, 201)
+k = np.linspace(-0.44, 0.22, 201)
 tic = time.perf_counter()
-iv_true = rHeston.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.5,
-                                     rel_tol=1e-03)
+iv_true = rHeston.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.2,
+                                     rel_tol=2e-03)
+print(iv_true)
 print(f'True rough Heston: {time.perf_counter() - tic}')
 plt.plot(k, iv_true, 'k-', label='rough Heston')
 for N in np.array([1, 2, 3, 4, 5]):
     tic = time.perf_counter()
     iv_approx = rHestonMarkov.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02,
-                                                 V_0=0.02, T=0.5, rel_tol=1e-03, N=N)
+                                                 V_0=0.02, T=0.2, rel_tol=2e-03, N=N)
+    print(iv_approx)
     print(f'Markovian approximation, N={N}: {time.perf_counter()-tic}')
     plt.plot(k, iv_approx, c[N-1] + '-', label=f'{N}-dimensional approximation')
     print(f'N={N}, error: {np.amax(np.abs(iv_approx-iv_true)/iv_true)}')
