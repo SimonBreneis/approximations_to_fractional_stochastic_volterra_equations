@@ -1,3 +1,5 @@
+import time
+
 import matplotlib.pyplot as plt
 import numpy as np
 import mpmath as mp
@@ -430,37 +432,80 @@ def mp_to_np(x):
     return y.reshape(shape)
 
 
-def compare_approximations(H, N, T=1):
+def compare_approximations(H, N, T=1, bound=1000):
     """
     Compares the optimized quadrature rules with the quadrature rules from the observation.
     :param H: Hurst parameter
     :param N: Number of nodes (numpy array)
     :param T: Final time
-    :return: The nodes, weights, and errors using the observation points, and the nodes, weights and errors using
-        the optimized points (total of 6 numpy arrays)
+    :return: The nodes, weights, errors and computational times using the observation points, the optimized points
+        without gradients, the optimized points with gradients, and the optimized bounded points (with gradients)
+        (total of 16 numpy arrays)
     """
     nodes_observation = [np.empty(1)]*len(N)
+    nodes_no_grad = [np.empty(1)]*len(N)
     nodes_optimization = [np.empty(1)]*len(N)
+    nodes_bounded = [np.empty(1)]*len(N)
     weights_observation = [np.empty(1)]*len(N)
+    weights_no_grad = [np.empty(1)]*len(N)
     weights_optimization = [np.empty(1)]*len(N)
+    weights_bounded = [np.empty(1)]*len(N)
     errors_observation = np.zeros(len(N))
+    errors_no_grad = np.zeros(len(N))
     errors_optimization = np.zeros(len(N))
+    errors_bounded = np.zeros(len(N))
+    times_observation = np.zeros(len(N))
+    times_no_grad = np.zeros(len(N))
+    times_optimization = np.zeros(len(N))
+    times_bounded = np.zeros(len(N))
+
+    integral = np.sqrt(error_estimate_fBm_general(H, np.array([1]), np.array([0]), T))
 
     for i in range(len(N)):
+        tic = time.perf_counter()
         nodes_observation[i], weights_observation[i] = quadrature_rule_geometric_standard(H, N[i]-1, T)
+        times_observation[i] = time.perf_counter() - tic
         corrector = np.zeros(len(nodes_observation[i]))
         corrector[0] += 0.00001
-        errors_observation[i] = error_estimate_fBm_general(H, nodes_observation[i] + corrector, weights_observation[i], T)
+        errors_observation[i] = error_estimate_fBm_general(H, nodes_observation[i] + corrector, weights_observation[i],
+                                                           T)
+        errors_observation[i] = np.sqrt(errors_observation[i]) / integral
         print(f'{N[i]}, observation:')
         print(nodes_observation[i])
         print(weights_observation[i])
-        print(np.sqrt(errors_observation[i]))
+        print(errors_observation[i])
+        print(times_observation[i])
 
+        tic = time.perf_counter()
+        errors_no_grad[i], nodes_no_grad[i], weights_no_grad[i] = optimize_error_fBm_general(H, N[i], T, grad=False)
+        times_no_grad[i] = time.perf_counter() - tic
+        errors_no_grad[i] = np.sqrt(errors_no_grad[i]) / integral
+        print(f'{N[i]}, no gradient:')
+        print(nodes_no_grad[i])
+        print(weights_no_grad[i])
+        print(errors_no_grad[i])
+        print(times_no_grad[i])
+
+        tic = time.perf_counter()
         errors_optimization[i], nodes_optimization[i], weights_optimization[i] = optimize_error_fBm_general(H, N[i], T)
+        times_optimization[i] = time.perf_counter() - tic
+        errors_optimization[i] = np.sqrt(errors_optimization[i]) / integral
         print(f'{N[i]}, optimization:')
         print(nodes_optimization[i])
         print(weights_optimization[i])
-        print(np.sqrt(errors_optimization[i]))
+        print(errors_optimization[i])
+        print(times_optimization[i])
 
-    return nodes_observation, weights_observation, errors_observation, nodes_optimization, weights_optimization, \
-           errors_optimization
+        tic = time.perf_counter()
+        errors_bounded[i], nodes_bounded[i], weights_bounded[i] = optimize_error_fBm_general(H, N[i], T, bound=bound)
+        times_bounded[i] = time.perf_counter() - tic
+        errors_bounded[i] = np.sqrt(errors_bounded[i]) / integral
+        print(f'{N[i]}, bounded:')
+        print(nodes_bounded[i])
+        print(weights_bounded[i])
+        print(errors_bounded[i])
+        print(times_bounded[i])
+
+    return nodes_observation, weights_observation, errors_observation, times_observation, nodes_no_grad, \
+           weights_no_grad, errors_no_grad, times_no_grad, nodes_optimization, weights_optimization, \
+           errors_optimization, times_optimization, nodes_bounded, weights_bounded, errors_bounded, times_bounded
