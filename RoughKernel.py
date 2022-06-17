@@ -1,14 +1,14 @@
-import math
 import matplotlib.pyplot as plt
 import numpy as np
 import mpmath as mp
 from scipy.optimize import minimize
+import scipy.special
 import orthopy
 import quadpy
 
 
 def fractional_kernel(H, t):
-    return t ** (H - 0.5) / math.gamma(H + 0.5)
+    return t ** (H - 0.5) / scipy.special.gamma(H + 0.5)
 
 
 def fractional_kernel_laplace(H, t, rho):
@@ -21,7 +21,7 @@ def c_H(H):
     :param H: Hurst parameter
     :return: c_H
     """
-    return 1. / (math.gamma(0.5 + H) * math.gamma(0.5 - H))
+    return 1. / (scipy.special.gamma(0.5 + H) * scipy.special.gamma(0.5 - H))
 
 
 def plot_kernel_approximations(H, m, n_vec, a, b, left=0.0001, right=1., number_time_steps=10000):
@@ -108,25 +108,6 @@ def error_estimate_fBm(H, m, n, a, b, T):
     rule = quadrature_rule_geometric_no_zero_node(H, m, n, a, b)
     nodes = rule[0, :]
     weights = rule[1, :]
-    '''
-    summand = T ** (2 * H) / (2 * H * mp.gamma(H + 0.5) ** 2)
-    sum_1 = mp.mpf(0)
-    sum_2 = mp.mpf(0)
-    summands_1 = np.empty(shape=(n*m*n*m))
-    summands_2 = np.empty(shape=(n*m))
-    for i in range(n * m):
-        for j in range(n * m):
-            summands_1[i*n*m + j] = weights[i]*weights[j] / (nodes[i]+nodes[j]) * (1 - mp.exp(-(nodes[i]+nodes[j])*T))
-        summands_2[i] = weights[i] / nodes[i] ** (H + 0.5) * mp.gammainc(H + 0.5, mp.mpf(0.), nodes[i] * T)
-    summands_1.sort()
-    summands_2.sort()
-    for summand_1 in summands_1:
-        sum_1 += summand_1
-    for summand_2 in summands_2:
-        sum_2 += summand_2
-    sum_2 *= 2 / mp.gamma(H + 0.5)
-    c = summand + sum_1 - sum_2
-    '''
     c = error_estimate_fBm_general(H, nodes, weights, T)
     b = mp.mpf(0)
     for i in range(n*m):
@@ -138,21 +119,21 @@ def error_estimate_fBm(H, m, n, a, b, T):
     return np.array([np.sqrt(np.fmax(float(a*w_0*w_0 + b*w_0 + c), 0.)), float(w_0)])
 
 
-def optimize_error_fBm_general(H, N, T, tol=1e-08):
+def optimize_error_fBm_general(H, N, T, tol=1e-04):
     """
-    Optimizes the L^2 strong approximation error with N points for fBm, with no node at 0. Uses the Nelder-Mead
-    optimizer as implemented in scipy with maxiter=10000.
+    Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
+    optimizer as implemented in scipy.
     :param H: Hurst parameter
     :param N: Number of points
     :param T: Final time
-    :param tol: Tolerance in a, b of the optimal values
+    :param tol: Error tolerance
     :return: The minimal error together with the associated nodes and weights.
     """
 
     def func(x):
         return error_estimate_fBm_general(H, x[:N], x[N:], T)
 
-    nodes, weights = quadrature_rule_geometric_standard(H, N, T)
+    nodes, weights = quadrature_rule_geometric_standard(H, N+1, T, mode='observation')
     rule = np.zeros(2*N)
     if len(nodes) < N:
         rule[:len(nodes)] = nodes
@@ -165,45 +146,15 @@ def optimize_error_fBm_general(H, N, T, tol=1e-08):
         rule[N:] = weights[:N]
     rule[0] = rule[1]/10
 
-    res = minimize(func, rule, method="nelder-mead", options={"xatol": tol, "maxiter": 10000})
+    kernel_l2_norm = T**(2*H) / (2*H*scipy.special.gamma(H+1/2)**2)
+    res = minimize(func, rule, method="nelder-mead", options={"fatol": tol**2 * kernel_l2_norm, "maxiter": 10000})
     return res.fun, res.x[:N], res.x[N:]
-
-
-def optimize_error_fBm_bounded_nodes(H, N, bound=1000, T=1., tol=1e-05):
-    def func(x):
-        '''
-        penalty = 0
-        if np.amax(np.exp(x[:N])) > bound:
-            penalty = np.sum(np.fmax(np.exp(x[:N])-bound, 0))/bound
-        '''
-        penalty = 1/N * np.sum(np.exp(x[:N])/(5000*(1+np.exp(-(np.exp(x[:N])-1.5*bound)/(0.15*bound)))))
-        penalty_2 = 1/N * 1/10000 * (np.sum(1/np.exp(x[:N])) + np.sum(1/x[N:]))
-        return error_estimate_fBm_general(H, np.exp(x[:N]), x[N:], T) + penalty + penalty_2
-
-    nodes, weights = quadrature_rule_geometric_standard(H, N, T)
-    rule = np.zeros(2 * N)
-    rule[:N] = np.linspace(0, 6, N)
-    rule[N:] = np.ones(N)
-    '''
-    if len(nodes) < N:
-        rule[:len(nodes)] = nodes
-        rule[N:N + len(nodes)] = weights
-        for i in range(len(nodes), N):
-            rule[i] = nodes[-1] * 10 ** (i - len(nodes) + 1)
-            rule[N + i] = weights[-1]
-    else:
-        rule[:N] = nodes[:N]
-        rule[N:] = weights[:N]
-    rule[0] = rule[1] / 10
-    '''
-    res = minimize(func, rule, method="nelder-mead", options={"xatol": tol, "maxiter": 1000000})
-    return error_estimate_fBm_general(H, np.exp(res.x[:N]), res.x[N:], T), np.exp(res.x[:N]), res.x[N:]
 
 
 def optimize_error_fBm(H, T, m, n, a=0., b=0., tol=1e-8):
     """
     Optimizes the L^2 strong approximation error of the AK scheme over xi_0 and xi_n for fBm. Uses the Nelder-Mead
-    optimizer as implemented in scipy with maxiter=10000.
+    optimizer as implemented in scipy.
     :param H: Hurst parameter
     :param T: Final time
     :param m: Level of quadrature rule
@@ -299,7 +250,7 @@ def quadrature_rule_geometric_mpmath(H, m, n, a, b, T=1.):
     return rule
 
 
-def quadrature_rule_geometric_good(H, N, T=1., mode="observation"):
+def quadrature_rule_geometric_good(H, N, T=1., mode="best"):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
     on n geometrically spaced subintervals. The result is an instance of mp.matrix with mp.mpf entries. Here, n, m, xi_0
@@ -308,14 +259,21 @@ def quadrature_rule_geometric_good(H, N, T=1., mode="observation"):
     :param N: Total number of nodes, N=nm
     :param T: Final time
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-    parameters from the theorem.
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
+    if mode == 'best':
+        if N <= 5:
+            mode = 'optimized'
+        else:
+            mode = 'observation'
     if mode == "optimized":
         nodes, weights = quadrature_rule_optimized(H=H, N=N, T=T)
         nodes = mp.matrix([mp.mpf(node) for node in nodes])
         weights = mp.matrix([mp.mpf(weight) for weight in weights])
         return nodes, weights
+    N = N-1
     [m, n, a, b] = get_parameters(H, N, T, mode)
     rule = quadrature_rule_geometric_mpmath(H, m, n, a, b, T)
     nodes = rule[0, :]
@@ -323,7 +281,7 @@ def quadrature_rule_geometric_good(H, N, T=1., mode="observation"):
     return nodes, weights
 
 
-def quadrature_rule_geometric_standard(H, N, T=1., mode="observation"):
+def quadrature_rule_geometric_standard(H, N, T=1., mode="best"):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
     on n geometrically spaced subintervals. The result is an instance of a numpy array, with nodes ordered in increasing
@@ -332,9 +290,15 @@ def quadrature_rule_geometric_standard(H, N, T=1., mode="observation"):
     :param N: Total number of nodes, N=nm
     :param T: Final time
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-    parameters from the theorem.
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
+    if mode == 'best':
+        if N <= 5:
+            mode = 'optimized'
+        else:
+            mode = 'observation'
     if mode == "optimized":
         return quadrature_rule_optimized(H=H, N=N, T=T)
     nodes, weights = quadrature_rule_geometric_good(H=H, N=N, T=T, mode=mode)
@@ -368,6 +332,14 @@ def quadrature_rule_geometric(H, m, n, a, b, T=1.):
 
 
 def quadrature_rule_optimized(H, N, T=1.):
+    """
+    Returns the optimal nodes and weights of the N-point quadrature rule for the fractional kernel with Hurst parameter
+    H.
+    :param H: Hurst parameter
+    :param N: Number of nodes
+    :param T: Final time
+    :return: All the nodes and weights in increasing order, in the form [node1, node2, ...], [weight1, weight2, ...]
+    """
     _, nodes, weights = optimize_error_fBm_general(H=H, N=N, T=T)
     permutation = np.argsort(nodes)
     nodes = nodes[permutation]
@@ -376,6 +348,15 @@ def quadrature_rule_optimized(H, N, T=1.):
 
 
 def get_parameters(H, N, T, mode):
+    """
+    Returns the parameters m, n, a, b of the geometric quadrature rule.
+    :param H: Hurst parameter
+    :param N: Total number of nodes
+    :param T: Final time
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem
+    :return: Quadrature level m, number of intervals n, left point a, right point b
+    """
     a = 0.
     b = 0.
     beta = 0.
@@ -405,7 +386,7 @@ def mp_to_np(x):
     """
     Converts a mpmath matrix to a numpy array.
     :param x: The mpmath matrix to convert
-    return: The converted numpy array.
+    :return: The converted numpy array.
     """
     y = np.array(x.tolist())
     shape = y.shape
@@ -416,45 +397,23 @@ def mp_to_np(x):
     return y.reshape(shape)
 
 
-def adaptive_time_steps(nodes, T=1., q=10, N_time=10):
+def compare_approximations(H, N, T=1):
     """
-    Computes a vector of time step sizes that can be used to solve (deterministic) Volterra equations.
-    :param nodes: The nodes used in the approximation
-    :param T: Final time in the Volterra equation
-    :param q: Contributions of order e^(-q) are considered negligible
-    :param N_time: Uses len(nodes)*q*N_time time steps
-    return: The time steps and the cumulative time vector
+    Compares the optimized quadrature rules with the quadrature rules from the observation.
+    :param H: Hurst parameter
+    :param N: Number of nodes (numpy array)
+    :param T: Final time
+    :return: The nodes, weights, and errors using the observation points, and the nodes, weights and errors using
+        the optimized points (total of 6 numpy arrays)
     """
-    N = len(nodes)
-    dt = []
-    timescale = 0
-    for i in range(N):
-        if timescale < T:
-            prev_timescale = timescale
-            if i < N - 1:
-                timescale = np.fmin(q / nodes[-i - 1], T)
-            else:
-                timescale = T
-            dt = dt + [(timescale - prev_timescale) / (q * N_time)] * (q * N_time)
-    dt = np.array(dt)
-    times = np.zeros(len(dt)+1)
-    times[1:] = np.cumsum(dt)
-    return dt, times
-
-
-def compare_approximations(H, N, bound=1000, T=1):
     nodes_observation = [np.empty(1)]*len(N)
     nodes_optimization = [np.empty(1)]*len(N)
-    nodes_bounded = [np.empty(1)]*len(N)
     weights_observation = [np.empty(1)]*len(N)
     weights_optimization = [np.empty(1)]*len(N)
-    weights_bounded = [np.empty(1)]*len(N)
     errors_observation = np.zeros(len(N))
     errors_optimization = np.zeros(len(N))
-    errors_bounded = [np.empty(1)]*len(N)
 
     for i in range(len(N)):
-        '''
         nodes_observation[i], weights_observation[i] = quadrature_rule_geometric_standard(H, N[i]-1, T)
         corrector = np.zeros(len(nodes_observation[i]))
         corrector[0] += 0.00001
@@ -469,13 +428,6 @@ def compare_approximations(H, N, bound=1000, T=1):
         print(nodes_optimization[i])
         print(weights_optimization[i])
         print(np.sqrt(errors_optimization[i]))
-        '''
-        errors_bounded[i], nodes_bounded[i], weights_bounded[i] = optimize_error_fBm_bounded_nodes(H, N[i], bound, T)
-        print(f'{N[i]}, bounded:')
-        print(nodes_bounded[i])
-        print(weights_bounded[i])
-        print(np.sqrt(errors_bounded[i]))
 
     return nodes_observation, weights_observation, errors_observation, nodes_optimization, weights_optimization, \
-           errors_optimization, nodes_bounded, weights_bounded, errors_bounded
-
+           errors_optimization

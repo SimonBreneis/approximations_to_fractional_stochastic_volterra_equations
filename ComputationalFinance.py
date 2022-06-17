@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 from scipy import stats
+import matplotlib.pyplot as plt
 
 
 def MC(samples):
@@ -160,11 +161,11 @@ def fourier_transform_payoff(K, u):
     :param u: Argument of the Fourier transform
     :return: hat(f)(u)
     """
-    j = complex(0, 1)
-    return np.exp(np.log(K)*(1+j*u))/(j*u*(1+j*u))
+    u = complex(0, 1) * u
+    return np.exp(np.log(K)*(1+u))/(u*(1+u))
 
 
-def pricing_fourier_inversion(mgf, K, R=2., L=1000., N=1000**2):
+def pricing_fourier_inversion(mgf, K, R=2., L=50., N=300):
     """
     Computes the option price using Fourier inversion.
     :param mgf: The moment generating function of the final log-price
@@ -174,10 +175,10 @@ def pricing_fourier_inversion(mgf, K, R=2., L=1000., N=1000**2):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    u = -L + np.arange(N+1)*2*L/N
+    u = np.linspace(0, L, N+1)
     mgf_values = mgf(R-complex(0, 1)*u)
     prices = np.zeros(len(K))
     for i in range(len(K)):
         values = mgf_values*fourier_transform_payoff(K[i], u + complex(0, 1)*R)
-        prices[i] = np.real(1/(2*np.pi) * np.trapz(values, dx=2*L/N))
+        prices[i] = np.real(1/np.pi * np.trapz(values, dx=L/N))
     return prices

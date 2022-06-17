@@ -1,12 +1,9 @@
-import time
 import numpy as np
 import ComputationalFinance as cf
-import Data
 import RoughKernel as rk
-import matplotlib.pyplot as plt
 
 
-def solve_Riccati(z, lambda_, rho, nu, nodes, weights, dt):
+def solve_Riccati(z, lambda_, rho, nu, nodes, weights, exp_nodes, div_nodes, N_Riccati=200):
     """
     Solves the Riccati equation in the exponent of the characteristic function of the approximation of the rough Heston
     model. Does not return psi but rather F(z, psi(., z)).
@@ -16,7 +13,9 @@ def solve_Riccati(z, lambda_, rho, nu, nodes, weights, dt):
     :param nu: Volatility of volatility
     :param nodes: The nodes used in the approximation, assuming that they are ordered in increasing order
     :param weights: The weights used in the approximation
-    :param dt: Array of time step sizes
+    :param exp_nodes: np.exp(-nodes * (T/N_Riccati))
+    :param div_nodes: (1 - exp_nodes) / nodes
+    :param N_Riccati: Number of time steps for solving the Riccati equation
     :return: An approximation of F applied to the solution of the Riccati equation. Is an array with N+1 values.
     """
 
@@ -27,33 +26,23 @@ def solve_Riccati(z, lambda_, rho, nu, nodes, weights, dt):
     def F(x):
         return a*x*x + b*x + c
 
-    N = len(nodes)
-    psi_x = np.zeros(N, dtype=np.cdouble)
-    F_psi = np.zeros(len(dt)+1, dtype=np.cdouble)
-    F_psi[0] = F(np.cdouble(0))
-    psi = np.cdouble(0)
+    psi_x = np.zeros((len(z), len(nodes)), dtype=np.cdouble)
+    F_psi = np.zeros((len(z), N_Riccati+1), dtype=np.cdouble)
+    F_psi[:, 0] = c
+    psi = np.zeros(len(z), dtype=np.cdouble)
 
-    exp_nodes = np.exp(-nodes * dt[0])
-    div_nodes = np.zeros(len(nodes))
-    div_nodes[0] = dt[0] if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
-    div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
-    last_dt = dt[0]
-    for i in range(len(dt)):
-        if dt[i] != last_dt:
-            exp_nodes = np.exp(-nodes * dt[i])
-            div_nodes = np.zeros(len(nodes))
-            div_nodes[0] = dt[i] if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
-            div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
-            last_dt = dt[i]
-        psi_xP = F_psi[i]*div_nodes + psi_x*exp_nodes
-        psi_P = (psi + np.dot(weights, psi_xP))/2
-        psi_x = F(psi_P)*div_nodes + psi_x*exp_nodes
-        psi = np.dot(weights, psi_x)
-        F_psi[i+1] = F(psi)
+    new_div = np.dot(div_nodes, weights)
+    new_exp = exp_nodes * weights
+
+    for i in range(N_Riccati):
+        psi_P = (psi + F_psi[:, i] * new_div + psi_x @ new_exp)/2
+        psi_x = np.outer(F(psi_P), div_nodes) + psi_x*exp_nodes[None, :]
+        psi = psi_x @ weights
+        F_psi[:, i+1] = F(psi)
     return F_psi
 
 
-def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fourier=40000):
+def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T=1, N_Riccati=200, R=2., L=50., N_Fourier=300):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
     Uses Fourier inversion.
@@ -63,19 +52,19 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fo
     :param nu: Volatility of volatility
     :param theta: Mean variance
     :param V_0: Initial variance
-    :param dt: Array of time step sizes
+    :param T: Final time
+    :param N_Riccati: Number of time steps for solving the Riccati equation
     :param R: The (dampening) shift that we use for the Fourier inversion
-    :param L: The value at which we cut off the Fourier integral, so we do not integrate over the reals,
-    but only over [-L, L]
-    :param N_fourier: The number of points used in the trapezoidal rule for the approximation of the Fourier integral
+    :param L: The value at which we cut off the Fourier integral, so we do not integrate over the reals, but only over
+        [0, L]
+    :param N_Fourier: The number of points used in the trapezoidal rule for the approximation of the Fourier integral
     :param nodes: The nodes used in the approximation
     :param weights: The weights used in the approximation
     return: The prices of the call option for the various strike prices in K
     """
     N = len(nodes)
-    times = np.zeros(len(dt)+1)
-    times[:-1] = np.flip(np.cumsum(np.flip(dt)))
-    g = np.zeros(len(dt) + 1)
+    times = np.linspace(T, 0, N_Riccati+1)
+    g = np.zeros(N_Riccati + 1)
     for i in range(1, N):
         g += weights[i] / nodes[i] * (1 - np.exp(-nodes[i] * times))
     if nodes[0] == 0:
@@ -83,24 +72,27 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, dt, R=2., L=200., N_fo
     else:
         g = theta * (g + weights[0] / nodes[0] * (1 - np.exp(-nodes[0] * times))) + V_0
 
+    exp_nodes = np.exp(-nodes * (T/N_Riccati))
+    div_nodes = np.zeros(len(nodes))
+    div_nodes[0] = T/N_Riccati if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
+    div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
+
     def mgf_(z):
         """
         Moment generating function of the log-price.
         :param z: Argument, assumed to be a vector
         :return: Value
         """
-        res = np.zeros(shape=(len(z)), dtype=complex)
-        for i in range(len(z)):
-            print(f'{i} of {len(z)}')
-            Fz = solve_Riccati(z=z[i], lambda_=lambda_, rho=rho, nu=nu, nodes=nodes, weights=weights, dt=dt)
-            res[i] = np.trapz(Fz * g, dx=dt)  # np.dot((Fz * g)[:-1] + (Fz * g)[1:], dt)/2
+        Fz = solve_Riccati(z=z, lambda_=lambda_, rho=rho, nu=nu, nodes=nodes, weights=weights, N_Riccati=N_Riccati,
+                           exp_nodes=exp_nodes, div_nodes=div_nodes)
+        res = np.trapz(Fz * g, dx=T/N_Riccati)
         return np.exp(res)
 
-    return cf.pricing_fourier_inversion(mgf_, K, R, L, N_fourier)
+    return cf.pricing_fourier_inversion(mgf_, K, R, L, N_Fourier)
 
 
-def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, R=-2, L=30., N_fourier=6000, q=10,
-                       adaptive=False, mode="observation"):
+def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, R=2, L=50., N_Fourier=300,
+                       mode="best", rel_tol=1e-02):
     """
     Gives the implied volatility of the European call option in the rough Heston model
     as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
@@ -114,28 +106,35 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, 
     :param V_0: Initial variance
     :param T: Final time/Time of maturity
     :param R: The (dampening) shift that we use for the Fourier inversion
-    :param L: The value at which we cut off the Fourier integral, so we do not integrate over the reals,
-    but only over [-L, L]
-    :param N_fourier: The number of points used in the trapezoidal rule for the approximation of the Fourier integral
-    :param q: Solves the Riccati equation up to time q/min(nodes)
-    :param N_Riccati: Uses q*N_Riccati time steps adapted to every node if adaptive, N_Riccati*q equidistant time steps
-        if not adaptive
-    :param adaptive: If true, adapts the time steps to the mean-reversion parameters (nodes). If false, uses equidistant
-        time steps
-    :param N: Total number of points in the quadrature rule, N=n*m
-    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
-    theorem.
+    :param L: The value at which we cut off the Fourier integral, so we do not integrate over the reals, but only over
+        [0, L]
+    :param N_Fourier: The number of points used in the trapezoidal rule for the approximation of the Fourier integral
+    :param N_Riccati: Uses N_Riccati time steps to solve the Riccati equations
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param rel_tol: Required maximal relative error in the implied volatility
     return: The price of the call option
     """
     nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
-    if adaptive:
-        dt, _ = rk.adaptive_time_steps(nodes=nodes, T=T, q=q, N_time=N_Riccati)
-    else:
-        dt = np.ones(N_Riccati) * (T/N_Riccati)
-    # dt = np.flip(dt)
-    np.set_printoptions(threshold=np.inf)
-    print(dt)
-    print(np.sum(dt))
-    prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_fourier=N_fourier,
-                  nodes=nodes, weights=weights, dt=dt)
-    return cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
+                  nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+    iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L/1.2, N_Fourier=N_Fourier // 2,
+                  nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati//2)
+    iv_approx = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    error = np.amax(np.abs(iv_approx-iv)/iv)
+
+    while error > rel_tol or np.amin(iv) < 1e-08:
+        iv_approx = iv
+        L = L * 1.2
+        N_Fourier = N_Fourier * 2
+        N_Riccati = N_Riccati * 2
+        print('Markov', error, L, N_Fourier, N_Riccati)
+        prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
+                      nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+        iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+        error = np.amax(np.abs(iv_approx - iv)/iv)
+
+    return iv
