@@ -182,3 +182,63 @@ def pricing_fourier_inversion(mgf, K, R=2., L=50., N=300):
         values = mgf_values*fourier_transform_payoff(K[i], u + complex(0, 1)*R)
         prices[i] = np.real(1/np.pi * np.trapz(values, dx=L/N))
     return prices
+
+
+def smoothen(k, iv, k_result=None):
+    indices = iv > 1e-08
+    k = k[indices]
+    iv = iv[indices]
+
+    avg_vec = np.array([np.average(iv[i * (len(iv)//10):(i+1)*(len(iv)//10)]) for i in range(10)])
+    min_avg = np.argmin(avg_vec)
+    arg_min = int((min_avg+0.5)*(len(iv)//10))
+
+    while arg_min != 0 and iv[arg_min-1] < iv[arg_min]:
+        arg_min = arg_min - 1
+    while arg_min != len(iv) - 1 and iv[arg_min+1] < iv[arg_min]:
+        arg_min = arg_min + 1
+    new_arg_min = arg_min
+
+    print(arg_min, iv[arg_min])
+
+    indices = np.zeros(len(k), dtype=bool)
+    while np.sum(indices) != len(indices):
+        print(len(indices))
+        indices = np.zeros(len(k), dtype=bool)
+        if iv[0] < 0.98*iv[1]:
+            indices[0] = False
+            new_arg_min = new_arg_min - 1
+        else:
+            indices[0] = True
+        if iv[-1] < 0.98*iv[-2]:
+            indices[-1] = False
+        else:
+            indices[-1] = True
+        for i in range(1, len(k)-1):
+            if i != arg_min and iv[i] < 0.9 * (iv[i-1] + iv[i+1])/2:
+                indices[i] = False
+                if i < arg_min:
+                    new_arg_min = new_arg_min - 1
+            else:
+                indices[i] = True
+        k = k[indices]
+        iv = iv[indices]
+        arg_min = new_arg_min
+
+    smoothing_vector = np.array([2.**(-np.abs(len(iv)-1-i)) for i in range(2*len(iv)-1)])
+    iv_new = np.array([np.dot(iv, smoothing_vector[(len(iv)-1-i):(2*len(iv)-1-i)]) / np.sum(smoothing_vector[(len(iv)-1-i):(2*len(iv)-1-i)]) if np.abs(arg_min-i)/len(iv) > 0.05 else iv[i] for i in range(len(iv))])
+
+    def implied_vol(k_):
+        if k_ < k[0] and len(k) >= 5:
+            slope, intercept, _, _, _ = scipy.stats.linregress(k[:5], iv_new[:5])
+            return slope * k_ + intercept
+        if k_ > k[-1] and len(k) >= 5:
+            slope, intercept, _, _, _ = scipy.stats.linregress(k[-5:], iv_new[-5:])
+            return slope * k_ + intercept
+        return np.interp(k_, k, iv)
+
+    if k_result is None:
+        return implied_vol
+
+    iv_result = np.array([implied_vol(k_result[i]) for i in range(len(k_result))])
+    return iv_result

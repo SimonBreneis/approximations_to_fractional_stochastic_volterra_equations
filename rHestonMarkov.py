@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import ComputationalFinance as cf
 import RoughKernel as rk
@@ -66,13 +67,13 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T=1, N_Riccati=200, R=
     times = np.linspace(T, 0, N_Riccati+1)
     g = np.zeros(N_Riccati + 1)
     for i in range(1, N):
-        g += weights[i] / nodes[i] * (1 - np.exp(-nodes[i] * times))
+        g += weights[i] / nodes[i] * (1 - np.exp(-np.fmin(nodes[i] * times, 100)))
     if nodes[0] == 0:
         g = theta * (g + weights[0] * times) + V_0
     else:
         g = theta * (g + weights[0] / nodes[0] * (1 - np.exp(-nodes[0] * times))) + V_0
 
-    exp_nodes = np.exp(-nodes * (T/N_Riccati))
+    exp_nodes = np.exp(-np.fmin(nodes * (T/N_Riccati), np.fmax(100, np.log(weights)*30)))
     div_nodes = np.zeros(len(nodes))
     div_nodes[0] = T/N_Riccati if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
     div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
@@ -91,8 +92,8 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T=1, N_Riccati=200, R=
     return cf.pricing_fourier_inversion(mgf_, K, R, L, N_Fourier)
 
 
-def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, R=2, L=50., N_Fourier=300,
-                       mode="best", rel_tol=1e-02):
+def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None, R=2, L=None, N_Fourier=None,
+                       mode="best", rel_tol=1e-02, smoothing=False, nodes=None, weights=None):
     """
     Gives the implied volatility of the European call option in the rough Heston model
     as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
@@ -117,24 +118,84 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=200, 
     :param rel_tol: Required maximal relative error in the implied volatility
     return: The price of the call option
     """
-    nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
+    if N_Riccati is None:
+        N_Riccati = int(200 / T**0.8)
+    if L is None:
+        L = 50/T
+    if N_Fourier is None:
+        N_Fourier = int(8*L / np.sqrt(T))
+    result = None
+    if nodes is None or weights is None:
+        nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
+    else:
+        N = len(nodes)
+    np.seterr(all='warn')
+    K_result = K
+    if smoothing:
+        K_fine = np.empty((len(K)+1)*10)
+        K_fine[:11] = np.exp(np.linspace(2*np.log(K[0]) - np.log(K[1]), np.log(K[0]), 11))
+        for i in range(len(K)-1):
+            K_fine[10*i:10*(i+1)+1] = np.exp(np.linspace(np.log(K[i]), np.log(K[i+1]), 11))
+        K_fine[-11:] = np.exp(np.linspace(np.log(K[-1]), 2*np.log(K[-1]) - np.log(K[-2]), 11))
+        K = K_fine
+
+    tic = time.perf_counter()
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
                   nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
     iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    zero_ind = np.where(np.logical_or(np.logical_or(iv == 0, iv == np.nan), iv == np.inf))
+    iv[zero_ind] = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(zero_ind))
+    duration = time.perf_counter() - tic
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L/1.2, N_Fourier=N_Fourier // 2,
-                  nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati//2)
+                  nodes=nodes, weights=weights, T=T, N_Riccati=int(N_Riccati/1.5))
     iv_approx = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    zero_ind = np.where(np.logical_or(np.logical_or(iv_approx == 0, iv_approx == np.nan), iv_approx == np.inf))
+    iv_approx[zero_ind] = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(zero_ind))
     error = np.amax(np.abs(iv_approx-iv)/iv)
-
+    
     while error > rel_tol or np.amin(iv) < 1e-08:
+
+        prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
+                      nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati//2)
+        iv_approx = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+        error_Riccati = np.amax((np.abs(iv_approx - iv) / iv))
+        # print(f'error Riccati: {error_Riccati}')
+        if error_Riccati < rel_tol/10 and np.amax(iv_approx) > 1e-08:
+            N_Riccati = N_Riccati//2
+
+        prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier//3,
+                      nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+        iv_approx = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+        error_Fourier = np.amax((np.abs(iv_approx - iv) / iv))
+        # print(f'error Fourier: {error_Fourier}')
+        if error_Fourier < rel_tol / 10 and np.amax(iv_approx) > 1e-08:
+            N_Fourier = N_Fourier // 3
+
         iv_approx = iv
         L = L * 1.2
         N_Fourier = N_Fourier * 2
-        N_Riccati = N_Riccati * 2
-        print('Markov', error, L, N_Fourier, N_Riccati)
-        prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
-                      nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
-        iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
-        error = np.amax(np.abs(iv_approx - iv)/iv)
-
+        N_Riccati = int(N_Riccati * 1.5)
+        # print('Markov', N, error, L, N_Fourier, N_Riccati, duration, time.strftime("%H:%M:%S", time.localtime()))
+        tic = time.perf_counter()
+        with np.errstate(all='raise'):
+            try:
+                prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
+                              nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+                iv = cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+                result = iv
+                zero_ind = np.where(np.logical_or(np.logical_or(iv == 0, iv == np.nan), iv == np.inf))
+                iv[zero_ind] = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(zero_ind))
+            except:
+                L = L/1.3
+                N_Fourier = int(N_Fourier / 1.5)
+                N_Riccati = int(N_Riccati/1.2)
+                if result is not None and error_Fourier < rel_tol and error_Riccati < rel_tol:
+                    if smoothing:
+                        return cf.smoothen(np.log(K), result, np.log(K_result))
+                    else:
+                        return result
+                iv = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(K))
+        duration = time.perf_counter() - tic
+        error = np.amax((np.abs(iv_approx - iv)/iv))
+        # print(error)
     return iv

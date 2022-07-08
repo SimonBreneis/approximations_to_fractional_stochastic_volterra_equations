@@ -1,3 +1,5 @@
+c = ['r', 'C1', 'y', 'g', 'b', 'purple']
+
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,25 +16,467 @@ import mpmath as mp
 import rHestonImplicitEuler as ie
 import rHestonSplitKernel as sk
 import scipy
+from scipy import special
 
 
-c = ['r', 'C1', 'y', 'g', 'b']
+def interval_error_fun(x, eps=0):
+    nodes = np.exp(x[:len(x)//2])
+    weights = np.exp(x[len(x)//2:])
+    err_1 = rk.error_estimate_fBm_general(0.1, nodes, weights, 1, True)
+    if eps > 0:
+        err_2 = rk.error_estimate_fBm_general(0.1, nodes, weights, eps, True)
+        return err_1 - err_2
+    return err_1
 
-k = np.linspace(-0.44, 0.22, 201)
+
+nodes, weights = rk.quadrature_rule_geometric_standard(0.1, 1, 1, 'optimized', True, False)
+rule = np.empty(2*len(nodes))
+rule[:len(nodes)] = nodes
+rule[len(nodes):] = weights
+
+k_vec = np.linspace(-1.5, 0.75, 451)
+with open('true surface.npy', 'rb') as f:
+    true_surface = np.load(f)
+true_surface = true_surface[-1, :]
+
+bound_vec = np.exp(np.linspace(np.log(1), np.log(1000000), 200))
+largest_nodes = np.empty(len(bound_vec))
+kernel_errors = np.empty(len(bound_vec))
+smile_errors = np.empty(len(bound_vec))
+N_vec = np.array([1, 2, 3, 4, 5, 6])
+for j in range(len(N_vec)):
+    for i in range(len(bound_vec)):
+        res = scipy.optimize.minimize(lambda x: interval_error_fun(x, 0), x0=np.log(np.fmin(rule, bound_vec[i])), bounds=((None, np.log(bound_vec[i])), (None, None),))
+        x = res.x
+        nodes = np.exp(x[:len(x)//2])
+        weights = np.exp(x[len(x)//2:])
+        perm = np.argsort(nodes)
+        nodes = nodes[perm]
+        weights = weights[perm]
+        while len(nodes) < N_vec[j]:
+            if len(nodes) == 1:
+                if bound_vec[i] > 10 * nodes[0]:
+                    nodes = np.array([nodes[0], 10*nodes[0]])
+                    weights = np.array([weights[0], weights[0]])
+                elif bound_vec[i] >= 2*nodes[0]:
+                    nodes = np.array([nodes[0], bound_vec[i]])
+                    weights = np.array([weights[0], weights[0]])
+                else:
+                    nodes = np.array([nodes[0]/3, nodes[0]])
+                    weights = np.array([weights[0]/3, weights[0]])
+            else:
+                if bound_vec[i] > 10 * nodes[-1]:
+                    nodes = np.append(nodes, np.array([10*nodes[-1]]))
+                    weights = np.append(weights, np.array([weights[-1]]))
+                elif bound_vec[i] > 2 * nodes[-1] or bound_vec[i]/nodes[-1] > nodes[-1]/nodes[-2]:
+                    nodes = np.append(nodes, np.array([bound_vec[i]]))
+                    weights = np.append(weights, np.array([weights[-1]]))
+                else:
+                    nodes = np.append(nodes, np.array([np.sqrt(nodes[-1] * nodes[-2])]))
+                    weights = np.append(weights, np.array([np.fmin(weights[-1], weights[-2])/2]))
+                    perm = np.argsort(nodes)
+                    nodes = nodes[perm]
+                    weights = weights[perm]
+
+            rule_ = np.empty(2*len(nodes))
+            rule_[:len(nodes)] = nodes
+            rule_[len(nodes):] = weights
+            res = scipy.optimize.minimize(lambda x: interval_error_fun(x, 0), x0=np.log(rule_),
+                                          bounds=((np.log(1e-08), np.log(bound_vec[i])),) * (len(rule_)//2) + ((np.log(1e-08), np.log(1e+08)),) * (len(
+                                              rule_)//2))
+            x = res.x
+            nodes = np.exp(x[:len(x) // 2])
+            weights = np.exp(x[len(x) // 2:])
+            perm = np.argsort(nodes)
+            nodes = nodes[perm]
+            weights = weights[perm]
+            print(nodes, weights)
+        largest_nodes[i] = np.amax(nodes)
+        kernel_errors[i] = np.sqrt(rk.error_estimate_fBm_general(0.1, nodes, weights, 1, True) / rk.error_estimate_fBm_general(0.1, np.array([1]),
+                                                                                                np.array([0]), 1, True))
+        smile = rHestonMarkov.implied_volatility(K=np.exp(k_vec), H=0.1, lambda_=0.3,
+                                                 rho=-0.7, nu=0.3, theta=0.02,
+                                                 V_0=0.02, T=1, rel_tol=1e-04,
+                                                 nodes=nodes, weights=weights, N=-1)
+        smile_errors[i] = np.amax(np.abs(true_surface - smile) / true_surface)
+        print(N_vec[j], i, bound_vec[i], largest_nodes[i], kernel_errors[i], smile_errors[i])
+
+    print((largest_nodes,))
+    print((kernel_errors,))
+    print((smile_errors,))
+
+plt.loglog(bound_vec, kernel_errors, label='Kernel errors')
+plt.loglog(bound_vec, smile_errors, label='Smile errors')
+plt.legend(loc='best')
+plt.title('Relative errors depending on cutoff for maturity T=1 and 1 dimension')
+plt.show()
+
+
+time.sleep(36000)
+
+nodes = np.array([  0.70243884 , 20.38828784, 457.20375887])
+weights = np.array([1.29031826, 3.55651535, 7.41731548])
+
+print(np.sqrt(rk.error_estimate_fBm_general(0.1, nodes, weights, 1, True))/np.sqrt(rk.error_estimate_fBm_general(0.1, np.array([0.1]), np.array([0]), 1, True)))
+time.sleep(36000)
+
+print(rk.error_estimate_fBm_general(0.1, np.array([  1.62476626, 359.99601421]), np.array([ 2.13513308, 16.81331999]), 1, True))
+print(rk.error_estimate_fBm_general(0.1, np.array([0.85282142 , 28.9285625]), np.array([1.40727002, 4.79326392]), 1, True))
+a = np.array([[0, 1], [2, 3]])
+b = np.array([[0, 3], [7, 9]])
+frac = np.abs(b-a)[b != 0]/b[b != 0]
+print(frac)
+print(np.average(frac))
+
+np.printoptions(threshold=np.inf)
+
+
+def error_func(H, nodes, weights, T):
+    coefficient = (2 * H * scipy.special.gamma(H + 0.5) ** 2) * T ** (-2 * H)
+    return np.sqrt(np.amax(coefficient * rk.error_estimate_fBm_general(H, nodes, weights, T, True)))
+
+
+T = np.linspace(0.04, 1., 25)
+# norm = rk.error_estimate_fBm_general(0.1, np.array([0.0001]), np.array([0]), 1, fast=True)
+
+k_vec = np.linspace(-1.5, 0.75, 451)
+true_surface = np.empty((len(T), len(k_vec)))
+
+'''
 tic = time.perf_counter()
-iv_true = rHeston.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.2,
-                                     rel_tol=2e-03)
+for i in range(len(T)):
+    print(f'Time {T[i]}')
+    indices = slice(int((1-np.sqrt(T[i])) * 300), -int((1-np.sqrt(T[i])) * 150))
+    if i == len(T)-1:
+        indices = slice(0, len(k_vec))
+    k_loc = k_vec[indices]
+    res_loc = rHeston.implied_volatility(K=np.exp(k_loc), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02,
+                                                    V_0=0.02, T=T[i], rel_tol=5e-04)
+    res_loc_ = np.zeros(len(k_vec))
+    res_loc_[indices] = res_loc
+    true_surface[i, :] = res_loc_
+print(f'Finished rough Heston, time: {time.perf_counter()-tic}')
+with open('true surface.npy', 'wb') as f:
+    np.save(f, true_surface)
+'''
+with open('true surface.npy', 'rb') as f:
+    true_surface = np.load(f)
+
+T = 1
+true_surface = true_surface[-1, :]
+
+def err_func(x):
+    nodes = np.exp(x[:len(x)//2])
+    weights = x[len(x)//2:]
+    # smile = np.zeros((len(T), len(k_vec)))
+    '''
+    errors = np.zeros(len(T))
+    for i in range(len(T)):
+        indices = slice(int((1-np.sqrt(T[i])) * 300), -int((1-np.sqrt(T[i])) * 150))
+        if i == len(T)-1:
+            indices = slice(0, len(k_vec))
+        k_loc = k_vec[indices]
+        res_loc = rHestonMarkov.implied_volatility(K=np.exp(k_loc), H=0.1, lambda_=0.3,
+                                                   rho=-0.7, nu=0.3, theta=0.02,
+                                                   V_0=0.02, T=T[i], rel_tol=2e-04,
+                                                   nodes=nodes, weights=weights, N=-1)
+        res_loc_ = np.zeros(len(k_vec))
+        res_loc_[indices] = res_loc
+        smile[i, :] = res_loc_
+        errors[i] = np.amax(np.abs(true_surface[i, indices] - smile[i, indices]) / true_surface[i, indices])
+    '''
+    smile = rHestonMarkov.implied_volatility(K=np.exp(k_vec), H=0.1, lambda_=0.3,
+                                               rho=-0.7, nu=0.3, theta=0.02,
+                                               V_0=0.02, T=1, rel_tol=1e-05,
+                                               nodes=nodes, weights=weights, N=-1)
+    error = 100 * np.amax(np.abs(true_surface - smile) / true_surface)
+    print(f'nodes: {nodes}')
+    print(f'weights: {weights}')
+    print(f'error: {error}')
+    return error
+
+import numpy as np
+from scipy.optimize import minimize, rosen
+import time
+import warnings
+
+class TookTooLong(Warning):
+    pass
+
+class MinimizeStopper(object):
+    def __init__(self, max_sec=60):
+        self.max_sec = max_sec
+        self.start = time.time()
+        self.count = 0
+
+    def __call__(self, xk=None):
+        elapsed = time.time() - self.start
+        if elapsed > self.max_sec:
+            warnings.warn("Terminating optimization: time limit reached",
+                          TookTooLong)
+        else:
+            # you might want to report other stuff here
+            self.count += 1
+            print("Elapsed: %.3f sec" % elapsed)
+            print(self.count)
+
+# example usage
+x0 = [1.3, 0.7, 0.8, 1.9, 1.2]
+res = minimize(rosen, x0, method='Nelder-Mead', callback=MinimizeStopper(1E-3))
+print('still running!')
+print(res.fun)
+print(res.x)
+
+N_vec = np.array([3, 4, 5, 6, 7, 8, 9, 10, 16, 32])
+for i in range(len(N_vec)):
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N_vec[i], T, 'optimized', fast=True, grad=False)
+    rule = np.empty(2*len(nodes))
+    nodes = np.array([0.666, 22.3, 280])
+    weights = np.array([1.27, 3.63, 7])
+    rule[:len(nodes)] = np.log(nodes)
+    rule[len(nodes):] = weights
+    res = minimize(err_func, rule, method='Nelder-Mead', callback=MinimizeStopper(7200))
+    print(f'Finished optimization for N={N_vec[i]}')
+    print(f'original nodes: {nodes}')
+    print(f'original weights: {weights}')
+    rule = res.x
+    nodes = rule[:len(nodes)]
+    weights = rule[len(nodes):]
+    print(f'new nodes: {nodes}')
+    print(f'new weights: {weights}')
+    print(f'new error: {res.fun}')
+    print(f'time: {time.perf_counter()-tic}')
+
+N_vec = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32])
+
+approx_surface_obs_02 = np.empty((len(N_vec)-1, len(T), len(k_vec)))
+approx_surface_opt_02 = np.empty((len(N_vec), len(T), len(k_vec)))
+approx_surface_opt_all = np.empty((len(N_vec), len(T), len(k_vec)))
+time_obs_02 = 0
+time_opt_02 = 0
+time_opt_all = 0
+max_errors_obs_02 = np.empty((len(N_vec)-1, len(T)))
+max_errors_opt_02 = np.empty((len(N_vec), len(T)))
+max_errors_opt_all = np.empty((len(N_vec), len(T)))
+avg_errors_obs_02 = np.empty((len(N_vec)-1, len(T)))
+avg_errors_opt_02 = np.empty((len(N_vec), len(T)))
+avg_errors_opt_all = np.empty((len(N_vec), len(T)))
+max_max_errors_obs_02 = np.empty(len(N_vec)-1)
+max_max_errors_opt_02 = np.empty(len(N_vec))
+max_max_errors_opt_all = np.empty(len(N_vec))
+avg_avg_errors_obs_02 = np.empty(len(N_vec)-1)
+avg_avg_errors_opt_02 = np.empty(len(N_vec))
+avg_avg_errors_opt_all = np.empty(len(N_vec))
+
+for i in range(len(N_vec)):
+    if i != 0:
+        tic = time.perf_counter()
+        for j in range(len(T)):
+            print(N_vec[i], T[j])
+            indices = slice(int((1 - np.sqrt(T[j])) * 300), -int((1 - np.sqrt(T[j])) * 150))
+            if j == len(T)-1:
+                indices = slice(0, len(k_vec))
+            k_loc = k_vec[indices]
+            nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N_vec[i], 0.2, 'observation')
+            res_loc = rHestonMarkov.implied_volatility(K=np.exp(k_loc), H=0.1, lambda_=0.3,
+                                                                                rho=-0.7, nu=0.3, theta=0.02,
+                                                                                V_0=0.02, T=T[j], rel_tol=5e-04,
+                                                                                nodes=nodes, weights=weights, N=-1)
+            res_loc_ = np.zeros(len(k_vec))
+            res_loc_[indices] = res_loc
+            approx_surface_obs_02[i-1, j, :] = res_loc_
+            max_errors_obs_02[i - 1, j] = np.amax(
+                np.abs(true_surface[j, indices] - approx_surface_obs_02[i - 1, j, indices]) / true_surface[j, indices])
+            avg_errors_obs_02[i - 1, j] = np.average(
+                np.abs(true_surface[j, indices] - approx_surface_obs_02[i - 1, j, indices]) / true_surface[j, indices])
+        time_obs_02 += time.perf_counter() - tic
+        print(f'current time: {time_obs_02}')
+        print(max_errors_obs_02[i - 1, :])
+        print(avg_errors_obs_02[i - 1, :])
+        max_max_errors_obs_02[i - 1] = np.amax(max_errors_obs_02[i - 1, :])
+        print(max_max_errors_obs_02[i - 1])
+        avg_avg_errors_obs_02[i - 1] = np.average(avg_errors_obs_02[i - 1, :])
+        print(avg_avg_errors_obs_02[i - 1])
+
+
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N_vec[i], 0.2, 'optimized', fast=True, grad=True)
+    for j in range(len(T)):
+        print(N_vec[i], T[j])
+        indices = slice(int((1-np.sqrt(T[j])) * 300), -int((1-np.sqrt(T[j])) * 150))
+        if j == len(T)-1:
+            indices = slice(0, len(k_vec))
+        k_loc = k_vec[indices]
+        res_loc = rHestonMarkov.implied_volatility(K=np.exp(k_loc), H=0.1, lambda_=0.3,
+                                                                          rho=-0.7, nu=0.3, theta=0.02,
+                                                                          V_0=0.02, T=T[j], rel_tol=5e-04,
+                                                                          nodes=nodes, weights=weights, N=-1)
+        res_loc_ = np.zeros(len(k_vec))
+        res_loc_[indices] = res_loc
+        approx_surface_opt_02[i, j, :] = res_loc_
+        max_errors_opt_02[i, j] = np.amax(np.abs(true_surface[j, indices] - approx_surface_opt_02[i, j, indices]) / true_surface[j, indices])
+        avg_errors_opt_02[i, j] = np.average(np.abs(true_surface[j, indices] - approx_surface_opt_02[i, j, indices]) / true_surface[j, indices])
+    time_opt_02 += time.perf_counter() - tic
+    print(f'current time: {time_opt_02}')
+    print(max_errors_opt_02[i, :])
+    print(avg_errors_opt_02[i, :])
+    max_max_errors_opt_02[i] = np.amax(max_errors_opt_02[i, :])
+    print(max_max_errors_opt_02[i])
+    avg_avg_errors_opt_02[i] = np.average(avg_errors_opt_02[i, :])
+    print(avg_avg_errors_opt_02[i])
+
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N_vec[i], T, 'optimized', fast=True, grad=False)
+    for j in range(len(T)):
+        print(N_vec[i], T[j])
+        indices = slice(int((1-np.sqrt(T[j])) * 300), -int((1-np.sqrt(T[j])) * 150))
+        if j == len(T)-1:
+            indices = slice(0, len(k_vec))
+        k_loc = k_vec[indices]
+        res_loc = rHestonMarkov.implied_volatility(K=np.exp(k_loc), H=0.1, lambda_=0.3,
+                                                                           rho=-0.7, nu=0.3, theta=0.02,
+                                                                           V_0=0.02, T=T[j], rel_tol=5e-04,
+                                                                           nodes=nodes, weights=weights, N=-1)
+        res_loc_ = np.zeros(len(k_vec))
+        res_loc_[indices] = res_loc
+        approx_surface_opt_all[i, j, :] = res_loc_
+        max_errors_opt_all[i, j] = np.amax(np.abs(true_surface[j, indices] - approx_surface_opt_all[i, j, indices]) / true_surface[j, indices])
+        avg_errors_opt_all[i, j] = np.average(np.abs(true_surface[j, indices] - approx_surface_opt_all[i, j, indices]) / true_surface[j, indices])
+    time_opt_all += time.perf_counter() - tic
+    print(f'current time: {time_opt_all}')
+    print(max_errors_opt_all[i, :])
+    print(avg_errors_opt_all[i, :])
+    max_max_errors_opt_all[i] = np.amax(max_errors_opt_all[i, :])
+    print(max_max_errors_opt_all[i])
+    avg_avg_errors_opt_all[i] = np.average(avg_errors_opt_all[i, :])
+    print(avg_avg_errors_opt_all[i])
+
+with open('approximate surface observation 02.npy', 'wb') as f:
+    np.save(f, approx_surface_obs_02)
+with open('approximate surface optimization 02.npy', 'wb') as f:
+    np.save(f, approx_surface_opt_02)
+with open('approximate surface optimization all.npy', 'wb') as f:
+    np.save(f, approx_surface_opt_all)
+print('Finished!!!!!')
+time.sleep(3600000)
+
+'''
+for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024]):
+    print(N)
+    if N >= 2:
+        tic = time.perf_counter()
+        nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N, 0.2, 'observation')
+        duration = time.perf_counter() - tic
+        print(np.amax(nodes))
+        print(error_func(0.1, nodes+1e-08, weights, T))
+        print(duration)
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N, 0.2, 'optimized', fast=True, grad=True)
+    duration = time.perf_counter() - tic
+    print(np.amax(nodes))
+    print(error_func(0.1, nodes, weights, T))
+    print(duration)
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N, 0.2, 'optimized', fast=True, grad=False)
+    duration = time.perf_counter() - tic
+    print(np.amax(nodes))
+    print(error_func(0.1, nodes, weights, T))
+    print(duration)
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule_geometric_standard(0.1, N, T, 'optimized', fast=True, grad=False)
+    duration = time.perf_counter() - tic
+    print(np.amax(nodes))
+    print(error_func(0.1, nodes, weights, T))
+    print(duration)
+'''
+time.sleep(3600000)
+
+
+H = 0.2
+a = 1.06418
+b = 0.4275
+
+c_H = rk.c_H(H)
+A = (1/H + 1/(1.5-H))**(1/2)
+frac = np.exp(a*b) / (np.exp(a*b)-1)
+gamma = 1/(3/8*frac + 6*H - 6*H*H)
+
+const = c_H**2 * (1/(2*H) + 8/frac + 1/(3-2*H)) * ((3/H)**(frac*(3-2*H)/8) * (5*np.pi**3/384 * np.exp(a*b) * (np.exp(a*b)-1) * A**(2-2*H) / b**(2-2*H) / H)**(6*H-4*H*H) * (1/(1.5-H))**(frac*H/4))**gamma
+print(np.sqrt(const))
+time.sleep(360000)
+
+
+for H in np.array([0.2]):
+    for N in range(130, 1000):
+        m, n, a, b = rk.get_parameters(H, N+1, T=1., mode='theorem')
+        print(N+1, 'theorem', rk.error_estimate_fBm(H, m, n, a, b, 1.))
+
+        m, n, a, b = rk.get_parameters(H, N+1, T=1., mode='observation')
+        print(N+1, 'observation', rk.error_estimate_fBm(H, m, n, a, b, 1.))
+
+Data.plot_rHeston_optimized_smiles()
+'''
+k = np.linspace(-0.8, 0.2, 201)
+N_Riccati = 200
+L_true = 700
+L_vec = np.array([150, 200, 250, 300, 350, 450])
+N_Fourier = 10
+true = rHestonMarkov.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.1,
+                                        rel_tol=1e+30, N=3, L=600, N_Fourier=10000, N_Riccati=500)
+approx = rHestonMarkov.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.1,
+                                        rel_tol=1e+30, N=3, L=400, N_Fourier=2800, N_Riccati=200)
+
+error = np.abs(approx-true)/true
+plt.plot(k, error)
+print(error)
+print(np.amax(error))
+print(np.average(error))
+plt.yscale('log')
+plt.xlabel('log-moneyness')
+plt.ylabel('Relative error')
+plt.show()
+
+for i in range(len(L_vec)):
+    approx = rHestonMarkov.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.1,
+                                        rel_tol=1e+30, N=3, L=L_vec[i], N_Fourier=N_Fourier*L_vec[i], N_Riccati=N_Riccati)
+    error = np.abs(approx-true)/true
+    plt.plot(k, error, color=c[i], label=r'$L=$' + f'{L_vec[i]}')
+    print(error)
+    print(L_vec[i])
+    print(np.amax(error))
+    print(np.average(error))
+plt.yscale('log')
+plt.xlabel('log-moneyness')
+plt.ylabel('Relative error')
+plt.legend(loc='upper right')
+plt.show()
+
+Data.plot_rHeston_optimized_smiles()
+k_02 = np.linspace(-0.44, 0.22, 201)
+
+k = np.linspace(-0.4, 0.18, 201)
+rHestonMarkov.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02,
+                                                 V_0=0.02, T=0.1, rel_tol=2e-03, N=3)
+'''
+k = Data.k_001
+tic = time.perf_counter()
+# iv_true = rHeston.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.01,
+#                                      rel_tol=2e-04, smoothing=False)
+iv_true = Data.rHeston_001
+
 print(iv_true)
 print(f'True rough Heston: {time.perf_counter() - tic}')
 plt.plot(k, iv_true, 'k-', label='rough Heston')
-for N in np.array([1, 2, 3, 4, 5]):
+N_vec = np.array([2, 4, 8, 16, 32])
+for i in range(len(N_vec)):
     tic = time.perf_counter()
     iv_approx = rHestonMarkov.implied_volatility(K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02,
-                                                 V_0=0.02, T=0.2, rel_tol=2e-03, N=N)
-    print(iv_approx)
-    print(f'Markovian approximation, N={N}: {time.perf_counter()-tic}')
-    plt.plot(k, iv_approx, c[N-1] + '-', label=f'{N}-dimensional approximation')
-    print(f'N={N}, error: {np.amax(np.abs(iv_approx-iv_true)/iv_true)}')
+                                                 V_0=0.02, T=0.01, rel_tol=2e-04, N=N_vec[i], smoothing=False, mode='observation')
+    print((iv_approx,))
+    print(f'Markovian approximation, N={N_vec[i]}: {time.perf_counter()-tic}')
+    plt.plot(k, iv_approx, color=c[i], label=f'{N_vec[i]}-dimensional approximation')
+    print(f'N={N_vec[i]}, error: {np.amax(np.abs(iv_approx-iv_true)/iv_true)}')
 # plt.plot(Data.k_rrHeston, Data.rrHeston)
 plt.xlabel('log-moneyness')
 plt.ylabel('implied volatility')
@@ -43,7 +487,7 @@ print(np.amax(np.abs(iv_true-iv_approx)/iv_true))
 
 plt.plot(k, iv_true)
 plt.plot(k, iv_approx)
-plt.plot(Data.k_rrHeston, Data.rrHeston)
+plt.plot(Data.k_rHeston, Data.rHeston)
 plt.show()
 
 
@@ -97,7 +541,7 @@ plt.xlabel('log-moneyness ' + r'$k$')
 plt.ylabel('implied volatility ' + r'$\sigma(k)$')
 plt.legend(loc='upper right')
 plt.show()
-plt.plot(Data.k_rrHeston, Data.rrHeston, label='True rough Heston')
+plt.plot(Data.k_rHeston, Data.rHeston, label='True rough Heston')
 plt.plot(k_vec, approx, label=r'$\sigma_1$')
 plt.plot(k_vec, true, label=r'$\sigma_2$')
 plt.xlabel('log-moneyness ' + r'$k$')
@@ -121,7 +565,7 @@ plt.legend(loc='upper right')
 plt.xlabel('Number of quadrature intervals in the Fourier inversion formula')
 plt.ylabel('Error')
 plt.show()
-print(rHestonMarkov.implied_volatility(mode='optimized', N=2, K=np.exp(Data.k_rrHeston), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N_Riccati=200, R=2, N_Fourier=10000, L=50))
+print(rHestonMarkov.implied_volatility(mode='optimized', N=2, K=np.exp(Data.k_rHeston), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N_Riccati=200, R=2, N_Fourier=10000, L=50))
 
 
 
@@ -186,12 +630,12 @@ something = np.array([0.40292376, 0.40320749, 0.40312071, 0.40242589, 0.40104162
  0.11125505, 0.11156275, 0.11194137, 0.11237895, 0.11287342, 0.11343143,
  0.11406486, 0.11478529, 0.11559736, 0.1164931 , 0.11744917])
 
-plt.plot(Data.k_rrHeston, Data.rrHeston, 'k-', label='True rough Heston')
-plt.plot(Data.k_rrHeston, something, label='One-point approximation')
+plt.plot(Data.k_rHeston, Data.rHeston, 'k-', label='True rough Heston')
+plt.plot(Data.k_rHeston, something, label='One-point approximation')
 plt.legend(loc='upper right')
 plt.show()
 
-print(rHestonMarkov.implied_volatility(mode='optimized', N=2, K=np.exp(Data.k_rrHeston), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N_Riccati=200, R=2, N_Fourier=10000, L=50))
+print(rHestonMarkov.implied_volatility(mode='optimized', N=2, K=np.exp(Data.k_rHeston), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N_Riccati=200, R=2, N_Fourier=10000, L=50))
 
 # print(rHestonMarkov.implied_volatility(K=np.exp(Data.k_rrHeston), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, adaptive=True, mode='optimized'))
 # print(rHestonMarkov.implied_volatility(mode='optimized', N=2, K=np.exp(Data.k_rrHeston), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N_Riccati=200, adaptive=True, R=2, N_fourier=10000, L=50))
@@ -317,7 +761,7 @@ for vb in methods:
 '''
 N_time = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
 samples = np.empty(1000000)
-k_vec = Data.k_rrHeston
+k_vec = Data.k_rHeston
 S = np.empty((len(N_time), 1000000))
 
 print("Here")
@@ -347,7 +791,7 @@ for vb in methods:
         plt.plot(k_vec, est, label=f'N_time={N_time[i]}')
     plt.plot(k_vec, lower, 'k--')
     plt.plot(k_vec, upper, 'k--')
-    plt.plot(Data.k_rrHeston, Data.rrHeston_6, 'k-', label=f'Fourier inversion')
+    plt.plot(Data.k_rHeston, Data.rHeston_6, 'k-', label=f'Fourier inversion')
     plt.title(vb)
     plt.legend(loc='best')
     plt.xlabel('log-moneyness')
@@ -355,7 +799,7 @@ for vb in methods:
     plt.show()
 
 strikes = np.array([-0.3, 0., 0.15])
-true_iv = np.array([np.interp(strike, Data.k_rrHeston, Data.rrHeston_6) for strike in strikes])
+true_iv = np.array([np.interp(strike, Data.k_rHeston, Data.rHeston_6) for strike in strikes])
 all_errors = np.empty((len(methods), len(N_time), len(strikes)))
 for k in range(len(methods)):
     conv_rate = 1.
@@ -466,7 +910,7 @@ time.sleep(3600000)
 
 Data.plot_rHeston_IE_smiles()
 
-K = np.exp(Data.k_rrHeston)
+K = np.exp(Data.k_rHeston)
 N = 6
 tic = time.perf_counter()
 vol, lower, upper = ie.call(K, N=N, N_time=1000, m=200000, vol_behaviour='split kernel')
@@ -495,7 +939,7 @@ plt.title('Sample path of multiple time scales implementation')
 plt.show()
 '''
 
-K = np.exp(Data.k_rrHeston)
+K = np.exp(Data.k_rHeston)
 N = 6
 tic = time.perf_counter()
 vol, lower, upper = ie.call(K, N=N, N_time=1000, m=200000, vol_behaviour='multiple time scales')
