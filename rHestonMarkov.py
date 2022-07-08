@@ -126,7 +126,7 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None,
         N_Fourier = int(8*L / np.sqrt(T))
     result = None
     if nodes is None or weights is None:
-        nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
+        nodes, weights = rk.quadrature_rule(H, N, T, mode)
     else:
         N = len(nodes)
     np.seterr(all='warn')

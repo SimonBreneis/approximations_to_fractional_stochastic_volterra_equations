@@ -136,6 +136,6 @@ def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1.
     theorem.
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
-    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
+    nodes, weights = rk.quadrature_rule(H, N, T, mode)
     samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0, rounds)
     return cf.volatility_smile_call(samples, K, T, S_0)

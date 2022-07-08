@@ -1,7 +1,5 @@
 import numpy as np
 import ComputationalFinance as cf
-import RoughKernel as rk
-import mpmath as mp
 from scipy.optimize import fsolve
 
 
