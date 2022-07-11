@@ -145,9 +145,11 @@ def Gaussian_parameters(H, N, T, mode):
         alpha = 1.06418
         gamma_ = np.exp(alpha*beta)
         exponent = 1/(3*gamma_/(8*(gamma_-1)) + 6*H - 4*H*H)
-        base_0 = ((9-6*H)/(2*H))**(gamma_/(8*(gamma_-1))) * (5*np.pi**3/768 * gamma_ * (gamma_-1) * A**(2-2*H) * (3-2*H) * float(N)**(1-H) / (beta**(2-2*H) * H))**(2*H)
+        temp_1 = ((9-6*H)/(2*H))**(gamma_/(8*(gamma_-1)))
+        temp_2 = 5*np.pi**3 * gamma_ * (gamma_-1) * A**(2-2*H) * float(N)**(1-H) / (beta**(2-2*H))
+        base_0 = temp_1 * (temp_2 * (3-2*H) / (768 * H))**(2*H)
         a = -mp.log(T**(-1) * base_0**exponent * mp.exp(-alpha/((1.5-H)*A) * np.sqrt(N)))
-        base_n = ((9-6*H)/(2*H))**(gamma_/(8*(gamma_-1))) * (5*np.pi**3/1152 * gamma_ * (gamma_-1) * A**(2-2*H) * float(N)**(1-H) / (beta**(2-2*H)))**(2*H-3)
+        base_n = temp_1 * (temp_2 / 1152)**(2*H-3)
         b = mp.log(T**(-1) * base_n**exponent * mp.exp(alpha/(H*A) * np.sqrt(N)))
     elif mode == "observation":
         beta = 0.9
@@ -271,14 +273,17 @@ def error(H, nodes, weights, T):
     weights = mp_to_np(weights)
     if np.amin(nodes) < 0 or np.amin(weights) < 0:
         return 1e+10
-    nodes = np.fmax(nodes, 1e-08)
+    nodes = np.fmin(np.fmax(nodes, 1e-08), 1e+150)
+    weights = np.fmin(weights, 1e+75)
     summand = T ** (2 * H) / (2 * H * gamma(H + 0.5) ** 2)
     node_matrix = nodes[:, None] + nodes[None, :]
     if isinstance(T, np.ndarray):
-        sum_1 = np.sum(np.repeat((np.outer(weights, weights) / node_matrix)[None, :, :], len(T), axis=0) * (1 - np.exp(-np.einsum('ij,k->kij', node_matrix, T))), axis=(1, 2))
+        exponent = np.einsum('ij,k->kij', node_matrix, T)
+        factor = np.where(exponent < 300, 1-np.exp(-exponent), 1)
+        sum_1 = np.sum(np.repeat((np.outer(weights, weights) / node_matrix)[None, :, :], len(T), axis=0) * factor, axis=(1, 2))
         sum_2 = 2 * np.sum((weights / nodes**(H+0.5))[:, None] * gammainc(H + 0.5, np.outer(nodes, T)), axis=0)
     else:
-        sum_1 = np.sum(np.outer(weights, weights) / node_matrix * (1-np.exp(-node_matrix*T)))
+        sum_1 = np.sum(np.outer(weights, weights) / node_matrix * (1-np.exp(-np.fmin(node_matrix*T, 300))))
         sum_2 = 2 * np.sum(weights / nodes**(H+0.5) * gammainc(H + 0.5, nodes * T))
     return summand + sum_1 - sum_2
 
@@ -297,10 +302,11 @@ def gradient_of_error(H, T, nodes, weights):
     gamma_ints = gammainc(H+1/2, nodes*T)
     grad = np.empty(2*N)
     node_matrix = nodes[:, None] + nodes[None, :]
-    exp_node_matrix = np.exp(-node_matrix*T)
+    exp_node_matrix = np.where(node_matrix * T < 300, np.exp(-node_matrix*T), 0)
+    exp_node_vec = np.where(nodes * T < 300, np.exp(-nodes*T)/nodes, 0)
     weight_matrix = np.outer(weights, weights)
     first_summands = weight_matrix / (node_matrix * node_matrix) * (1-(1+node_matrix*T)*exp_node_matrix)
-    second_summands = weights * (T**(H+1/2) / nodes * np.exp(-nodes*T) / gamma(H+1/2) - (H+1/2) * nodes**(-(H+3/2)) * gamma_ints)
+    second_summands = weights * (T**(H+1/2) / gamma(H+1/2) * exp_node_vec - (H+1/2) * nodes**(-H-3/2) * gamma_ints)
     grad[:N] = -2 * np.sum(first_summands, axis=1) - 2 * second_summands
     third_summands = ((1-exp_node_matrix)/node_matrix) @ weights
     forth_summands = nodes ** (-(H+1/2)) * gamma_ints
@@ -308,7 +314,7 @@ def gradient_of_error(H, T, nodes, weights):
     return grad
 
 
-def optimize_error(H, N, T, tol=1e-05, grad=False, bound=None, iterative=False):
+def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
     optimizer as implemented in scipy.
@@ -316,37 +322,29 @@ def optimize_error(H, N, T, tol=1e-05, grad=False, bound=None, iterative=False):
     :param N: Number of points
     :param T: Final time, may be a numpy array (only if grad is False and fast is True)
     :param tol: Error tolerance
-    :param grad: If True, uses the gradient in the optimization
     :param bound: Upper bound on the nodes. If no upper bound is desired, use None
     :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
     :return: The minimal error together with the associated nodes and weights.
     """
+    if bound is None:
+        bound = 1e+100
 
     def optimize_error_given_rule(nodes_1, weights_1):
         N_ = len(nodes_1)
         coefficient = 1 / kernel_norm(H, T) ** 2
 
-        nodes_1 = np.fmax(nodes_1, 1e-02)
-        if bound is not None:
-            nodes_1 = np.fmin(nodes_1, bound)
-        bounds = (((np.log(1e-08), np.log(bound) if bound is not None else None),) * N_) + (((1e-08, None),) * N_)
+        nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound/2)
+        bounds = (((np.log(1e-08), np.log(bound)),) * N_) + (((np.log(0.1), np.log(1e+100)),) * N_)
         rule = np.log(np.concatenate((nodes_1, weights_1)))
 
         def func(x):
             return np.amax(coefficient * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
 
-        if grad:
-            if isinstance(T, np.ndarray):
-                res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
-            else:
-                res = minimize(func, rule, tol=tol ** 2, bounds=bounds,
-                               jac=lambda x: gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:])))
+        if isinstance(T, np.ndarray):
+            res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
         else:
-            if bound is None:
-                print('here')
-                res = minimize(func, rule, method='nelder-mead', tol=tol ** 2)
-            else:
-                res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
+            res = minimize(func, rule, tol=tol ** 2, bounds=bounds,
+                           jac=lambda x: np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:])))
 
         nodes_1, weights_1 = sort(np.exp(res.x[:N_]), np.exp(res.x[N_:]))
         return np.sqrt(res.fun), nodes_1, weights_1
@@ -372,13 +370,13 @@ def optimize_error(H, N, T, tol=1e-05, grad=False, bound=None, iterative=False):
 
         return optimize_error_given_rule(nodes, weights)
 
-    nodes, weights = quadrature_rule(H, N, T_init, mode='observation')
+    nodes, weights = quadrature_rule(H, 1, T_init, mode='observation')
     err, nodes, weights = optimize_error_given_rule(nodes, weights)
 
     while len(nodes) < N:
         if bound is None:
-            nodes = np.append(nodes, np.array([10*nodes[-1]]))
-            weights = np.append(weights, np.array([weights[-1]]))
+            nodes = np.append(nodes, 10*nodes[-1])
+            weights = np.append(weights, np.amax(weights))
         else:
             if len(nodes) == 1:
                 if bound > 10 * nodes[0]:
@@ -386,37 +384,38 @@ def optimize_error(H, N, T, tol=1e-05, grad=False, bound=None, iterative=False):
                     weights = np.array([weights[0], weights[0]])
                 elif bound >= 2 * nodes[0]:
                     nodes = np.array([nodes[0], bound])
-                    weights = np.array([weights[0], weights[0]])
+                    weights = np.array([weights[0], weights[0]/2])
                 else:
                     nodes = np.array([nodes[0] / 3, nodes[0]])
-                    weights = np.array([weights[0] / 3, weights[0]])
+                    weights = np.array([weights[0] / 3, weights[0]/2])
             else:
                 if bound > 10 * nodes[-1]:
-                    nodes = np.append(nodes, np.array([10 * nodes[-1]]))
+                    nodes = np.append(nodes, 10 * nodes[-1])
+                    weights = np.append(weights, np.amax(weights))
                 elif bound > 2 * nodes[-1] or bound / nodes[-1] > nodes[-1] / nodes[-2]:
-                    nodes = np.append(nodes, np.array([bound]))
-                    weights = np.append(weights, np.array([bound]))
+                    nodes = np.append(nodes, bound)
+                    weights = np.append(weights, np.amax(weights)/2)
                 else:
-                    nodes = np.append(nodes, np.array([np.sqrt(nodes[-1] * nodes[-2])]))
-                    weights = np.append(weights, np.array([np.fmin(weights[-1], weights[-2]) / 2]))
+                    nodes = np.append(nodes, np.sqrt(nodes[-1] * nodes[-2]))
+                    weights[-1] = weights[-1] * 0.7
+                    weights[-2] = weights[-2] * 0.7
+                    weights = np.append(weights, np.fmin(weights[-1], weights[-2]))
                     nodes, weights = sort(nodes, weights)
-
         err, nodes, weights = optimize_error_given_rule(nodes, weights)
 
     return err, nodes, weights
 
 
-def optimized_rule(H, N, T, grad=False):
+def optimized_rule(H, N, T):
     """
     Returns the optimal nodes and weights of the N-point quadrature rule for the fractional kernel with Hurst parameter
     H.
     :param H: Hurst parameter
     :param N: Number of nodes
     :param T: Final time
-    :param grad: If True, uses the gradient in the optimization
     :return: All the nodes and weights in increasing order, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
-    _, nodes, weights = optimize_error(H=H, N=N, T=T, grad=grad, bound=None, iterative=False)
+    _, nodes, weights = optimize_error(H=H, N=N, T=T, bound=None, iterative=False)
     return nodes, weights
 
 
@@ -430,35 +429,41 @@ def european_rule(H, N, T):
     """
 
     if N == 1:
-        return optimized_rule(H=H, N=N, T=T, grad=True)
+        return optimized_rule(H=H, N=N, T=T)
 
     L_step = 1.1
     bound = 1 / L_step
-    error_1 = 1
-    error_2 = 1
-    kernel_tol = 0.999
-    grad = not isinstance(T, np.ndarray)
-
-    while error_2 / error_1 > kernel_tol:
-        bound = bound * L_step
-        error_1, _, _ = optimize_error(H=H, N=N-1, T=T, grad=grad, bound=bound, iterative=True)
-        error_2, _, _ = optimize_error(H=H, N=N, T=T, grad=grad, bound=bound, iterative=True)
-
     L_0 = bound
-    error_3, _, _ = optimize_error(H=H, N=N+1, T=T, grad=grad, bound=bound, iterative=True)
+    kernel_tol = 0.9999
+    current_N = 1
 
-    while error_3 / error_2 > kernel_tol:
-        bound = bound * L_step
-        error_2, _, _ = optimize_error(H=H, N=N, T=T, grad=grad, bound=bound, iterative=True)
-        error_3, _, _ = optimize_error(H=H, N=N+1, T=T, grad=grad, bound=bound, iterative=True)
+    while current_N <= N:
+        L_0 = bound
+        increase_N = 0
 
+        while increase_N < 3:
+            bound = bound * L_step
+            error_1, _, _ = optimize_error(H=H, N=current_N, T=T, bound=bound, iterative=True)
+            error_2, _, _ = optimize_error(H=H, N=current_N+1, T=T, bound=bound, iterative=True)
+            if error_2 / error_1 < kernel_tol:
+                increase_N += 1
+            else:
+                increase_N = 0
+
+        current_N = current_N + 1
     L_1 = bound
-    L_4 = L_0 * (L_1/L_0)**0.1
-    L_5 = L_0 * (L_1/L_0)**0.15
-    L_6 = L_0 * (L_1/L_0)**0.2
-    error_4, nodes_4, weights_4 = optimize_error(H=H, N=N, T=T, grad=grad, bound=L_4, iterative=True)
-    error_5, nodes_5, weights_5 = optimize_error(H=H, N=N, T=T, grad=grad, bound=L_5, iterative=True)
-    error_6, nodes_6, weights_6 = optimize_error(H=H, N=N, T=T, grad=grad, bound=L_6, iterative=True)
+
+    if N == 2:
+        L_4 = L_0 * (L_1/L_0)**0.2
+        L_5 = L_0 * (L_1/L_0)**0.3
+        L_6 = L_0 * (L_1/L_0)**0.4
+    else:
+        L_4 = L_0 * (L_1/L_0)**0.05
+        L_5 = L_0 * (L_1/L_0)**0.1
+        L_6 = L_0 * (L_1/L_0)**0.15
+    error_4, nodes_4, weights_4 = optimize_error(H=H, N=N, T=T, bound=L_4, iterative=True)
+    error_5, nodes_5, weights_5 = optimize_error(H=H, N=N, T=T, bound=L_5, iterative=True)
+    error_6, nodes_6, weights_6 = optimize_error(H=H, N=N, T=T, bound=L_6, iterative=True)
 
     if error_4 <= error_5 and error_4 <= error_6:
         return nodes_4, weights_4
@@ -479,7 +484,7 @@ def quadrature_rule(H, N, T, mode="optimized"):
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
     if mode == "optimized":
-        return optimized_rule(H=H, N=N, T=T, grad=False)
+        return optimized_rule(H=H, N=N, T=T)
     if mode == "european":
         return european_rule(H=H, N=N, T=T)
     return Gaussian_rule(H=H, N=N, T=T, mode=mode)

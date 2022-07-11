@@ -4,43 +4,68 @@ import ComputationalFinance as cf
 import RoughKernel as rk
 
 
-def solve_Riccati(z, lambda_, rho, nu, nodes, weights, exp_nodes, div_nodes, N_Riccati=200):
+def characteristic_function(z, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
     """
-    Solves the Riccati equation in the exponent of the characteristic function of the approximation of the rough Heston
-    model. Does not return psi but rather F(z, psi(., z)).
-    :param z: Argument of the moment generating function
+    Gives the characteristic function of the log-price in the Markovian approximation of the rough Heston model.
+    :param z: Argument of the characteristic function (assumed to be a vector)
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
-    :param nodes: The nodes used in the approximation, assuming that they are ordered in increasing order
-    :param weights: The weights used in the approximation
-    :param exp_nodes: np.exp(-nodes * (T/N_Riccati))
-    :param div_nodes: (1 - exp_nodes) / nodes
-    :param N_Riccati: Number of time steps for solving the Riccati equation
-    :return: An approximation of F applied to the solution of the Riccati equation. Is an array with N+1 values.
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param nodes: Nodes of the Markovian approximation
+    :param weights: Weights of the Markovian approximation
+    :return: The characteristic function
     """
 
-    a = nu*nu/2
-    b = rho*nu*z - lambda_
-    c = (z*z-z)/2
+    nodes, weights = rk.sort(nodes, weights)
+    n_zero_nodes = np.sum(nodes < 1e-08)
+    dt = T/N_Riccati
+    N = len(nodes)
+    times = np.linspace(T, 0, N_Riccati + 1)
+    g = np.sum(weights[:n_zero_nodes]) * times
+    if N-n_zero_nodes > 0:
+        exponent = np.outer(times, nodes[n_zero_nodes:])
+        factor = np.where(exponent < 300, 1-np.exp(-exponent), 1)
+        g = g + factor @ (weights[n_zero_nodes:]/nodes[n_zero_nodes:])
+    g = theta * g + V_0
 
-    def F(x):
-        return a*x*x + b*x + c
+    def solve_Riccati():
+        """
+        Solves the Riccati equation in the exponent of the characteristic function of the approximation of the rough
+        Heston model. Does not return psi but rather F(z, psi(., z)).
+        :return: An approximation of F applied to the solution of the Riccati equation. Is an array with N+1 values.
+        """
 
-    psi_x = np.zeros((len(z), len(nodes)), dtype=np.cdouble)
-    F_psi = np.zeros((len(z), N_Riccati+1), dtype=np.cdouble)
-    F_psi[:, 0] = c
-    psi = np.zeros(len(z), dtype=np.cdouble)
+        a = nu * nu / 2
+        b = rho * nu * np.complex(0, 1) * z - lambda_
+        c = (-z * z - np.complex(0, 1) * z) / 2
+        exp_nodes = np.where(nodes * dt < 300, np.exp(-nodes * dt), 0)
+        div_nodes = np.zeros(N)
+        div_nodes[:n_zero_nodes] = dt
+        div_nodes[n_zero_nodes:] = (1 - exp_nodes[n_zero_nodes:]) / nodes[n_zero_nodes:]
+        new_div = np.dot(div_nodes, weights)
+        new_exp = exp_nodes * weights
 
-    new_div = np.dot(div_nodes, weights)
-    new_exp = exp_nodes * weights
+        def F(x):
+            return a * x * x + b * x + c
 
-    for i in range(N_Riccati):
-        psi_P = (psi + F_psi[:, i] * new_div + psi_x @ new_exp)/2
-        psi_x = np.outer(F(psi_P), div_nodes) + psi_x*exp_nodes[None, :]
-        psi = psi_x @ weights
-        F_psi[:, i+1] = F(psi)
-    return F_psi
+        psi_x = np.zeros((len(z), N), dtype=np.cdouble)
+        F_psi = np.zeros((len(z), N_Riccati + 1), dtype=np.cdouble)
+        F_psi[:, 0] = c
+        psi = np.zeros(len(z), dtype=np.cdouble)
+
+        for i in range(N_Riccati):
+            psi_P = (psi + F_psi[:, i] * new_div + psi_x @ new_exp) / 2
+            psi_x = np.outer(F(psi_P), div_nodes) + psi_x * exp_nodes[None, :]
+            psi = psi_x @ weights
+            F_psi[:, i + 1] = F(psi)
+        return F_psi
+
+    Fz = solve_Riccati()
+    return np.exp(np.trapz(Fz * g, dx=dt))
 
 
 def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T=1, N_Riccati=200, R=2., L=50., N_Fourier=300):
@@ -63,37 +88,21 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T=1, N_Riccati=200, R=
     :param weights: The weights used in the approximation
     return: The prices of the call option for the various strike prices in K
     """
-    N = len(nodes)
-    times = np.linspace(T, 0, N_Riccati+1)
-    g = np.zeros(N_Riccati + 1)
-    for i in range(1, N):
-        g += weights[i] / nodes[i] * (1 - np.exp(-np.fmin(nodes[i] * times, 100)))
-    if nodes[0] == 0:
-        g = theta * (g + weights[0] * times) + V_0
-    else:
-        g = theta * (g + weights[0] / nodes[0] * (1 - np.exp(-nodes[0] * times))) + V_0
 
-    exp_nodes = np.exp(-np.fmin(nodes * (T/N_Riccati), np.fmax(100, np.log(weights)*30)))
-    div_nodes = np.zeros(len(nodes))
-    div_nodes[0] = T/N_Riccati if nodes[0] == 0 else (1 - exp_nodes[0]) / nodes[0]
-    div_nodes[1:] = (1 - exp_nodes[1:]) / nodes[1:]
-
-    def mgf_(z):
+    def mgf(z):
         """
         Moment generating function of the log-price.
         :param z: Argument, assumed to be a vector
         :return: Value
         """
-        Fz = solve_Riccati(z=z, lambda_=lambda_, rho=rho, nu=nu, nodes=nodes, weights=weights, N_Riccati=N_Riccati,
-                           exp_nodes=exp_nodes, div_nodes=div_nodes)
-        res = np.trapz(Fz * g, dx=T/N_Riccati)
-        return np.exp(res)
+        return characteristic_function(z=np.complex(0, -1) * z, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                       T=T, N_Riccati=N_Riccati, nodes=nodes, weights=weights)
 
-    return cf.pricing_fourier_inversion(mgf_, K, R, L, N_Fourier)
+    return cf.pricing_fourier_inversion(mgf, K, R, L, N_Fourier)
 
 
-def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None, R=2, L=None, N_Fourier=None,
-                       mode="best", rel_tol=1e-02, smoothing=False, nodes=None, weights=None):
+def implied_volatility_smile(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None, R=2, L=None, N_Fourier=None,
+                             mode="european", rel_tol=1e-02, nodes=None, weights=None):
     """
     Gives the implied volatility of the European call option in the rough Heston model
     as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
@@ -116,6 +125,8 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None,
         parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
         of these three options that seems most suitable
     :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
     return: The price of the call option
     """
     if N_Riccati is None:
@@ -130,14 +141,6 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None,
     else:
         N = len(nodes)
     np.seterr(all='warn')
-    K_result = K
-    if smoothing:
-        K_fine = np.empty((len(K)+1)*10)
-        K_fine[:11] = np.exp(np.linspace(2*np.log(K[0]) - np.log(K[1]), np.log(K[0]), 11))
-        for i in range(len(K)-1):
-            K_fine[10*i:10*(i+1)+1] = np.exp(np.linspace(np.log(K[i]), np.log(K[i+1]), 11))
-        K_fine[-11:] = np.exp(np.linspace(np.log(K[-1]), 2*np.log(K[-1]) - np.log(K[-2]), 11))
-        K = K_fine
 
     tic = time.perf_counter()
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, R=R, L=L, N_Fourier=N_Fourier,
@@ -190,10 +193,7 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_Riccati=None,
                 N_Fourier = int(N_Fourier / 1.5)
                 N_Riccati = int(N_Riccati/1.2)
                 if result is not None and error_Fourier < rel_tol and error_Riccati < rel_tol:
-                    if smoothing:
-                        return cf.smoothen(np.log(K), result, np.log(K_result))
-                    else:
-                        return result
+                    return result
                 iv = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(K))
         duration = time.perf_counter() - tic
         error = np.amax((np.abs(iv_approx - iv)/iv))

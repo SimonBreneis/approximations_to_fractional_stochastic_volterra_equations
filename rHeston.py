@@ -1,39 +1,10 @@
 import time
 import numpy as np
 import ComputationalFinance as cf
-import scipy.special
+from scipy.special import gamma
 
 
-def solve_fractional_Riccati(a, lambda_, rho, nu, A, B, N_Riccati=200):
-    """
-    Solves the fractional Riccati equation in the exponent of the characteristic function of the rough Heston model
-    as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
-    :param a: Argument of the characteristic function
-    :param lambda_: Mean-reversion speed
-    :param rho: Correlation between Brownian motions
-    :param nu: Volatility of volatility
-    :param A: Precomputed matrix of coefficients
-    :param B: Precomputed matrix of coefficients
-    :param N_Riccati: Number of time steps used
-    :return: An approximation of the solution of the fractional Riccati equation. Is an array with N+1 values.
-    """
-    a_ = 0.5 * (-a * a - np.complex(0, 1) * a)
-    b_ = (np.complex(0, 1) * a * rho * nu - lambda_)
-    c_ = nu * nu / 2
-
-    def F(x):
-        return a_ + b_ * x + c_ * x * x
-
-    h = np.zeros(shape=(len(a), N_Riccati + 1), dtype=np.cdouble)
-    F_vec = np.zeros(shape=(len(a), N_Riccati + 1), dtype=np.cdouble)
-    for k in range(1, N_Riccati + 1):
-        h_p = F_vec[:, :k] @ B[:k, k]
-        h[:, k] = F_vec[:, :k] @ A[:k, k] + A[k, k] * F(h_p)
-        F_vec[:, k] = F(h[:, k])
-    return h
-
-
-def characteristic_function(a, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=200):
+def characteristic_function(a, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
     """
     Gives the characteristic function of the log-price in the rough Heston model as described in El Euch and Rosenbaum,
     The characteristic function of rough Heston models. Uses the Adams scheme.
@@ -49,36 +20,43 @@ def characteristic_function(a, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=
     :return: The characteristic function
     """
     dt = T / N_Riccati
-    coefficient = dt ** (H + 0.5) / scipy.special.gamma(H + 2.5)
-    A = np.zeros(shape=(N_Riccati + 1, N_Riccati + 1))
-    A[0, 1:] = coefficient * (
-            np.arange(N_Riccati) ** (H + 1.5) - (np.arange(N_Riccati) - H - 0.5) * np.arange(1, N_Riccati + 1) ** (
-            H + 0.5))
-    for k in range(N_Riccati):
-        A[1:(k + 1), k + 1] = coefficient * (
-                (k - np.arange(1, k + 1) + 2) ** (H + 1.5) + (k - np.arange(1, k + 1)) ** (H + 1.5) - 2 * (
-                k - np.arange(1, k + 1) + 1) ** (H + 1.5))
-        A[k + 1, k + 1] = coefficient
 
-    B = np.zeros(shape=(N_Riccati + 1, N_Riccati + 1))
-    for k in range(N_Riccati):
-        B[:(k + 1), k + 1] = (k - np.arange(k + 1) + 1) ** (H + 0.5) - (k - np.arange(k + 1)) ** (H + 0.5)
-    B = dt ** (H + 0.5) / scipy.special.gamma(H + 1.5) * B
+    def solve_fractional_Riccati():
+        """
+        Solves the fractional Riccati equation in the exponent of the characteristic function of the rough Heston model
+        as described in El Euch and Rosenbaum, The characteristic function of rough Heston models.
+        Uses the Adams scheme.
+        :return: An approximation of the solution of the fractional Riccati equation. Is an array with N+1 values.
+        """
+        a_ = 0.5 * (-a * a - np.complex(0, 1) * a)
+        b_ = (np.complex(0, 1) * a * rho * nu - lambda_)
+        c_ = nu * nu / 2
+        coefficient = dt ** (H + 0.5) / gamma(H + 2.5)
+        v_1 = np.arange(N_Riccati+1) ** (H + 1.5)
+        v_2 = np.arange(N_Riccati+1) ** (H + 0.5)
+        v_3 = coefficient * (v_1[N_Riccati:1:-1] + v_1[N_Riccati-2::-1] - 2 * v_1[N_Riccati-1:0:-1])
+        v_4 = coefficient * (v_1[:-1] - (np.arange(N_Riccati) - H - 0.5) * v_2[1:])
+        v_5 = dt ** (H + 0.5) / gamma(H + 1.5) * (v_2[N_Riccati:0:-1] - v_2[N_Riccati-1::-1])
 
-    temporary_weights = 1 / scipy.special.gamma(1.5 - H) * (
-            np.linspace(T, dt, N_Riccati) ** (0.5 - H) - np.linspace(T-dt, 0, N_Riccati) ** (0.5 - H))
-    fractional_weights = np.zeros(shape=(N_Riccati + 1))
-    fractional_weights[0] = 0.5 * temporary_weights[0]
-    fractional_weights[1:-1] = 0.5 * (temporary_weights[1:] + temporary_weights[:-1])
-    fractional_weights[-1] = 0.5 * temporary_weights[-1]
-    h = solve_fractional_Riccati(a, lambda_, rho, nu, A, B, N_Riccati)
-    fractional_integral = h @ fractional_weights
+        def F(x):
+            return a_ + b_ * x + c_ * x * x
+
+        h_ = np.zeros(shape=(len(a), N_Riccati + 1), dtype=np.cdouble)
+        F_vec = np.zeros(shape=(len(a), N_Riccati), dtype=np.cdouble)
+        F_vec[:, 0] = F(h_[:, 0])
+        h_[:, 1] = F_vec[:, 0] * v_4[0] + coefficient * F(F_vec[:, 0] * v_5[-1])
+        for k in range(2, N_Riccati + 1):
+            F_vec[:, k-1] = F(h_[:, k-1])
+            h_[:, k] = F_vec[:, 0] * v_4[k-1] + F_vec[:, 1:k] @ v_3[-k+1:] + coefficient * F(F_vec[:, :k] @ v_5[-k:])
+        return h_
+
+    h = solve_fractional_Riccati()
     integral = np.trapz(h, dx=dt)
-    res = np.exp(theta * integral + V_0 * fractional_integral)
-    return res
+    fractional_integral = -np.trapz(h, x=np.linspace(T, 0, N_Riccati+1) ** (0.5 - H) / gamma(1.5-H), axis=1)
+    return np.exp(theta * integral + V_0 * fractional_integral)
 
 
-def call(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=200, R=2., L=50., N_Fourier=300):
+def call(K, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200, R=2., L=50., N_Fourier=300):
     """
     Gives the price of a European call option in the rough Heston model as described in El Euch and Rosenbaum, The
     characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
@@ -109,8 +87,8 @@ def call(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=200, R=2., L=50., N
     return cf.pricing_fourier_inversion(mgf, K, R, L, N_Fourier)
 
 
-def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=None, R=2., L=None, N_Fourier=None,
-                       rel_tol=1e-02, smoothing=False):
+def implied_volatility_smile(K, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=None, R=2., L=None, N_Fourier=None,
+                             rel_tol=1e-02):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
@@ -138,14 +116,6 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=None,
         N_Fourier = int(8 * L / np.sqrt(T))
     result = None
     np.seterr(all='warn')
-    K_result = K
-    if smoothing:
-        K_fine = np.empty((len(K)+1)*10)
-        K_fine[:11] = np.exp(np.linspace(2*np.log(K[0]) - np.log(K[1]), np.log(K[0]), 11))
-        for i in range(len(K)-1):
-            K_fine[10*i:10*(i+1)+1] = np.exp(np.linspace(np.log(K[i]), np.log(K[i+1]), 11))
-        K_fine[-11:] = np.exp(np.linspace(np.log(K[-1]), 2*np.log(K[-1]) - np.log(K[-2]), 11))
-        K = K_fine
 
     tic = time.perf_counter()
     prices = call(K, H, lambda_, rho, nu, theta, V_0, T, N_Riccati, R, L, N_Fourier)
@@ -158,6 +128,7 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=None,
     zero_ind = np.where(np.logical_or(np.logical_or(iv_approx == 0, iv_approx == np.nan), iv_approx == np.inf))
     iv_approx[zero_ind] = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(zero_ind))
     error = np.amax(np.abs(iv_approx - iv) / iv)
+    print(np.abs(iv_approx - iv) / iv)
 
     while error > rel_tol or np.amin(iv) < 1e-08:
 
@@ -196,13 +167,11 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T=1., N_Riccati=None,
                 N_Fourier = int(N_Fourier/1.5)
                 N_Riccati = int(N_Riccati/1.2)
                 if result is not None and error_Fourier < rel_tol and error_Riccati < rel_tol:
-                    if smoothing:
-                        return cf.smoothen(np.log(K), result, np.log(K_result))
-                    else:
-                        return result
+                    return result
                 iv = 1e-16 * np.exp(np.random.uniform(-5, 10)) * np.ones(len(K))
         duration = time.perf_counter() - tic
         error = np.amax(np.abs(iv_approx - iv) / iv)
+        print(np.abs(iv_approx - iv) / iv)
         print(error)
 
     return iv

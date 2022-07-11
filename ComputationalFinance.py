@@ -12,7 +12,7 @@ def MC(samples):
     return np.average(samples, axis=-1), 1.95 * np.std(samples, axis=-1) / np.sqrt(samples.shape[-1])
 
 
-def BS(sigma=0.2, T=1., N=1000):
+def BS(sigma, T, N):
     """
     Simulates N samples of a Black-Scholes price at time T.
     :param sigma: Volatility
@@ -23,7 +23,7 @@ def BS(sigma=0.2, T=1., N=1000):
     return np.exp(np.random.normal(-sigma*sigma/2*T, sigma*np.sqrt(T), N))
 
 
-def BS_d1(S=1., K=1., sigma=1., r=0., T=1.):
+def BS_d1(S, K, sigma, T, r=0.):
     """
     Computes the first of the two nodes of the Black-Scholes model where the CDF is evaluated.
     :param S: Initial stock price
@@ -36,7 +36,7 @@ def BS_d1(S=1., K=1., sigma=1., r=0., T=1.):
     return (np.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
 
 
-def BS_d2(S=1., K=1., sigma=1., r=0., T=1.):
+def BS_d2(S, K, sigma, T, r=0.):
     """
     Computes the second of the two nodes of the Black-Scholes model where the CDF is evaluated.
     :param S: Initial stock price
@@ -49,7 +49,7 @@ def BS_d2(S=1., K=1., sigma=1., r=0., T=1.):
     return (np.log(S / K) + (r - sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
 
 
-def BS_call_price(S=1., K=1., sigma=1., r=0., T=1.):
+def BS_call_price(S, K, sigma, T, r=0.):
     """
     Computes the price of a European call option under the Black-Scholes model
     :param S: Initial stock price
@@ -59,12 +59,12 @@ def BS_call_price(S=1., K=1., sigma=1., r=0., T=1.):
     :param T: Final time
     :return: The price of a call option
     """
-    d1 = BS_d1(S, K, sigma, r, T)
-    d2 = BS_d2(S, K, sigma, r, T)
+    d1 = np.fmax(BS_d1(S=S, K=K, sigma=sigma, r=r, T=T), -6)  # to avoid overflow/underflow errors
+    d2 = np.fmax(BS_d2(S=S, K=K, sigma=sigma, r=r, T=T), -6)
     return S * scipy.stats.norm.cdf(d1) - K * np.exp(-r * T) * scipy.stats.norm.cdf(d2)
 
 
-def BS_put_price(S=1., K=1., sigma=1., r=0., T=1.):
+def BS_put_price(S, K, sigma, T, r=0.):
     """
     Computes the price of a European put option under the Black-Scholes model
     :param S: Initial stock price
@@ -74,12 +74,12 @@ def BS_put_price(S=1., K=1., sigma=1., r=0., T=1.):
     :param T: Final time
     :return: The price of a put option
     """
-    d1 = BS_d1(S, K, sigma, r, T)
-    d2 = BS_d2(S, K, sigma, r, T)
+    d1 = BS_d1(S=S, K=K, sigma=sigma, r=r, T=T)
+    d2 = BS_d2(S=S, K=K, sigma=sigma, r=r, T=T)
     return - S * scipy.stats.norm.cdf(-d1) + K * np.exp(-r * T) * scipy.stats.norm.cdf(-d2)
 
 
-def implied_volatility_call(S=1., K=1., r=0., T=1., price=1., tol=10. ** (-10), sl=10. ** (-10), sr=10.):
+def implied_volatility_call(S, K, T, price, r=0., tol=1e-10, sl=1e-10, sr=10.):
     """
     Computes the implied volatility of a European call option, assuming it is in [sl, sr].
     :param S: Initial stock price
@@ -94,7 +94,7 @@ def implied_volatility_call(S=1., K=1., r=0., T=1., price=1., tol=10. ** (-10), 
     """
     sm = (sl + sr) / 2
     while np.amax(sr - sl) > tol:
-        em = BS_call_price(S, K, sm, r, T) - price
+        em = BS_call_price(S=S, K=K, sigma=sm, r=r, T=T) - price
         sl = (em < 0) * sm + (em >= 0) * sl
         sr = (em >= 0) * sm + (em < 0) * sr
         sm = (sl + sr) / 2
@@ -135,20 +135,20 @@ def put_option_payoff(S, K):
     return np.fmax(K_matrix - S_matrix, 0)
 
 
-def volatility_smile_call(samples, K, T=1., S_0=1.):
+def volatility_smile_call(samples, K, T, S):
     """
     Computes the volatility smile for a European call option.
     :param samples: The final stock prices
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
-    :param S_0: The initial stock price
+    :param S: The initial stock price
     :return: Three vectors: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
-    (price_estimate, price_stat) = MC(call_option_payoff(samples, K))
-    implied_volatility_estimate = implied_volatility_call(S_0, K, 0, T, price_estimate)
-    implied_volatility_lower = implied_volatility_call(S_0, K, 0, T, price_estimate - price_stat)
-    implied_volatility_upper = implied_volatility_call(S_0, K, 0, T, price_estimate + price_stat)
+    (price_estimate, price_stat) = MC(call_option_payoff(S=samples, K=K))
+    implied_volatility_estimate = implied_volatility_call(S=S, K=K, r=0, T=T, price=price_estimate)
+    implied_volatility_lower = implied_volatility_call(S=S, K=K, r=0, T=T, price=price_estimate - price_stat)
+    implied_volatility_upper = implied_volatility_call(S=S, K=K, r=0, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
@@ -181,63 +181,3 @@ def pricing_fourier_inversion(mgf, K, R=2., L=50., N=300):
         values = mgf_values*fourier_transform_payoff(K[i], u + complex(0, 1)*R)
         prices[i] = np.real(1/np.pi * np.trapz(values, dx=L/N))
     return prices
-
-
-def smoothen(k, iv, k_result=None):
-    indices = iv > 1e-08
-    k = k[indices]
-    iv = iv[indices]
-
-    avg_vec = np.array([np.average(iv[i * (len(iv)//10):(i+1)*(len(iv)//10)]) for i in range(10)])
-    min_avg = np.argmin(avg_vec)
-    arg_min = int((min_avg+0.5)*(len(iv)//10))
-
-    while arg_min != 0 and iv[arg_min-1] < iv[arg_min]:
-        arg_min = arg_min - 1
-    while arg_min != len(iv) - 1 and iv[arg_min+1] < iv[arg_min]:
-        arg_min = arg_min + 1
-    new_arg_min = arg_min
-
-    print(arg_min, iv[arg_min])
-
-    indices = np.zeros(len(k), dtype=bool)
-    while np.sum(indices) != len(indices):
-        print(len(indices))
-        indices = np.zeros(len(k), dtype=bool)
-        if iv[0] < 0.98*iv[1]:
-            indices[0] = False
-            new_arg_min = new_arg_min - 1
-        else:
-            indices[0] = True
-        if iv[-1] < 0.98*iv[-2]:
-            indices[-1] = False
-        else:
-            indices[-1] = True
-        for i in range(1, len(k)-1):
-            if i != arg_min and iv[i] < 0.9 * (iv[i-1] + iv[i+1])/2:
-                indices[i] = False
-                if i < arg_min:
-                    new_arg_min = new_arg_min - 1
-            else:
-                indices[i] = True
-        k = k[indices]
-        iv = iv[indices]
-        arg_min = new_arg_min
-
-    smoothing_vector = np.array([2.**(-np.abs(len(iv)-1-i)) for i in range(2*len(iv)-1)])
-    iv_new = np.array([np.dot(iv, smoothing_vector[(len(iv)-1-i):(2*len(iv)-1-i)]) / np.sum(smoothing_vector[(len(iv)-1-i):(2*len(iv)-1-i)]) if np.abs(arg_min-i)/len(iv) > 0.05 else iv[i] for i in range(len(iv))])
-
-    def implied_vol(k_):
-        if k_ < k[0] and len(k) >= 5:
-            slope, intercept, _, _, _ = scipy.stats.linregress(k[:5], iv_new[:5])
-            return slope * k_ + intercept
-        if k_ > k[-1] and len(k) >= 5:
-            slope, intercept, _, _, _ = scipy.stats.linregress(k[-5:], iv_new[-5:])
-            return slope * k_ + intercept
-        return np.interp(k_, k, iv)
-
-    if k_result is None:
-        return implied_vol
-
-    iv_result = np.array([implied_vol(k_result[i]) for i in range(len(k_result))])
-    return iv_result
