@@ -18,6 +18,13 @@ import rHestonSplitKernel as sk
 import scipy
 from scipy import special
 
+'''
+fun = lambda x: np.exp(x)
+print(np.trapz(fun(np.linspace(0, 2, 101)), dx=0.02))
+nodes, weights = rk.Gaussian_quadrature_no_weight(3, np.sqrt(np.linspace(0, 4, 34)))
+print(np.dot(fun(nodes), weights))
+time.sleep(36000)
+'''
 
 k_vec = np.linspace(-1.5, 0.75, 451)
 with open('true surface.npy', 'rb') as f:
@@ -27,39 +34,64 @@ true_surface = true_surface[-1, :]
 # k_vec = np.linspace(-0.5, 0.1, 101)
 # true_surface = rHeston.implied_volatility_smile(K=np.exp(k_vec), H=0.07, lambda_=0.6, rho=-0.8, nu=0.5, theta=0.01, V_0=0.01,
 #                                                T=0.04, rel_tol=1e-04)
-print(rHeston.implied_volatility_smile(K=np.exp(k_vec), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02,
-                                                T=1, rel_tol=2e-05))
-print((true_surface,))
+tic = time.perf_counter()
+sur = rHeston.implied_volatility_smile(K=np.exp(k_vec), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02,
+                                               T=1, rel_tol=2e-05)
+print(sur)
+print(np.amax(np.abs(true_surface-sur)/true_surface), time.perf_counter()-tic)
+# print((true_surface,))
+
+true_surface = np.array([0.6193224 , 0.61516358, 0.61097976, 0.60677201, 0.60253891,
+       0.59828059, 0.59399642, 0.58968578, 0.58534864, 0.58098384,
+       0.57659171, 0.57217077, 0.56772152, 0.56324234, 0.55873372,
+       0.55419403, 0.54962364, 0.54502102, 0.54038632, 0.53571816,
+       0.53101644, 0.52627994, 0.5215083 , 0.51670045, 0.51185578,
+       0.50697333, 0.50205229, 0.49709175, 0.49209071, 0.4870483 ,
+       0.48196336, 0.47683499, 0.47166189, 0.46644312, 0.46117725,
+       0.45586322, 0.45049953, 0.44508496, 0.43961792, 0.43409701,
+       0.42852052, 0.42288689, 0.41719425, 0.41144082, 0.4056246 ,
+       0.39974354, 0.39379544, 0.38777798, 0.38168874, 0.37552507,
+       0.36928424, 0.36296326, 0.35655903, 0.35006813, 0.343487  ,
+       0.33681174, 0.33003823, 0.32316192, 0.31617801, 0.3090812 ,
+       0.30186581, 0.29452555, 0.28705363, 0.27944251, 0.27168392,
+       0.26376868, 0.25568656, 0.24742611, 0.23897442, 0.23031687,
+       0.22143673, 0.21231473, 0.20292844, 0.1932515 , 0.18325249,
+       0.17289346, 0.16212772, 0.15089679, 0.13912555, 0.12671495,
+       0.11353026, 0.09938329, 0.08401479, 0.06719413, 0.05074783,
+       0.04680469, 0.05148665, 0.05743842, 0.06341134, 0.06917078,
+       0.0746759 , 0.07993387, 0.08496362, 0.08978653, 0.09442177,
+       0.09888792, 0.1031991 , 0.107371  , 0.11141233, 0.11533805,
+       0.11915087])
 
 for N in np.array([1, 2, 3, 4, 5, 6]):
     tic = time.perf_counter()
-    nodes, weights = rk.quadrature_rule(0.1, N, 1, mode='observation')
+    nodes, weights = rk.quadrature_rule(0.07, N, 0.04, mode='observation')
     smile = rHestonMarkov.implied_volatility_smile(K=np.exp(k_vec), H=0.07, lambda_=0.6,
                                                    rho=-0.8, nu=0.5, theta=0.01,
                                                    V_0=0.01, T=0.04, rel_tol=1e-04,
                                                    nodes=nodes, weights=weights, N=-1)
     dur = time.perf_counter() - tic
-    kernel_error = np.sqrt(rk.error(0.1, nodes, weights, 1))/rk.kernel_norm(0.1, 1)
+    kernel_error = np.sqrt(rk.error(0.07, nodes, weights, 0.04))/rk.kernel_norm(0.07, 0.04)
     smile_error = np.amax(np.abs(true_surface - smile) / true_surface)
     print(N, 'observation', np.amax(nodes), kernel_error, smile_error, dur)
     tic = time.perf_counter()
-    nodes, weights = rk.quadrature_rule(0.1, N, 1, mode='optimized')
+    nodes, weights = rk.quadrature_rule(0.07, N, 0.04, mode='optimized')
     smile = rHestonMarkov.implied_volatility_smile(K=np.exp(k_vec), H=0.07, lambda_=0.6,
                                                    rho=-0.8, nu=0.5, theta=0.01,
                                                    V_0=0.01, T=0.04, rel_tol=1e-04,
                                                    nodes=nodes, weights=weights, N=-1)
     dur = time.perf_counter() - tic
-    kernel_error = np.sqrt(rk.error(0.1, nodes, weights, 1))/rk.kernel_norm(0.1, 1)
+    kernel_error = np.sqrt(rk.error(0.07, nodes, weights, 0.04))/rk.kernel_norm(0.07, 0.04)
     smile_error = np.amax(np.abs(true_surface - smile) / true_surface)
     print(N, 'optimized', np.amax(nodes), kernel_error, smile_error, dur)
     tic = time.perf_counter()
-    nodes, weights = rk.quadrature_rule(0.1, N, 1, mode='european')
+    nodes, weights = rk.quadrature_rule(0.07, N, 0.04, mode='european')
     smile = rHestonMarkov.implied_volatility_smile(K=np.exp(k_vec), H=0.07, lambda_=0.6,
                                                    rho=-0.8, nu=0.5, theta=0.01,
                                                    V_0=0.01, T=0.04, rel_tol=1e-04,
                                                    nodes=nodes, weights=weights, N=-1)
     dur = time.perf_counter() - tic
-    kernel_error = np.sqrt(rk.error(0.1, nodes, weights, 1))/rk.kernel_norm(0.1, 1)
+    kernel_error = np.sqrt(rk.error(0.07, nodes, weights, 0.04))/rk.kernel_norm(0.07, 0.04)
     smile_error = np.amax(np.abs(true_surface - smile) / true_surface)
     print(N, 'european', np.amax(nodes), kernel_error, smile_error, dur)
 time.sleep(36000)
@@ -300,7 +332,7 @@ for vb in methods:
         print(N_time[i])
         with open(f'samples of {vb} mode with N_time={N_time[i]}.npy', 'rb') as f:
             S[i, :] = np.load(f)
-        est, lower, upper = cf.volatility_smile_call(S[i, :], np.exp(k_vec), 1., 1.)
+        est, lower, upper = cf.iv_eur_call_MC(S[i, :], np.exp(k_vec), 1., 1.)
         plt.plot(k_vec, est, label=f'N_time={N_time[i]}')
     plt.plot(k_vec, lower, 'k--')
     plt.plot(k_vec, upper, 'k--')

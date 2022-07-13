@@ -266,7 +266,7 @@ def error(H, nodes, weights, T):
     :param H: Hurst parameter
     :param nodes: The nodes of the approximation. Assumed that they are all non-zero
     :param weights: The weights of the approximation
-    :param T: Final time. If fast, this is allowed to be a numpy array
+    :param T: Final time, may also be a vector
     :return: An error estimate
     """
     nodes = mp_to_np(nodes)
@@ -278,8 +278,7 @@ def error(H, nodes, weights, T):
     summand = T ** (2 * H) / (2 * H * gamma(H + 0.5) ** 2)
     node_matrix = nodes[:, None] + nodes[None, :]
     if isinstance(T, np.ndarray):
-        exponent = np.einsum('ij,k->kij', node_matrix, T)
-        factor = np.where(exponent < 300, 1-np.exp(-exponent), 1)
+        factor = 1 - np.exp(-np.fmin(np.einsum('ij,k->kij', node_matrix, T), 300))
         sum_1 = np.sum(np.repeat((np.outer(weights, weights) / node_matrix)[None, :, :], len(T), axis=0) * factor, axis=(1, 2))
         sum_2 = 2 * np.sum((weights / nodes**(H+0.5))[:, None] * gammainc(H + 0.5, np.outer(nodes, T)), axis=0)
     else:
@@ -293,28 +292,46 @@ def gradient_of_error(H, T, nodes, weights):
     Computes the gradient nabla int_0^T |K(t) - hat{K}(t)|^2 dt, where nabla acts on the nodes and weights,
     assuming that there is no node at 0.
     :param H: Hurst parameter
-    :param T: Final time
+    :param T: Final time, may be a vector
     :param nodes: Nodes of the quadrature rule
     :param weights: Weights of the quadrature rule
     :return: The gradient
     """
     N = len(nodes)
-    gamma_ints = gammainc(H+1/2, nodes*T)
-    grad = np.empty(2*N)
     node_matrix = nodes[:, None] + nodes[None, :]
-    exp_node_matrix = np.where(node_matrix * T < 300, np.exp(-node_matrix*T), 0)
-    exp_node_vec = np.where(nodes * T < 300, np.exp(-nodes*T)/nodes, 0)
     weight_matrix = np.outer(weights, weights)
-    first_summands = weight_matrix / (node_matrix * node_matrix) * (1-(1+node_matrix*T)*exp_node_matrix)
-    second_summands = weights * (T**(H+1/2) / gamma(H+1/2) * exp_node_vec - (H+1/2) * nodes**(-H-3/2) * gamma_ints)
-    grad[:N] = -2 * np.sum(first_summands, axis=1) - 2 * second_summands
-    third_summands = ((1-exp_node_matrix)/node_matrix) @ weights
-    forth_summands = nodes ** (-(H+1/2)) * gamma_ints
-    grad[N:] = 2 * third_summands - 2 * forth_summands
+    if isinstance(T, np.ndarray):
+        grad = np.empty(len(T), 2*N)
+        gamma_ints = gammainc(H+1/2, np.outer(T, nodes))
+        temp = np.einsum('i,jk->ijk', T, node_matrix)
+        exp_node_matrix = np.exp(-np.fmin(temp, 300))
+        exp_node_matrix = np.where(temp > 300, 0, exp_node_matrix)
+        exp_node_vec = np.exp(-np.fmin(np.outer(T, nodes), 300))/nodes[None, :]
+        exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
+        first_summands = (weight_matrix / (node_matrix * node_matrix))[None, :] * (1-(1+temp)*exp_node_matrix)
+        second_summands = weights[None, :] * ((T**(H+1/2) / gamma(H+1/2))[:, None] * exp_node_vec - (((H+1/2) * nodes**(-H-3/2))[None, :] * gamma_ints))
+        grad[:, :N] = -2 * np.sum(first_summands, axis=2) - 2 * second_summands
+        third_summands = np.einsum('ijk,k->ij', ((1-exp_node_matrix)/node_matrix[None, :, :]), weights)
+        forth_summands = (nodes ** (-(H+1/2)))[None, :] * gamma_ints
+        grad[:, N:] = 2 * third_summands - 2 * forth_summands
+    else:
+        grad = np.empty(2*N)
+        gamma_ints = gammainc(H+1/2, nodes*T)
+        exp_node_matrix = np.exp(-np.fmin(node_matrix*T, 300))
+        exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
+        exp_node_vec = np.zeros(N)
+        indices = nodes * T < 300
+        exp_node_vec[indices] = np.exp(- T * nodes[indices])/nodes[indices]
+        first_summands = weight_matrix / (node_matrix * node_matrix) * (1-(1+node_matrix*T)*exp_node_matrix)
+        second_summands = weights * (T**(H+1/2) / gamma(H+1/2) * exp_node_vec - (H+1/2) * nodes**(-H-3/2) * gamma_ints)
+        grad[:N] = -2 * np.sum(first_summands, axis=1) - 2 * second_summands
+        third_summands = ((1-exp_node_matrix)/node_matrix) @ weights
+        forth_summands = nodes ** (-(H+1/2)) * gamma_ints
+        grad[N:] = 2 * third_summands - 2 * forth_summands
     return grad
 
 
-def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False):
+def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=True):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
     optimizer as implemented in scipy.
@@ -337,14 +354,30 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False):
         bounds = (((np.log(1e-08), np.log(bound)),) * N_) + (((np.log(0.1), np.log(1e+100)),) * N_)
         rule = np.log(np.concatenate((nodes_1, weights_1)))
 
-        def func(x):
-            return np.amax(coefficient * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
+        if l2:
+            def func(x):
+                return np.sum((coefficient * error(H=H, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]), T=T))**2)
+
+            def jac(x):
+                n_ = np.exp(x[:N_])
+                w_ = np.exp(x[N_:])
+                errors = error(H=H, nodes=n_, weights=w_, T=T)
+                grads = gradient_of_error(H=H, T=T, nodes=n_, weights=w_)
+                return 2 * coefficient**2 * np.exp(x) * np.einsum('ij,i->j', grads, errors)
+        else:
+            def func(x):
+                return np.amax(coefficient * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
+
+            def jac(x):
+                return coefficient * np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]))
 
         if isinstance(T, np.ndarray):
-            res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
+            if l2:
+                res = minimize(func, rule, tol=tol ** 2, bounds=bounds, jac=jac)
+            else:
+                res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
         else:
-            res = minimize(func, rule, tol=tol ** 2, bounds=bounds,
-                           jac=lambda x: np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:])))
+            res = minimize(func, rule, tol=tol ** 2, bounds=bounds, jac=jac)
 
         nodes_1, weights_1 = sort(np.exp(res.x[:N_]), np.exp(res.x[N_:]))
         return np.sqrt(res.fun), nodes_1, weights_1
