@@ -1,10 +1,19 @@
-import time
-import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from scipy import stats
 import scipy.integrate
-import RoughKernel as rk
+
+
+def maturity_tensor_strike(S, K, T):
+    """
+    Given a vector of strikes K for maturity T[-1], computes appropriate vectors of strikes for all other
+    maturities in T for the computation of an implied volatility surface.
+    :param S: Initial stock price
+    :param K: Strikes for maturity T[-1]
+    :param T: Array of maturities
+    :return: Two 2-dim arrays of maturities and and strikes of the form T=T(T, K) and K=K(T, K)
+    """
+    return np.tile(T, (len(K), 1)).T, S * np.exp(np.multiply.outer(np.sqrt(T/T[-1]), np.log(K/S)))
 
 
 def MC(samples):
@@ -48,7 +57,7 @@ def BS_nodes(S, K, sigma, T, r=0., regularize=True):
 
 def BS_price_eur_call(S, K, sigma, T, r=0.):
     """
-    Computes the price of a European call option under the Black-Scholes model
+    Computes the price of a European call option under the Black-Scholes model.
     :param S: Initial stock price
     :param K: Strike price
     :param sigma: Volatility
@@ -62,7 +71,7 @@ def BS_price_eur_call(S, K, sigma, T, r=0.):
 
 def BS_price_eur_put(S, K, sigma, T, r=0.):
     """
-    Computes the price of a European put option under the Black-Scholes model
+    Computes the price of a European put option under the Black-Scholes model.
     :param S: Initial stock price
     :param K: Strike price
     :param sigma: Volatility
@@ -91,8 +100,7 @@ def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
         sl = (em < 0) * sm + (em >= 0) * sl
         sr = (em >= 0) * sm + (em < 0) * sr
         sm = (sl + sr) / 2
-    sm[sm < threshold] = np.nan
-    return sm
+    return np.where(sm < threshold, np.nan, sm)
 
 
 def iv_eur_call(S, K, T, price, r=0.):
@@ -124,29 +132,37 @@ def iv_eur_put(S, K, T, price, r=0.):
 def payoff_call(S, K):
     """
     Computes the payoff of a (European) call option.
+    If S or K are a float, simply computes the payoff.
+    If both S and K are 1-dim arrays, computes the payoff matrix payoff(K, S), a 2-dim array. This may be the case when
+    computing payoffs for various strikes using MC, as in iv smiles.
+    If both S=S(T, .) and K=K(T, .) are 2-dim arrays, computes the payoff matrix payoff(T, K, S), a 3-dim array. This
+    may be the case when computing payoffs for various strikes and maturities using MC, as in iv surfaces.
     :param S: (Final) stock price
     :param K: Strike price
-    :return: The payoff. If S and K are floats, a float is returned. If either S or K are floats, the other being a
-            vector, a vector is returned. If both S and K are vectors, a matrix is returned. In the matrix, the rows
-            have fixed K, the columns have fixed S.
+    :return: The payoff.
     """
     if isinstance(K, float) or isinstance(S, float):
         return np.fmax(S - K, 0)
-    return np.fmax(S[None, :] - K[:, None], 0)
+    return np.fmax(S[..., None, :] - K[..., None], 0)
 
 
 def payoff_put(S, K):
     """
     Computes the payoff of a (European) put option.
+    If S or K are a float, simply computes the payoff.
+    If both S and K are 1-dim arrays, computes the payoff matrix payoff(K, S), a 2-dim array. This may be the case when
+    computing payoffs for various strikes using MC, as in iv smiles.
+    If both S=S(T, .) and K=K(T, .) are 2-dim arrays, computes the payoff matrix payoff(T, K, S), a 3-dim array. This
+    may be the case when computing payoffs for various strikes and maturities using MC, as in iv surfaces.
     :param S: (Final) stock price
     :param K: Strike price
-    :return: The payoff. If S and K are floats, a float is returned. If either S or K are floats, the other being a
-            vector, a vector is returned. If both S and K are vectors, a matrix is returned. In the matrix, the rows
-            have fixed K, the columns have fixed S.
+    :return: The payoff.
     """
     if isinstance(K, float) or isinstance(S, float):
         return np.fmax(K - S, 0)
-    return np.fmax(K[:, None] - S[None, :], 0)
+    if len(K.shape) == 1 and len(S.shape) == 1:
+        return np.fmax(K[:, None] - S[None, :], 0)
+    return np.fmax(K[:, :, None] - S[:, None, :], 0)
 
 
 def iv_eur_call_MC(S, K, T, samples):
@@ -193,14 +209,14 @@ def fourier_payoff_call_put(K, u):
     """
     u = complex(0, 1) * u
     if isinstance(K, np.ndarray):
-        return np.exp(np.outer(np.log(K), 1+u)) / (u * (1+u))[None, :]
+        return np.exp(np.multiply.outer(np.log(K), 1+u)) / (u * (1+u))
     return np.exp(np.log(K)*(1+u))/(u*(1+u))
 
 
 def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
     """
     Computes the option price of an European call option using Fourier inversion.
-    :param mgf: The moment generating function of the final log-price
+    :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
     :param R: The (dampening) shift that we use
     :param K: The strike prices, assumed to be a vector
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
@@ -218,7 +234,7 @@ def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
 def iv_eur_call_fourier(mgf, S, K, T, r=0., R=2., L=50., N=300):
     """
     Computes the implied volatility of an European call option using Fourier inversion.
-    :param mgf: The moment generating function of the final log-price
+    :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
     :param S: Initial stock price
     :param T: Maturity
     :param r: Drift

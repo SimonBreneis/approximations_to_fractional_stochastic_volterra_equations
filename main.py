@@ -19,6 +19,10 @@ import scipy
 from scipy import special
 
 '''
+print(np.arange(0, np.array([5, 7, 3])))
+time.sleep(360000)
+'''
+'''
 fun = lambda x: np.exp(x)
 print(np.trapz(fun(np.linspace(0, 2, 101)), dx=0.02))
 nodes, weights = rk.Gaussian_quadrature_no_weight(3, np.sqrt(np.linspace(0, 4, 34)))
@@ -35,8 +39,8 @@ true_surface = true_surface[-1, :]
 # true_surface = rHeston.implied_volatility_smile(K=np.exp(k_vec), H=0.07, lambda_=0.6, rho=-0.8, nu=0.5, theta=0.01, V_0=0.01,
 #                                                T=0.04, rel_tol=1e-04)
 tic = time.perf_counter()
-sur = rHeston.implied_volatility_smile(K=np.exp(k_vec), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02,
-                                               T=1, rel_tol=2e-05)
+sur = rHeston.iv_european_call(S=1, K=np.exp(k_vec), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02,
+                               T=1, rel_tol=2e-05)
 print(sur)
 print(np.amax(np.abs(true_surface-sur)/true_surface), time.perf_counter()-tic)
 # print((true_surface,))
