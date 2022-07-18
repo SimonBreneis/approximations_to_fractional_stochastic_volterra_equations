@@ -49,7 +49,7 @@ def kernel_norm(H, T):
     :param T: Final time
     :return: The L^2-norm (square root has been taken) of the fractional kernel
     """
-    return T**H / (np.sqrt(2*H) * gamma(H+0.5))
+    return T ** H / (np.sqrt(2 * H) * gamma(H + 0.5))
 
 
 def c_H(H):
@@ -97,7 +97,7 @@ def AK_improved_rule(H, N, K=None, T=1):
     :param T: Final time
     :return: The quadrature rule in the form nodes, weights
     """
-    N = N//2
+    N = N // 2
 
     if K is None:
         K = N ** 0.8
@@ -105,9 +105,9 @@ def AK_improved_rule(H, N, K=None, T=1):
     def AK_initial_guess(A_):
         partition = np.empty(2 * N + 1)
         partition[:N + 1] = np.linspace(0, K, N + 1)
-        partition[N+1:] = K * A_ ** np.arange(1, N + 1)
-        a = partition**(1.5-H)
-        b = partition**(0.5-H)
+        partition[N + 1:] = K * A_ ** np.arange(1, N + 1)
+        a = partition ** (1.5 - H)
+        b = partition ** (0.5 - H)
         nodes_ = (0.5 - H) / (1.5 - H) * (a[1:] - a[:-1]) / (b[1:] - b[:-1])
         weights_ = c_H(H) / (0.5 - H) * (b[1:] - b[:-1])
         return nodes_, weights_
@@ -121,7 +121,7 @@ def AK_improved_rule(H, N, K=None, T=1):
     nodes, weights = AK_initial_guess(A[0])
 
     res = minimize(fun=lambda x: error(H, nodes, x * weights, T), x0=np.array([1]), bounds=((0, None),))
-    return nodes, res.x*weights
+    return nodes, res.x * weights
 
 
 def Gaussian_parameters(H, N, T, mode):
@@ -138,24 +138,24 @@ def Gaussian_parameters(H, N, T, mode):
     a = 0.
     b = 0.
     beta = 0.
-    A = mp.sqrt(1/H + 1/(1.5-H))
+    A = mp.sqrt(1 / H + 1 / (1.5 - H))
 
     if mode == "theorem":
         beta = 0.4275
         alpha = 1.06418
-        gamma_ = np.exp(alpha*beta)
-        exponent = 1/(3*gamma_/(8*(gamma_-1)) + 6*H - 4*H*H)
-        temp_1 = ((9-6*H)/(2*H))**(gamma_/(8*(gamma_-1)))
-        temp_2 = 5*np.pi**3 * gamma_ * (gamma_-1) * A**(2-2*H) * float(N)**(1-H) / (beta**(2-2*H))
-        base_0 = temp_1 * (temp_2 * (3-2*H) / (768 * H))**(2*H)
-        a = -mp.log(T**(-1) * base_0**exponent * mp.exp(-alpha/((1.5-H)*A) * np.sqrt(N)))
-        base_n = temp_1 * (temp_2 / 1152)**(2*H-3)
-        b = mp.log(T**(-1) * base_n**exponent * mp.exp(alpha/(H*A) * np.sqrt(N)))
+        gamma_ = np.exp(alpha * beta)
+        exponent = 1 / (3 * gamma_ / (8 * (gamma_ - 1)) + 6 * H - 4 * H * H)
+        temp_1 = ((9 - 6 * H) / (2 * H)) ** (gamma_ / (8 * (gamma_ - 1)))
+        temp_2 = 5 * np.pi ** 3 * gamma_ * (gamma_ - 1) * A ** (2 - 2 * H) * float(N) ** (1 - H) / (beta ** (2 - 2 * H))
+        base_0 = temp_1 * (temp_2 * (3 - 2 * H) / (768 * H)) ** (2 * H)
+        a = -mp.log(T ** (-1) * base_0 ** exponent * mp.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
+        base_n = temp_1 * (temp_2 / 1152) ** (2 * H - 3)
+        b = mp.log(T ** (-1) * base_n ** exponent * mp.exp(alpha / (H * A) * np.sqrt(N)))
     elif mode == "observation":
         beta = 0.9
         alpha = 1.8
-        a = -mp.log(0.65 * 1/T * mp.exp(3.1*H) * mp.exp(-alpha / ((1.5-H)*A) * np.sqrt(N)))
-        b = mp.log(1/T * mp.exp(3 * H**(-0.4)) * mp.exp(alpha/(H*A) * np.sqrt(N)))
+        a = -mp.log(0.65 * 1 / T * mp.exp(3.1 * H) * mp.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
+        b = mp.log(1 / T * mp.exp(3 * H ** (-0.4)) * mp.exp(alpha / (H * A) * np.sqrt(N)))
 
     m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
     n = int(np.round(N / m))
@@ -185,20 +185,20 @@ def Gaussian_no_zero_node(H, m, n, a, b):
         c = mp.mpf(c_H(float(H)))
         moments = np.array(
             [mp.mpf(c / (mp.mpf(k) + mp.mpf(0.5) - H) * (
-                        z ** (mp.mpf(k) + mp.mpf(0.5) - H) - y ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in
+                    z ** (mp.mpf(k) + mp.mpf(0.5) - H) - y ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in
              range(2 * m)])
         alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
         points, weights_ = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
         return mp.matrix(points.tolist()), mp.matrix(weights_.tolist())
 
-    mp.mp.dps = int(np.fmax(a+b + 50, 50))
+    mp.mp.dps = int(np.fmax(a + b + 50, 50))
     partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(n + 1)])
-    nodes = mp.matrix(m*n, 1)
-    weights = mp.matrix(m*n, 1)
+    nodes = mp.matrix(m * n, 1)
+    weights = mp.matrix(m * n, 1)
     for i in range(n):
         new_nodes, new_weights = quadrature_rule_interval_Gaussian(partition[i], partition[i + 1])
-        nodes[m*i:m*(i+1), 0] = new_nodes
-        weights[m*i:m*(i+1), 0] = new_weights
+        nodes[m * i:m * (i + 1), 0] = new_nodes
+        weights[m * i:m * (i + 1), 0] = new_weights
     return nodes, weights
 
 
@@ -214,8 +214,8 @@ def Gaussian_error_and_zero_weight(H, m, n, a, b, T):
     :param T: Final time
     :return: An error estimate and the optimal weight for the constant term: error, weight
     """
-    if n*m == 0:
-        c = T ** (2*H) / (2*H*gamma(H+0.5)**2)
+    if n * m == 0:
+        c = T ** (2 * H) / (2 * H * gamma(H + 0.5) ** 2)
         b = - 2 * T ** (H + 0.5) / gamma(H + 1.5)
         a = T
         w_0 = -b / (2 * a)
@@ -224,13 +224,13 @@ def Gaussian_error_and_zero_weight(H, m, n, a, b, T):
     nodes, weights = Gaussian_no_zero_node(H, m, n, mp.mpf(a), mp.mpf(b))
     c = error(H, nodes, weights, T)
     b = mp.mpf(0)
-    for i in range(n*m):
-        b += weights[i]/nodes[i] * (1 - mp.exp(-nodes[i]*T))
-    b -= T**(H+0.5)/mp.gamma(H+1.5)
+    for i in range(n * m):
+        b += weights[i] / nodes[i] * (1 - mp.exp(-nodes[i] * T))
+    b -= T ** (H + 0.5) / mp.gamma(H + 1.5)
     b *= mp.mpf(2.)
     a = T
-    w_0 = -b/(mp.mpf(2.)*a)
-    return np.sqrt(np.fmax(float(a*w_0*w_0 + b*w_0 + c), 0.)), float(w_0)
+    w_0 = -b / (mp.mpf(2.) * a)
+    return np.sqrt(np.fmax(float(a * w_0 * w_0 + b * w_0 + c), 0.)), float(w_0)
 
 
 def Gaussian_rule(H, N, T, mode='observation'):
@@ -249,8 +249,8 @@ def Gaussian_rule(H, N, T, mode='observation'):
 
     m, n, a, b = Gaussian_parameters(H, N, T, mode)
     w_0 = Gaussian_error_and_zero_weight(H, m, n, a, b, T)[1]
-    nodes = mp.matrix(m*n+1, 1)
-    weights = mp.matrix(m*n+1, 1)
+    nodes = mp.matrix(m * n + 1, 1)
+    weights = mp.matrix(m * n + 1, 1)
     nodes[0, 0] = mp.mpf(0)
     weights[0, 0] = mp.mpf(w_0)
     nodes_, weights_ = Gaussian_no_zero_node(H, m, n, a, b)
@@ -279,11 +279,12 @@ def error(H, nodes, weights, T):
     node_matrix = nodes[:, None] + nodes[None, :]
     if isinstance(T, np.ndarray):
         factor = 1 - np.exp(-np.fmin(np.einsum('ij,k->kij', node_matrix, T), 300))
-        sum_1 = np.sum(np.repeat((np.outer(weights, weights) / node_matrix)[None, :, :], len(T), axis=0) * factor, axis=(1, 2))
-        sum_2 = 2 * np.sum((weights / nodes**(H+0.5))[:, None] * gammainc(H + 0.5, np.outer(nodes, T)), axis=0)
+        sum_1 = np.sum(np.repeat((np.outer(weights, weights) / node_matrix)[None, :, :], len(T), axis=0) * factor,
+                       axis=(1, 2))
+        sum_2 = 2 * np.sum((weights / nodes ** (H + 0.5))[:, None] * gammainc(H + 0.5, np.outer(nodes, T)), axis=0)
     else:
-        sum_1 = np.sum(np.outer(weights, weights) / node_matrix * (1-np.exp(-np.fmin(node_matrix*T, 300))))
-        sum_2 = 2 * np.sum(weights / nodes**(H+0.5) * gammainc(H + 0.5, nodes * T))
+        sum_1 = np.sum(np.outer(weights, weights) / node_matrix * (1 - np.exp(-np.fmin(node_matrix * T, 300))))
+        sum_2 = 2 * np.sum(weights / nodes ** (H + 0.5) * gammainc(H + 0.5, nodes * T))
     return summand + sum_1 - sum_2
 
 
@@ -301,37 +302,39 @@ def gradient_of_error(H, T, nodes, weights):
     node_matrix = nodes[:, None] + nodes[None, :]
     weight_matrix = np.outer(weights, weights)
     if isinstance(T, np.ndarray):
-        grad = np.empty(len(T), 2*N)
-        gamma_ints = gammainc(H+1/2, np.outer(T, nodes))
+        grad = np.empty((len(T), 2 * N))
+        gamma_ints = gammainc(H + 1 / 2, np.outer(T, nodes))
         temp = np.einsum('i,jk->ijk', T, node_matrix)
         exp_node_matrix = np.exp(-np.fmin(temp, 300))
         exp_node_matrix = np.where(temp > 300, 0, exp_node_matrix)
-        exp_node_vec = np.exp(-np.fmin(np.outer(T, nodes), 300))/nodes[None, :]
+        exp_node_vec = np.exp(-np.fmin(np.outer(T, nodes), 300)) / nodes[None, :]
         exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
-        first_summands = (weight_matrix / (node_matrix * node_matrix))[None, :] * (1-(1+temp)*exp_node_matrix)
-        second_summands = weights[None, :] * ((T**(H+1/2) / gamma(H+1/2))[:, None] * exp_node_vec - (((H+1/2) * nodes**(-H-3/2))[None, :] * gamma_ints))
+        first_summands = (weight_matrix / (node_matrix * node_matrix))[None, :] * (1 - (1 + temp) * exp_node_matrix)
+        second_summands = weights[None, :] * ((T ** (H + 1 / 2) / gamma(H + 1 / 2))[:, None] * exp_node_vec - (
+                    ((H + 1 / 2) * nodes ** (-H - 3 / 2))[None, :] * gamma_ints))
         grad[:, :N] = -2 * np.sum(first_summands, axis=2) - 2 * second_summands
-        third_summands = np.einsum('ijk,k->ij', ((1-exp_node_matrix)/node_matrix[None, :, :]), weights)
-        forth_summands = (nodes ** (-(H+1/2)))[None, :] * gamma_ints
+        third_summands = np.einsum('ijk,k->ij', ((1 - exp_node_matrix) / node_matrix[None, :, :]), weights)
+        forth_summands = (nodes ** (-(H + 1 / 2)))[None, :] * gamma_ints
         grad[:, N:] = 2 * third_summands - 2 * forth_summands
     else:
-        grad = np.empty(2*N)
-        gamma_ints = gammainc(H+1/2, nodes*T)
-        exp_node_matrix = np.exp(-np.fmin(node_matrix*T, 300))
+        grad = np.empty(2 * N)
+        gamma_ints = gammainc(H + 1 / 2, nodes * T)
+        exp_node_matrix = np.exp(-np.fmin(node_matrix * T, 300))
         exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
         exp_node_vec = np.zeros(N)
         indices = nodes * T < 300
-        exp_node_vec[indices] = np.exp(- T * nodes[indices])/nodes[indices]
-        first_summands = weight_matrix / (node_matrix * node_matrix) * (1-(1+node_matrix*T)*exp_node_matrix)
-        second_summands = weights * (T**(H+1/2) / gamma(H+1/2) * exp_node_vec - (H+1/2) * nodes**(-H-3/2) * gamma_ints)
+        exp_node_vec[indices] = np.exp(- T * nodes[indices]) / nodes[indices]
+        first_summands = weight_matrix / (node_matrix * node_matrix) * (1 - (1 + node_matrix * T) * exp_node_matrix)
+        second_summands = weights * (T ** (H + 1 / 2) / gamma(H + 1 / 2) * exp_node_vec - (H + 1 / 2) * nodes ** (
+                    -H - 3 / 2) * gamma_ints)
         grad[:N] = -2 * np.sum(first_summands, axis=1) - 2 * second_summands
-        third_summands = ((1-exp_node_matrix)/node_matrix) @ weights
-        forth_summands = nodes ** (-(H+1/2)) * gamma_ints
+        third_summands = ((1 - exp_node_matrix) / node_matrix) @ weights
+        forth_summands = nodes ** (-(H + 1 / 2)) * gamma_ints
         grad[N:] = 2 * third_summands - 2 * forth_summands
     return grad
 
 
-def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=True):
+def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=None):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
     optimizer as implemented in scipy.
@@ -341,35 +344,43 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=True):
     :param tol: Error tolerance
     :param bound: Upper bound on the nodes. If no upper bound is desired, use None
     :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
+    :param l2: Boolean. Relevant if T is an array. If True, uses the l2-norm over T, else uses the l-infinity norm.
+        Using the l-infinity norm may lead to better results, while using the l2-norm is faster because we can directly
+        compute the gradient
     :return: The minimal error together with the associated nodes and weights.
     """
+    if l2 is None:
+        l2 = isinstance(T, np.ndarray)
+    if not isinstance(T, np.ndarray):
+        l2 = False
     if bound is None:
         bound = 1e+100
 
     def optimize_error_given_rule(nodes_1, weights_1):
         N_ = len(nodes_1)
-        coefficient = 1 / kernel_norm(H, T) ** 2
+        coeff = 1 / kernel_norm(H, T) ** 2
 
-        nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound/2)
-        bounds = (((np.log(1e-08), np.log(bound)),) * N_) + (((np.log(0.1), np.log(1e+100)),) * N_)
+        nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound / 2)
+        bounds = (((np.log(1e-08), np.log(bound)),) * N_) + (((np.log(0.1), np.log(np.fmax(bound, 1e+60))),) * N_)
         rule = np.log(np.concatenate((nodes_1, weights_1)))
 
         if l2:
+            T_ = np.array([(np.amin(T) + np.amax(T)) / 2, np.amax(T)])
+            coeff = 1 / kernel_norm(H, T_) ** 2
+
             def func(x):
-                return np.sum((coefficient * error(H=H, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]), T=T))**2)
+                return np.sum(coeff * error(H=H, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]), T=T_))/len(T_)
 
             def jac(x):
-                n_ = np.exp(x[:N_])
-                w_ = np.exp(x[N_:])
-                errors = error(H=H, nodes=n_, weights=w_, T=T)
-                grads = gradient_of_error(H=H, T=T, nodes=n_, weights=w_)
-                return 2 * coefficient**2 * np.exp(x) * np.einsum('ij,i->j', grads, errors)
+                r = np.exp(x)
+                return r * np.sum(coeff[:, None] * gradient_of_error(H=H, T=T_, nodes=r[:N_], weights=r[N_:]), axis=0)/len(T_)
+
         else:
             def func(x):
-                return np.amax(coefficient * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
+                return np.amax(coeff * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
 
             def jac(x):
-                return coefficient * np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]))
+                return coeff * np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]))
 
         if isinstance(T, np.ndarray):
             if l2:
@@ -382,20 +393,18 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=True):
         nodes_1, weights_1 = sort(np.exp(res.x[:N_]), np.exp(res.x[N_:]))
         return np.sqrt(res.fun), nodes_1, weights_1
 
-    if isinstance(T, np.ndarray):
-        T_init = T[-1]
-    else:
-        T_init = T
-
     if not iterative:
-        nodes_, weights_ = quadrature_rule(H, N, T_init, mode='observation')
+        if isinstance(T, np.ndarray):
+            nodes_, weights_ = quadrature_rule(H, N, (np.amin(T) + np.amax(T))/2, mode='optimized')
+        else:
+            nodes_, weights_ = quadrature_rule(H, N, T, mode='observation')
         if len(nodes_) < N:
             nodes = np.zeros(N)
             weights = np.zeros(N)
             nodes[:len(nodes)] = nodes_
             weights[:len(weights)] = weights_
             for i in range(len(nodes_), N):
-                nodes[i] = nodes_[-1] * 10**(i-len(nodes_)+1)
+                nodes[i] = nodes_[-1] * 10 ** (i - len(nodes_) + 1)
                 weights[i] = weights_[-1]
         else:
             nodes = nodes_[:N]
@@ -403,12 +412,15 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=True):
 
         return optimize_error_given_rule(nodes, weights)
 
-    nodes, weights = quadrature_rule(H, 1, T_init, mode='observation')
+    if isinstance(T, np.ndarray):
+        nodes, weights = quadrature_rule(H, 1, (np.amin(T) + np.amax(T)) / 2, mode='optimized')
+    else:
+        nodes, weights = quadrature_rule(H, 1, T, mode='observation')
     err, nodes, weights = optimize_error_given_rule(nodes, weights)
 
     while len(nodes) < N:
         if bound is None:
-            nodes = np.append(nodes, 10*nodes[-1])
+            nodes = np.append(nodes, 10 * nodes[-1])
             weights = np.append(weights, np.amax(weights))
         else:
             if len(nodes) == 1:
@@ -417,17 +429,17 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=True):
                     weights = np.array([weights[0], weights[0]])
                 elif bound >= 2 * nodes[0]:
                     nodes = np.array([nodes[0], bound])
-                    weights = np.array([weights[0], weights[0]/2])
+                    weights = np.array([weights[0], weights[0] / 2])
                 else:
                     nodes = np.array([nodes[0] / 3, nodes[0]])
-                    weights = np.array([weights[0] / 3, weights[0]/2])
+                    weights = np.array([weights[0] / 3, weights[0] / 2])
             else:
                 if bound > 10 * nodes[-1]:
                     nodes = np.append(nodes, 10 * nodes[-1])
                     weights = np.append(weights, np.amax(weights))
                 elif bound > 2 * nodes[-1] or bound / nodes[-1] > nodes[-1] / nodes[-2]:
                     nodes = np.append(nodes, bound)
-                    weights = np.append(weights, np.amax(weights)/2)
+                    weights = np.append(weights, np.amax(weights) / 2)
                 else:
                     nodes = np.append(nodes, np.sqrt(nodes[-1] * nodes[-2]))
                     weights[-1] = weights[-1] * 0.7
@@ -461,13 +473,14 @@ def european_rule(H, N, T):
     :return: Nodes and weights
     """
 
+    nodes, weights = optimized_rule(H=H, N=1, T=T)
     if N == 1:
-        return optimized_rule(H=H, N=N, T=T)
+        return nodes, weights
 
     L_step = 1.1
-    bound = 1 / L_step
+    bound = np.amax(nodes) / L_step
     L_0 = bound
-    kernel_tol = 0.9999
+    kernel_tol = 0.999
     current_N = 1
 
     while current_N <= N:
@@ -477,7 +490,7 @@ def european_rule(H, N, T):
         while increase_N < 3:
             bound = bound * L_step
             error_1, _, _ = optimize_error(H=H, N=current_N, T=T, bound=bound, iterative=True)
-            error_2, _, _ = optimize_error(H=H, N=current_N+1, T=T, bound=bound, iterative=True)
+            error_2, _, _ = optimize_error(H=H, N=current_N + 1, T=T, bound=bound, iterative=True)
             if error_2 / error_1 < kernel_tol:
                 increase_N += 1
             else:
@@ -487,13 +500,13 @@ def european_rule(H, N, T):
     L_1 = bound
 
     if N == 2:
-        L_4 = L_0 * (L_1/L_0)**0.2
-        L_5 = L_0 * (L_1/L_0)**0.3
-        L_6 = L_0 * (L_1/L_0)**0.4
+        L_4 = L_0 * (L_1 / L_0) ** 0.2
+        L_5 = L_0 * (L_1 / L_0) ** 0.3
+        L_6 = L_0 * (L_1 / L_0) ** 0.4
     else:
-        L_4 = L_0 * (L_1/L_0)**0.05
-        L_5 = L_0 * (L_1/L_0)**0.1
-        L_6 = L_0 * (L_1/L_0)**0.15
+        L_4 = L_0 * (L_1 / L_0) ** 0.05
+        L_5 = L_0 * (L_1 / L_0) ** 0.1
+        L_6 = L_0 * (L_1 / L_0) ** 0.15
     error_4, nodes_4, weights_4 = optimize_error(H=H, N=N, T=T, bound=L_4, iterative=True)
     error_5, nodes_5, weights_5 = optimize_error(H=H, N=N, T=T, bound=L_5, iterative=True)
     error_6, nodes_6, weights_6 = optimize_error(H=H, N=N, T=T, bound=L_6, iterative=True)

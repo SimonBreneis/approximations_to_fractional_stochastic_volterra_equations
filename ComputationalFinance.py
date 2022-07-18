@@ -1,7 +1,5 @@
 import numpy as np
-import scipy
-from scipy import stats
-import scipy.integrate
+from scipy.stats import norm
 
 
 def maturity_tensor_strike(S, K, T):
@@ -66,7 +64,7 @@ def BS_price_eur_call(S, K, sigma, T, r=0.):
     :return: The price of a call option
     """
     d1, d2 = BS_nodes(S=S, K=K, sigma=sigma, T=T, r=r, regularize=True)
-    return S * scipy.stats.norm.cdf(d1) - K * np.exp(-r * T) * scipy.stats.norm.cdf(d2)
+    return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
 
 
 def BS_price_eur_put(S, K, sigma, T, r=0.):
@@ -80,7 +78,7 @@ def BS_price_eur_put(S, K, sigma, T, r=0.):
     :return: The price of a put option
     """
     d1, d2 = BS_nodes(S=S, K=K, sigma=sigma, T=T, r=r, regularize=True)
-    return - S * scipy.stats.norm.cdf(-d1) + K * np.exp(-r * T) * scipy.stats.norm.cdf(-d2)
+    return - S * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
 
 
 def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):

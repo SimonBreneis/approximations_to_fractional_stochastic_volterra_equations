@@ -57,7 +57,7 @@ def iv_european_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03):
     :param nu: Volatility of volatility
     :param theta: Mean variance
     :param V_0: Initial variance
-    :param T: Final time/Time of maturity
+    :param T: Maturity
     :param rel_tol: Required maximal relative error in the implied volatility
     return: The price of the call option
     """
