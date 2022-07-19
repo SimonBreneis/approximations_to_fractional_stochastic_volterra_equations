@@ -81,4 +81,4 @@ def implied_volatility(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
     samples = generate_samples(H, T, N, eta, V_0, S_0, rho, M, rounds)
-    return cf.volatility_smile_call(samples, K, T, S_0)
+    return cf.iv_eur_call_MC(samples, K, T, S_0)

@@ -334,7 +334,7 @@ def gradient_of_error(H, T, nodes, weights):
     return grad
 
 
-def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=None):
+def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
     optimizer as implemented in scipy.
@@ -344,15 +344,8 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=None):
     :param tol: Error tolerance
     :param bound: Upper bound on the nodes. If no upper bound is desired, use None
     :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
-    :param l2: Boolean. Relevant if T is an array. If True, uses the l2-norm over T, else uses the l-infinity norm.
-        Using the l-infinity norm may lead to better results, while using the l2-norm is faster because we can directly
-        compute the gradient
     :return: The minimal error together with the associated nodes and weights.
     """
-    if l2 is None:
-        l2 = isinstance(T, np.ndarray)
-    if not isinstance(T, np.ndarray):
-        l2 = False
     if bound is None:
         bound = 1e+100
 
@@ -361,32 +354,17 @@ def optimize_error(H, N, T, tol=1e-05, bound=None, iterative=False, l2=None):
         coeff = 1 / kernel_norm(H, T) ** 2
 
         nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound / 2)
-        bounds = (((np.log(1e-08), np.log(bound)),) * N_) + (((np.log(0.1), np.log(np.fmax(bound, 1e+60))),) * N_)
+        bounds = (((np.log(1/(10*N_*T)), np.log(bound)),) * N_) + (((np.log(0.1), np.log(np.fmax(bound, 1e+60))),) * N_)
         rule = np.log(np.concatenate((nodes_1, weights_1)))
 
-        if l2:
-            T_ = np.array([(np.amin(T) + np.amax(T)) / 2, np.amax(T)])
-            coeff = 1 / kernel_norm(H, T_) ** 2
+        def func(x):
+            return np.amax(coeff * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
 
-            def func(x):
-                return np.sum(coeff * error(H=H, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]), T=T_))/len(T_)
-
-            def jac(x):
-                r = np.exp(x)
-                return r * np.sum(coeff[:, None] * gradient_of_error(H=H, T=T_, nodes=r[:N_], weights=r[N_:]), axis=0)/len(T_)
-
-        else:
-            def func(x):
-                return np.amax(coeff * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T))
-
-            def jac(x):
-                return coeff * np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]))
+        def jac(x):
+            return coeff * np.exp(x) * gradient_of_error(H=H, T=T, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]))
 
         if isinstance(T, np.ndarray):
-            if l2:
-                res = minimize(func, rule, tol=tol ** 2, bounds=bounds, jac=jac)
-            else:
-                res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
+            res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
         else:
             res = minimize(func, rule, tol=tol ** 2, bounds=bounds, jac=jac)
 
@@ -473,6 +451,12 @@ def european_rule(H, N, T):
     :return: Nodes and weights
     """
 
+    if isinstance(T, np.ndarray):
+        if N <= 5:
+            T = (6-N)/6 * np.amin(T) + N/6 * np.amax(T)
+        else:
+            T = np.amax(T)
+
     nodes, weights = optimized_rule(H=H, N=1, T=T)
     if N == 1:
         return nodes, weights
@@ -480,7 +464,7 @@ def european_rule(H, N, T):
     L_step = 1.1
     bound = np.amax(nodes) / L_step
     L_0 = bound
-    kernel_tol = 0.999
+    kernel_tol = 0.997
     current_N = 1
 
     while current_N <= N:
@@ -489,9 +473,9 @@ def european_rule(H, N, T):
 
         while increase_N < 3:
             bound = bound * L_step
-            error_1, _, _ = optimize_error(H=H, N=current_N, T=T, bound=bound, iterative=True)
-            error_2, _, _ = optimize_error(H=H, N=current_N + 1, T=T, bound=bound, iterative=True)
-            if error_2 / error_1 < kernel_tol:
+            error_1, _, _ = optimize_error(H=H, N=current_N, T=T, tol=1e-06/current_N, bound=bound, iterative=True)
+            error_2, _, _ = optimize_error(H=H, N=current_N + 1, T=T, tol=1e-06/current_N, bound=bound, iterative=True)
+            if error_2 / error_1 < 1 - (1 - kernel_tol)/current_N:
                 increase_N += 1
             else:
                 increase_N = 0
@@ -503,10 +487,14 @@ def european_rule(H, N, T):
         L_4 = L_0 * (L_1 / L_0) ** 0.2
         L_5 = L_0 * (L_1 / L_0) ** 0.3
         L_6 = L_0 * (L_1 / L_0) ** 0.4
-    else:
+    elif N == 3:
         L_4 = L_0 * (L_1 / L_0) ** 0.05
         L_5 = L_0 * (L_1 / L_0) ** 0.1
         L_6 = L_0 * (L_1 / L_0) ** 0.15
+    else:
+        L_4 = L_0
+        L_5 = L_0 * (L_1 / L_0) ** 0.02
+        L_6 = L_0 * (L_1 / L_0) ** 0.04
     error_4, nodes_4, weights_4 = optimize_error(H=H, N=N, T=T, bound=L_4, iterative=True)
     error_5, nodes_5, weights_5 = optimize_error(H=H, N=N, T=T, bound=L_5, iterative=True)
     error_6, nodes_6, weights_6 = optimize_error(H=H, N=N, T=T, bound=L_6, iterative=True)

@@ -353,7 +353,7 @@ def calll(K, H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="o
     samples = get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=S_0, N_time=N_time, mode=mode, m=m)
     print("generated samples")
     # print(samples)
-    return cf.volatility_smile_call(samples, K, T, S_0)
+    return cf.iv_eur_call_MC(samples, K, T, S_0)
 
 
 def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T, N_time=1000):
@@ -400,7 +400,7 @@ def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T, N_time=1000):
             res[i] = np.trapz(Fz * g, dx=dt)
         return np.exp(res)
 
-    return cf.pricing_fourier_inversion(mgf_, K, R, L, N_fourier)
+    return cf.price_eur_call_fourier(mgf_, K, R, L, N_fourier)
 
 
 def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_time=1000, mode="observation"):
@@ -424,4 +424,4 @@ def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_time=1000, mo
     nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
     prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N_time=N_time,
                   nodes=nodes, weights=weights)
-    return cf.implied_volatility_call(S=1., K=K, r=0., T=T, price=prices)
+    return cf.iv_eur_call(S=1., K=K, r=0., T=T, price=prices)

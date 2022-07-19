@@ -1,5 +1,3 @@
-import time
-from matplotlib import pyplot as plt
 import numpy as np
 import ComputationalFinance as cf
 import RoughKernel as rk
@@ -50,7 +48,7 @@ def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000,
         values of the components of the volatility where the volatility became negative
     """
     dt = T/N_time
-    nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
+    nodes, weights = rk.quadrature_rule(H, N, T, mode)
     N = len(nodes)
 
     A = mp.eye(N) + mp.diag(nodes)*dt + lambda_*mp.matrix([[weights[i] for i in range(N)] for _ in range(N)])*dt
@@ -486,7 +484,7 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
     :return: Numpy array of the final stock prices
     """
     dt = T / N_time
-    nodes, weights = rk.quadrature_rule_geometric_standard(H, N, T, mode)
+    nodes, weights = rk.quadrature_rule(H, N, T, mode)
     N = len(nodes)
 
     A = mp.eye(N) + mp.diag(nodes) * dt + lambda_ * mp.matrix([[weights[i] for i in range(N)] for _ in range(N)]) * dt
@@ -559,12 +557,12 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
         for i in range(m):
             if i % 10000 == 0:
                 print(f'{i} of {m} generated')
-            sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0, N_time, WB, vol_behaviour, params)
+            sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, WB, vol_behaviour, params)
     else:
         for i in range(m):
             if i % 100 == 0:
                 print(f'{i} of {m} generated')
-            sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, N, S_0, N_time, WB[:, i, :], vol_behaviour, params)
+            sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, WB[:, i, :], vol_behaviour, params)
 
     return sample_vec
 
@@ -612,4 +610,4 @@ def call(K, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, H=0.1, N=6, S_0
     return: The prices of the call option for the various strike prices in K
     """
     S = samples(H, lambda_, rho, nu, theta, V_0, T, N, m, S_0, N_time, WB, mode, vol_behaviour)
-    return cf.volatility_smile_call(S, K, T, S_0)
+    return cf.iv_eur_call_MC(S, K, T, S_0)

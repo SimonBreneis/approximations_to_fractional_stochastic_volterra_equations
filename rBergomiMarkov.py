@@ -138,4 +138,4 @@ def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1.
     """
     nodes, weights = rk.quadrature_rule(H, N, T, mode)
     samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0, rounds)
-    return cf.volatility_smile_call(samples, K, T, S_0)
+    return cf.iv_eur_call_MC(samples, K, T, S_0)
