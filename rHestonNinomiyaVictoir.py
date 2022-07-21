@@ -157,7 +157,13 @@ def ODE_drift(A, b):
 
 def ODE_S_drift(A, b, weights):
     M = mp.diag([((mp.exp(x) - 1)/x - 1)/x if x**2 / 24 > 2*mp.eps else (1/2 + x/6) for x in A[0]])
-    C = A[1].T * (weights/2).T
+    print('A', A[1].T)
+    print('w', weights)
+    # C = A[1].T * (weights/2).T  # C = (w/2)^T @ A[1]
+    C = mp.matrix([0 for _ in range(len(weights))])
+    for i in range(len(weights)):
+        for j in range(len(weights)):
+            C[i] = C[i] + weights[j] * A[1][j, i] / 2
     D = (M*C).T
     c = mp.lu_solve(A[1], b)
     return (D*c)[0, 0]
@@ -165,7 +171,11 @@ def ODE_S_drift(A, b, weights):
 
 def ODE_S_mult(A, weights):
     M = mp.diag([mp.exp(x)/x for x in A[0]])
-    C = A[1].T * (weights/2).T
+    # C = A[1].T * (weights/2).T
+    C = mp.matrix([0 for _ in range(len(weights))])
+    for i in range(len(weights)):
+        for j in range(len(weights)):
+            C[i] = C[i] + weights[j] * A[1][j, i] / 2
     D = M*C
     return mp.lu_solve(A[1].T, D)
 
@@ -189,7 +199,9 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     sqrt_dt = mp.sqrt(dt)
     log_S = mp.log(S_0)
     rho_bar = mp.sqrt(1-rho*rho)
-    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
+    nodes, weights = rk.quadrature_rule(H, N, T, mode)
+    nodes = mp.matrix([mp.mpf(node) for node in nodes])
+    weights = mp.matrix([mp.mpf(weight) for weight in weights])
     N = len(nodes)
     weight_sum = mp.fsum(weights)
     print(f"weight_sum: {weight_sum}")
@@ -288,7 +300,7 @@ def get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode
     sqrt_dt = np.sqrt(dt)
     log_S = np.log(S_0)
     rho_bar = np.sqrt(1-rho*rho)
-    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
+    nodes, weights = rk.quadrature_rule(H, N, T, mode)
     N = len(nodes)
     weight_sum = mp.fsum(weights)
     V = mp.matrix([V_0/(N*weight) for weight in weights])
@@ -349,79 +361,8 @@ def get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode
     return np.exp(log_S)
 
 
-def calll(K, H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="observation", m=1000):
+def call(K, H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="observation", m=1000):
     samples = get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=S_0, N_time=N_time, mode=mode, m=m)
     print("generated samples")
     # print(samples)
     return cf.iv_eur_call_MC(samples, K, T, S_0)
-
-
-def call(K, lambda_, rho, nu, theta, V_0, nodes, weights, T, N_time=1000):
-    """
-    Gives the price of a European call option in the approximated, Markovian rough Heston model.
-    Uses the Ninomiya-Victoir scheme.
-    :param K: Strike prices, assumed to be a vector
-    :param lambda_: Mean-reversion speed
-    :param rho: Correlation between Brownian motions
-    :param nu: Volatility of volatility
-    :param theta: Mean variance
-    :param V_0: Initial variance
-    :param T: Final time/Time of maturity
-    :param N_time: Number of time steps used in the solution of the fractional Riccati equation
-    :param nodes: The nodes used in the approximation
-    :param weights: The weights used in the approximation
-    return: The prices of the call option for the various strike prices in K
-    """
-    dt = T / N_time
-    times = dt * mp.matrix([N_time - i for i in range(N_time + 1)])
-    g = np.zeros(N_time + 1)
-    for i in range(len(nodes) - 1):
-        for t in range(len(times)):
-            g[t] += weights[i] / nodes[i] * (1 - mp.exp(-nodes[i] * times[t]))
-    g = theta * (g + weights[len(weights)-1] * times) + V_0
-
-    exp_nodes = mp.matrix([mp.exp(-nodes[j] * dt) for j in range(len(nodes))])
-    div_nodes = np.zeros(len(nodes))
-    div_nodes[:-1] = np.array([np.longdouble((1 - exp_nodes[j]) / nodes[j]) for j in range(len(nodes) - 1)])
-    div_nodes[-1] = np.longdouble(dt)
-    exp_nodes = np.array([np.longdouble(x) for x in exp_nodes])
-    weights = np.array([np.longdouble(x) for x in weights])
-
-    def mgf_(z):
-        """
-        Moment generating function of the log-price.
-        :param z: Argument, assumed to be a vector
-        :return: Value
-        """
-        res = np.zeros(shape=(len(z)), dtype=complex)
-        for i in range(len(z)):
-            Fz = solve_Riccati(z=z[i], lambda_=lambda_, rho=rho, nu=nu, N_Riccati=N_time, exp_nodes=exp_nodes,
-                               div_nodes=div_nodes, weights=weights)
-            res[i] = np.trapz(Fz * g, dx=dt)
-        return np.exp(res)
-
-    return cf.price_eur_call_fourier(mgf_, K, R, L, N_fourier)
-
-
-def implied_volatility(K, H, lambda_, rho, nu, theta, V_0, T, N, N_time=1000, mode="observation"):
-    """
-    Gives the implied volatility of the European call option in the rough Heston model. Uses a Markovian approximation,
-    and the Ninomiya-Victoir scheme.
-    :param K: Strike price, assumed to be a vector
-    :param H: Hurst parameter
-    :param lambda_: Mean-reversion speed
-    :param rho: Correlation between Brownian motions
-    :param nu: Volatility of volatility
-    :param theta: Mean variance
-    :param V_0: Initial variance
-    :param T: Final time/Time of maturity
-    :param N_time: Number of time steps used in the solution of the fractional Riccati equation
-    :param N: Total number of points in the quadrature rule, N=n*m
-    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
-    theorem.
-    return: The price of the call option
-    """
-    nodes, weights = rk.quadrature_rule_geometric_good(H, N, T, mode)
-    prices = call(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N_time=N_time,
-                  nodes=nodes, weights=weights)
-    return cf.iv_eur_call(S=1., K=K, r=0., T=T, price=prices)

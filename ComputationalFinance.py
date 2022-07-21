@@ -139,7 +139,7 @@ def payoff_call(S, K):
     :param K: Strike price
     :return: The payoff.
     """
-    if isinstance(K, float) or isinstance(S, float):
+    if not isinstance(K, np.ndarray) or not isinstance(S, np.ndarray):
         return np.fmax(S - K, 0)
     return np.fmax(S[..., None, :] - K[..., None], 0)
 
