@@ -45,7 +45,7 @@ def characteristic_function(a, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200
     return np.exp(theta * integral + V_0 * fractional_integral)
 
 
-def iv_european_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03):
+def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.

@@ -61,8 +61,8 @@ def characteristic_function(z, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes
     return np.exp(np.trapz(F_psi * g, dx=dt))
 
 
-def iv_european_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,
-                     weights=None):
+def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,
+                weights=None):
     """
     Gives the implied volatility of the European call option in the rough Heston model
     as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.

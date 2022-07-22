@@ -106,6 +106,8 @@ def get_sample_paths(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000,
         for j in range(m):
             print(j)
             for i in range(1, N_time + 1):
+                if i%1000 == 0:
+                    print(f'{i} of {N_time}')
                 V_components[j, :, i] = A_inv @ b(V_components[j, :, i - 1], dW[j, i-1])
                 V_values[j, i] = np.dot(weights, V_components[j, :, i])
                 if V_values[j, i] < 0:
@@ -488,7 +490,11 @@ def sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=
     """
     tic = time.perf_counter()
     N = len(nodes)
-    dt = T/N_time
+    if N == 1:
+        nodes = np.array([nodes[0], 1])
+        weights = np.array([weights[0], 0])
+        N = 2
+    dt = np.amax(T)/N_time
     S = S_0
     V = V_0
 
@@ -505,7 +511,8 @@ def sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=
         dW = WB[0, :, :]
         dB = WB[1, :, :]
     S_BM = rho*dW + np.sqrt(1-rho**2)*dB
-    A_inv_T = A_inv.T
+    if isinstance(A_inv, np.ndarray):
+        A_inv_T = A_inv.T
 
     b_comp = theta*dt + (nodes * V_original)[None, :]*dt
 
@@ -522,6 +529,10 @@ def sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=
         rescaled_weights = weights / np.sum(weights**2)
         # log_S = 0
         for i in range(N_time):
+            '''
+            if i % 100 == 0:
+                print(f'{i} of {N_time}')
+            '''
             sq_V = np.sqrt(V)
             S = S + sq_V * S * S_BM[:, i]
             # log_S = log_S + np.sqrt(V) * S_BM[:, i] - V * (dt/2)
@@ -545,7 +556,7 @@ def sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=
         A_list = []
         for i in range(1, max_iter+1):
             A = np.diag(1 + nodes * (dt/2**i)) + lambda_ * weights[None, :] * (dt/2**i)
-            A_list.append(np.invert(A).T)
+            A_list.append(np.linalg.inv(A).T)
 
         def nested_step(V_comp_loc, dW_loc_, iteration):
             n = len(V_comp_loc)
@@ -593,7 +604,7 @@ def sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=
         def bs(k, vol, dw):
             dt_ = dt_loc[k - n_triv_int]
             res = vol
-            res[:, :k + 1] = res[:, :k + 1] + nodes[None, :k + 1] * V_original[:, :k + 1] * dt_ + theta * dt_ + (nu * np.sqrt(np.fmax(vol @ weights, 0)) * dw)[:, None]
+            res[:, :k + 1] = res[:, :k + 1] + nodes[None, :k + 1] * V_original[None, :k + 1] * dt_ + theta * dt_ + (nu * np.sqrt(np.fmax(vol @ weights, 0)) * dw)[:, None]
             return res
 
         for i in range(len(A_inv)):
@@ -635,7 +646,7 @@ def sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0=
 
 
 def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6, m=100000, S_0=1., N_time=1000,
-            WB=None, mode="best", vol_behaviour='sticky'):
+            WB=None, mode="best", vol_behaviour='sticky', nodes=None, weights=None):
     """
     Simulates (the final stock prices) of sample paths under the Markovian approximation of the rough Heston model.
     :param H: Hurst parameter
@@ -674,12 +685,13 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
             negative, applies the hyperplane reset method
     :return: Numpy array of the final stock prices
     """
-    dt = T / N_time
-    nodes, weights = rk.quadrature_rule(H, N, T, mode)
+    dt = np.amax(T) / N_time
+    if nodes is None or weights is None:
+        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
     N = len(nodes)
 
-    A = mp.eye(N) + mp.diag(nodes) * dt + lambda_ * mp.matrix([[weights[i] for i in range(N)] for _ in range(N)]) * dt
-    A_inv = rk.mp_to_np(mp.inverse(A))
+    A = np.eye(N) + np.diag(nodes) * dt + lambda_ * weights[None, :] * dt
+    A_inv = np.linalg.inv(A)
     params = None
 
     if WB is not None:
@@ -720,16 +732,19 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
         N = np.sum(nodes < 2/dt)
         fast_nodes = nodes[N:]
         fast_weights = weights[N:]
-        nodes = nodes[:N]
-        weights = weights[:N]
-        mu_a, mu_b, sr = sk.smooth_root(nodes=fast_nodes, weights=fast_weights, theta=theta, lambda_=lambda_, nu=nu,
-                                        us=np.linspace(-5, 5, 101), ps=np.exp(np.linspace(-10, 1, 100)), q=10,
-                                        N_Riccati=10, adaptive=True, M=1000000)
+        if len(fast_nodes) == 0:
+            vol_behaviour = 'hyperplane reset'
+        else:
+            nodes = nodes[:N]
+            weights = weights[:N]
+            mu_a, mu_b, sr = sk.smooth_root(nodes=fast_nodes, weights=fast_weights, theta=theta, lambda_=lambda_, nu=nu,
+                                            us=np.linspace(-5, 5, 101), ps=np.exp(np.linspace(-10, 1, 100)), q=10,
+                                            N_Riccati=10, adaptive=True, M=1000000)
 
-        A = mp.eye(N) + mp.diag(nodes) * dt + mp.mpf(lambda_ * (1 + mu_a)) * mp.matrix(
-           [[weights[i] for i in range(N)] for _ in range(N)]) * dt
-        A_inv = rk.mp_to_np(mp.inverse(A))
-        params = {'mu_a': mu_a, 'mu_b': mu_b, 'sr': sr}
+            A = mp.eye(N) + mp.diag(nodes) * dt + mp.mpf(lambda_ * (1 + mu_a)) * mp.matrix(
+               [[weights[i] for i in range(N)] for _ in range(N)]) * dt
+            A_inv = rk.mp_to_np(mp.inverse(A))
+            params = {'mu_a': mu_a, 'mu_b': mu_b, 'sr': sr}
 
     elif vol_behaviour == 'split throw':
         N = np.sum(nodes < 2/dt)
@@ -742,21 +757,24 @@ def samples(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=
 
     elif vol_behaviour == 'adaptive':
         params = {'max_iter': 5}
-    return sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, 100000, WB,
-                           vol_behaviour, params)
-    sample_vec = np.zeros(m)
-    if WB is None:
-        for i in range(m):
-            if i % 10000 == 0:
-                print(f'{i} of {m} generated')
-            sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, WB, vol_behaviour, params)
-    else:
-        for i in range(m):
-            if i % 100 == 0:
-                print(f'{i} of {m} generated')
-            sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, WB[:, i, :], vol_behaviour, params)
+    '''
+        sample_vec = np.zeros(m)
+        if WB is None:
+            for i in range(m):
+                if i % 10000 == 0:
+                    print(f'{i} of {m} generated')
+                sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, WB, vol_behaviour, params)
+        else:
+            for i in range(m):
+                if i % 100 == 0:
+                    print(f'{i} of {m} generated')
+                sample_vec[i] = sample_simple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, WB[:, i, :], vol_behaviour, params)
 
-    return sample_vec
+        return sample_vec
+        '''
+    return sample_multiple(A_inv, nodes, weights, lambda_, rho, nu, theta, V_0, T, S_0, N_time, m, WB,
+                           vol_behaviour, params)
+
 
 
 def call(K, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, H=0.1, N=6, S_0=1., T=1., m=1000, N_time=1000, WB=None,
