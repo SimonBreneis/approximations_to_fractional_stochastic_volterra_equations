@@ -89,7 +89,7 @@ vbs = ['hyperplane reset', 'sticky', 'hyperplane reflection', 'adaptive', 'multi
 nodes, weights = rk.quadrature_rule(H=H, N=2, T=T, mode='european')
 for vb in vbs:
     print(vb)
-    ie.samples(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, m=10, S_0=S, N_time=2048, WB=WB, mode='european', vol_behaviour=vb, nodes=nodes, weights=weights)
+    ie.samples(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, m=10, S=S, N_time=2048, WB=WB, mode='european', vol_behaviour=vb, nodes=nodes, weights=weights)
 print('finished')
 time.sleep(360000)
 
@@ -201,7 +201,7 @@ for N in np.array([2, 1, 6, 4, 3, 5]):
                         final_S[i*100000 + k*n_samples:i*100000 + (k+1)*n_samples] = ie.samples(H=H, lambda_=lambda_,
                                                                                                 rho=rho, nu=nu,
                                                                                                 theta=theta, V_0=V_0,
-                                                                                                T=T, N=N, S_0=S,
+                                                                                                T=T, N=N, S=S,
                                                                                                 N_time=N_time, WB=WB,
                                                                                                 m=n_samples, mode=mode,
                                                                                                 vol_behaviour=vol_behaviour,
@@ -251,7 +251,7 @@ for N_time in np.array([2048, 4096, 8192]):
 
 
 
-        final_S[i*100000:(i+1)*100000] = ie.samples(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=N_time, WB=WB, m=100000, mode=mode, vol_behaviour=vol_behaviour)
+        final_S[i*100000:(i+1)*100000] = ie.samples(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=N_time, WB=WB, m=100000, mode=mode, vol_behaviour=vol_behaviour)
 
     with open(f'rHeston samples 2 dim european hyperplane reset {N_time} time steps.npy', 'wb') as f:
         np.save(f, final_S)
@@ -319,7 +319,7 @@ lowers = np.empty((3, 6, 181))
 uppers = np.empty((3, 6, 181))
 
 for N in np.array([2, 3, 4, 5, 6]):
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
+    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S=S, T=T,
                       m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
     vols[0, N - 1, :] = v
     lowers[0, N - 1, :] = l
@@ -327,7 +327,7 @@ for N in np.array([2, 3, 4, 5, 6]):
     print(N, 'observation', np.amax(np.abs(v-truth)/truth))
     plt.plot(k_vec, v, '-', color='red', label='Paper')
     plt.plot(k_vec, rHestonMarkov.iv_eur_call(S=S, K=np.exp(k_vec), H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode='observation', rel_tol=rel_tol), '--', color='red')
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
+    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S=S, T=T,
                       m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
     vols[1, N - 1, :] = v
     lowers[1, N - 1, :] = l
@@ -335,7 +335,7 @@ for N in np.array([2, 3, 4, 5, 6]):
     print(N, 'optimized', np.amax(np.abs(v-truth)/truth))
     plt.plot(k_vec, v, '-', color='green', label='Kernel')
     plt.plot(k_vec, rHestonMarkov.iv_eur_call(S=S, K=np.exp(k_vec), H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode='optimized', rel_tol=rel_tol), '--', color='green')
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
+    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S=S, T=T,
                       m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
     vols[2, N - 1, :] = v
     lowers[2, N - 1, :] = l
@@ -358,7 +358,7 @@ time.sleep(360000)
 # vol, lower, upper = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6, S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
 # vol_2, lower_2, upper_2 = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6, S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
 vol_3_2, lower_3, upper_3 = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6,
-                                    S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
+                                    S=1., T=1, m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
 
 # print((vol, lower, upper))
 # print((vol_2, lower_2, upper_2))
