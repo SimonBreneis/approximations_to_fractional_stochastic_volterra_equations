@@ -24,18 +24,6 @@ S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.1, 0.3, -0
 T = 1
 
 
-A = np.array([[1, 4], [4, 2]])
-
-a, b = np.linalg.eig(A)
-a = np.diag(a)
-print(a)
-print(b)
-print(np.linalg.inv(b))
-print(b**(-1))
-print(np.linalg.inv(b) @ a @ b)
-print(b @ a @ np.linalg.inv(b))
-
-
 '''
 tic = time.perf_counter()
 S_, V_, V_components = nv.get_sample_path(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1000000, mode='european')
@@ -48,24 +36,23 @@ plt.show()
 '''
 
 vol_behaviour = 'hyperplane reset'
-mode = 'optimized'
+mode = 'european'
+N = 2
 
-a = np.array([1, 2, 3, 4, 5, 6, 7, 8])
-print(a[3::4])
-
+'''
 final_S = np.empty(1000000)
 
 truth = Data.true_iv_surface_eur_call[-1, 200:-70]
-markov_truth = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, mode=mode, rel_tol=rel_tol)
+markov_truth = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode=mode, rel_tol=rel_tol)
 
-for i in range(8):
+for i in range(14):
     N_time = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072])[i]
-    with open(f'rHeston samples 2 dim optimized hyperplane reset {N_time} time steps.npy', 'rb') as f:
+    with open(f'rHeston samples {N} dim {mode} {vol_behaviour} {N_time} time steps.npy', 'rb') as f:
         final_S = np.load(f)
 
     vol, lower, upper = cf.iv_eur_call_MC(S=S, K=K, T=T, samples=final_S)
     plt.plot(k_vec, vol, color=c_[i % 10], label=f'N_time = {N_time}')
-    if i == 17:
+    if i == 13:
         plt.plot(k_vec, lower, '--', color=c_[i % 10])
         plt.plot(k_vec, upper, '--', color=c_[i % 10])
     print(N_time, 'truth', np.amax(np.abs(truth - vol)/truth))
@@ -77,7 +64,7 @@ plt.plot(k_vec, truth, color='k', label='Exact smile')
 plt.legend(loc='upper right')
 plt.xlabel('Log-moneyness')
 plt.ylabel('Implied volatility')
-plt.title('Rough Heston 2-dimensional approximation with\nimplicit Euler and hyperplane reset')
+plt.title(f'Rough Heston {N}-dimensional approximation with\nimplicit Euler and hyperplane reset')
 plt.show()
 
 
@@ -85,7 +72,7 @@ modes = ['european', 'optimized', 'observation']
 vol_behaviours = ['hyperplane reset'] #, 'sticky', 'hyperplane reflection', 'adaptive']
 
 for N in np.array([2, 1, 6, 4, 3, 5]):
-    for N_time in np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4196, 8192, 16384, 32768, 65536, 131072]):
+    for N_time in np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]):
         print(N_time)
         for vol_behaviour in vol_behaviours:
             print(N_time, vol_behaviour)
@@ -199,71 +186,30 @@ for N in np.array([2, 1, 6, 4, 3, 5]):
                     with open(filename, 'wb') as f:
                         np.save(f, final_S)
 time.sleep(360000)
+'''
 
+with open(f'dW0.npy', 'rb') as f:
+    dW = np.load(f)
+with open(f'dB0.npy', 'rb') as f:
+    dB = np.load(f)
 
-for N_time in np.array([2048, 4096, 8192]):
-    print(N_time)
-    for i in range(10):
-        print(N_time, i)
-        with open(f'dW{i}.npy', 'rb') as f:
-            dW = np.load(f)
-        with open(f'dB{i}.npy', 'rb') as f:
-            dB = np.load(f)
-
-        WB_1 = np.empty((2, 100000, 2048))
-        WB_1[0, :, :] = dW
-        WB_1[1, :, :] = dB
-
-        WB = np.empty((2, 100000, N_time))
-
-        if N_time == 256:
-            WB = WB_1[:, :, ::8] + WB_1[:, :, 1::8] + WB_1[:, :, 2::8] + WB_1[:, :, 3::8] + WB_1[:, :, 4::8] + WB_1[:, :, 5::8] + WB_1[:, :, 6::8] + WB_1[:, :, 7::8]
-        elif N_time == 512:
-            WB = WB_1[:, :, ::4] + WB_1[:, :, 1::4] + WB_1[:, :, 2::4] + WB_1[:, :, 3::4]
-        elif N_time == 1024:
-            WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
-        elif N_time == 2048:
-            WB = WB_1
-        elif N_time == 4096:
-            incr = np.random.normal(0, 1/np.sqrt(8192), (2, 100000, 2048))
-            WB[:, :, 1::2] = WB_1/2 + incr
-            WB[:, :, ::2] = WB_1/2 - incr
-        elif N_time == 8192:
-            incr_1 = np.random.normal(0, 1/np.sqrt(8192), (2, 100000, 2048))
-            incr_2 = np.random.normal(0, 1/np.sqrt(16384), (2, 100000, 2048))
-            incr_3 = np.random.normal(0, 1/np.sqrt(16384), (2, 100000, 2048))
-            WB[:, :, ::4] = WB_1/4 + incr_1/2 + incr_2
-            WB[:, :, 1::4] = WB_1/4 + incr_1/2 - incr_2
-            WB[:, :, 2::4] = WB_1/4 - incr_1/2 + incr_3
-            WB[:, :, 3::4] = WB_1/4 - incr_1/2 - incr_3
-
-
-
-        final_S[i*100000:(i+1)*100000] = ie.sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=N_time, WB=WB, m=100000, mode=mode, vol_behaviour=vol_behaviour)
-
-    with open(f'rHeston samples 2 dim european hyperplane reset {N_time} time steps.npy', 'wb') as f:
-        np.save(f, final_S)
-
-print(dW.shape)
-time.sleep(36000)
-
-WB = np.empty((2, 1, 1048576))
-WB_1 = np.empty((2, 1, 2097152))
+WB = np.empty((2, 2, 1048576))
+WB_1 = np.empty((2, 2, 2097152))
 
 for i in range(1024):
-    WB_1[0, :, i*2048:(i+1)*2048] = dW[i, :]
-    WB_1[1, :, i*2048:(i+1)*2048] = dB[i, :]
+    WB_1[0, :, i*2048:(i+1)*2048] = dW[2*i:2*i+1, :]
+    WB_1[1, :, i*2048:(i+1)*2048] = dB[2*i:2*i+1, :]
 WB_1 = WB_1 / 32
 
 WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
 
-S_1, V_1, _ = ie.sample_paths(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=2097152, WB=WB_1, m=1, mode=mode, vol_behaviour=vol_behaviour)
-S_2, V_2, _ = ie.sample_paths(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=1048576, WB=WB, m=1, mode=mode, vol_behaviour=vol_behaviour)
+S_1, V_1, _ = nv.sample_func(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB, m=1, mode=mode, sample_paths=True)
+S_2, V_2, _ = nv.get_sample_path(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB[:, :1, :], mode=mode)
 
-plt.plot(np.linspace(0, 1, 2097153), S_1[0, :], label='stock price 2097152 time steps')
-plt.plot(np.linspace(0, 1, 2097153), V_1[0, :], label='volatility 2097152 time steps')
-plt.plot(np.linspace(0, 1, 1048577), S_2[0, :], label='stock price 1048576 time steps')
-plt.plot(np.linspace(0, 1, 1048577), V_2[0, :], label='volatility 1048576 time steps')
+plt.plot(np.linspace(0, 1, 1048577), S_1[0, :], label='stock price 2097152 time steps')
+plt.plot(np.linspace(0, 1, 1048577), V_1[0, :], label='volatility 2097152 time steps')
+plt.plot(np.linspace(0, 1, 1048577), S_2[:], label='stock price 1048576 time steps')
+plt.plot(np.linspace(0, 1, 1048577), V_2[:], label='volatility 1048576 time steps')
 plt.legend(loc='best')
 plt.show()
 
@@ -307,7 +253,7 @@ lowers = np.empty((3, 6, 181))
 uppers = np.empty((3, 6, 181))
 
 for N in np.array([2, 3, 4, 5, 6]):
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S=S, T=T,
+    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
                       m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
     vols[0, N - 1, :] = v
     lowers[0, N - 1, :] = l
@@ -315,7 +261,7 @@ for N in np.array([2, 3, 4, 5, 6]):
     print(N, 'observation', np.amax(np.abs(v-truth)/truth))
     plt.plot(k_vec, v, '-', color='red', label='Paper')
     plt.plot(k_vec, rHestonMarkov.iv_eur_call(S=S, K=np.exp(k_vec), H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode='observation', rel_tol=rel_tol), '--', color='red')
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S=S, T=T,
+    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
                       m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
     vols[1, N - 1, :] = v
     lowers[1, N - 1, :] = l
@@ -323,7 +269,7 @@ for N in np.array([2, 3, 4, 5, 6]):
     print(N, 'optimized', np.amax(np.abs(v-truth)/truth))
     plt.plot(k_vec, v, '-', color='green', label='Kernel')
     plt.plot(k_vec, rHestonMarkov.iv_eur_call(S=S, K=np.exp(k_vec), H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode='optimized', rel_tol=rel_tol), '--', color='green')
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S=S, T=T,
+    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
                       m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
     vols[2, N - 1, :] = v
     lowers[2, N - 1, :] = l
@@ -346,7 +292,7 @@ time.sleep(360000)
 # vol, lower, upper = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6, S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
 # vol_2, lower_2, upper_2 = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6, S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
 vol_3_2, lower_3, upper_3 = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6,
-                                    S=1., T=1, m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
+                                    S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
 
 # print((vol, lower, upper))
 # print((vol_2, lower_2, upper_2))

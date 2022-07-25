@@ -1,127 +1,8 @@
-import time
-
 import numpy as np
 import ComputationalFinance as cf
 import RoughKernel as rk
 import mpmath as mp
 import scipy
-
-
-'''
-def get_largest_eigenvalue(A):
-    """
-    Computes the largest eigenvalue together with the corresponding eigenvector using power iteration.
-    """
-    min_iter = 10
-    eps = mp.mpf(10) ** (-mp.mp.dps + 5)
-    x = mp.randmatrix(A.rows, 1)
-    x_old = x / mp.norm(x)
-    x_new = x_old.copy()
-    i = 1
-    E, U = mp.eig(A)
-    print(E)
-
-    while i <= min_iter or mp.norm(x_new-x_old) > eps:
-        # print(mp.norm(x_new - x_old))
-        x_old = x_new.copy()
-        x_new = A * x_old
-        x_new = x_new / mp.norm(x_new)
-        i = i+1
-    print(i)
-    return mp.fdot(x_new, A*x_new)/mp.norm(x_new), x_new
-
-
-def get_largest_eigenvalues(A, n=2):
-    """
-    Computes the n=2 or 3 largest eigenvalues and the corresponding eigenvectors of A using power iteration.
-    """
-    eigvalues = mp.matrix([mp.mpf(0.)]*n)
-    eigvectors = mp.matrix(A.rows, n)
-    val, vec = get_largest_eigenvalue(A)
-    print("eigvalues")
-    eigvalues[0] = val
-    eigvectors[:, 0] = vec
-    B = A.copy() - val * vec * vec.T
-    val, vec = get_largest_eigenvalue(B)
-    eigvalues[1] = val
-    eigvectors[:, 1] = (val - eigvalues[0])*vec + eigvalues[0]*mp.fdot(eigvectors[:, 0], vec)*eigvectors[:, 0]
-    return eigvalues, eigvectors
-
-
-def SMW(diag, pert):
-    """
-    Computes the inverse of the matrix diag(diag) + (pert, pert, ..., pert)^T
-    """
-    n = len(diag)
-    diag_inv = mp.matrix([1/x for x in diag])
-    X = mp.diag(diag_inv)
-    c = mp.fdot(pert, diag_inv)
-    M = mp.matrix([[pert[j]/(diag[i]*diag[j]) for j in range(n)] for i in range(n)])
-    corr = M / (1+c)
-    return X - corr
-
-
-def diagonalize(nodes, weights, lambda_):
-    """
-    Diagonalizes the matrix -diag(nodes) - lambda_ (w,w,...,w)^T in a numerically stable way.
-    """
-    w = lambda_*weights.copy()
-    n = len(nodes)
-    eigvalues = mp.matrix([mp.mpf(0.)] * n)
-    eigvectors = mp.matrix(n, n)
-    A = mp.diag(nodes) + mp.matrix([[w[i] for i in range(n)] for _ in range(n)])
-    val, vec = get_largest_eigenvalues(A)
-    eigvalues[0] = val[0]
-    eigvalues[1] = val[1]
-    eigvectors[:, 0] = vec[:, 0]
-    eigvectors[:, 1] = vec[:, 1]
-
-    A_inv_approx = SMW(nodes + nodes[0], w)
-    val, vec = get_largest_eigenvalues(A_inv_approx)
-    eigvalues[n-1] = 1/val[0] - nodes[0]
-    eigvalues[n-2] = 1/val[1] - nodes[0]
-    eigvectors[:, n-1] = vec[:, 0]
-    eigvectors[:, n-2] = vec[:, 1]
-
-    avg_geo_dist = (eigvalues[0] / eigvalues[n-1])**(1/(n-1))
-    n_found = 4
-
-    while n_found < n:
-        found_new = False
-        exponent = 0.
-        attempt = 2
-        while not found_new:
-            print(attempt)
-            perturbation = nodes[n_found - 4]/avg_geo_dist**exponent
-            print(eigvalues)
-            print(avg_geo_dist)
-            print(perturbation)
-            print(mp.eig(A)[0])
-            print(mp.eig(mp.inverse(A - perturbation*mp.eye(n)))[0])
-            print("Here")
-            A_pert_inv = SMW(nodes - perturbation, w)
-            print("Here")
-            val, vec = get_largest_eigenvalues(A_pert_inv)
-            print("Here")
-            val_1 = 1/val[1] + perturbation
-            val_2 = 1/val[0] + perturbation
-            print("Here")
-            if mp.almosteq(val_1, eigvalues[n_found - 4]):
-                exponent = exponent + 1/attempt
-            elif not mp.almosteq(val_1, eigvalues[n_found-3]) and not mp.almosteq(val_2, eigvalues[n_found-3]):
-                exponent = min(exponent - 1/attempt, 2**(-attempt))
-            elif mp.almosteq(val_1, eigvalues[n_found-3]):
-                eigvalues[n_found-2] = val_2
-                eigvectors[:, n_found-2] = vec[0]
-                found_new = True
-            else:
-                eigvalues[n_found-2] = val_1
-                eigvectors[:, n_found-2] = vec[1]
-                found_new = True
-            attempt += 1
-
-    return -eigvalues, eigvectors
-'''
 
 
 def lu_solve_system(A, B):
@@ -170,7 +51,7 @@ def ODE_S_mult(A, weights):
     return np.linalg.solve(A[1].T, D)
 
 
-def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="observation"):
+def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., WB=None, N_time=1000, mode="observation"):
     """
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -185,6 +66,15 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
     theorem.
     """
+    if WB is None:
+        dW = np.random.normal(0, np.sqrt(T / N_time), N_time)
+        dB = np.random.normal(0, np.sqrt(T / N_time), N_time)
+    else:
+        m = WB.shape[1]
+        N_time = WB.shape[2]
+        dW = WB[0, 0, :]
+        dB = WB[1, 0, :]
+
     dt = T/N_time
     sqrt_dt = np.sqrt(dt)
     log_S_ = np.log(S_0)
@@ -198,21 +88,12 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     A = -(np.diag(nodes) + lambda_ * weights[None, :])*dt/2
     A_inverse = np.linalg.inv(A)
     b = (nodes * V_ + theta - nu**2 * weight_sum/4) * dt/2
-    print(nodes*V_, theta, -nu**2*weight_sum/4)
-    print(-A_inverse @ b)
     expA = scipy.linalg.expm(A)
     temp_1 = A_inverse @ ((expA - np.eye(N)) @ b)
     temp_2 = - dt/2 * (np.dot(weights, A_inverse @ (A_inverse @ (expA @ b - b) - b))/2 + nu*rho*weight_sum/4)
     temp_3 = - dt/2 * np.einsum('i,ij', weights, A_inverse @ (expA-np.eye(N)))/2
     temp_4 = nu * weight_sum * sqrt_dt / 2
     temp_5 = temp_4 / 2
-    print('nodes', nodes)
-    print('weights', weights)
-    print('A', A)
-    print('A_inverse', A_inverse)
-    print('expA', expA)
-    print('w...', temp_3)
-    # time.sleep(36000)
 
     def solve_drift_ODE(log_S, V):
         """
@@ -221,12 +102,12 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
         :param V: Initial variance vector
         return: Final log-stock price, final variance vector, in the form log_S, V.
         """
-        V_final = expA @ V + temp_1
         log_S_final = log_S + np.dot(temp_3, V) + temp_2
-        V_final = V_final + np.fmax(-np.dot(weights, V_final), 0) * 2 * rescaled_weights
+        V_final = expA @ V + temp_1
+        V_final = V_final + np.fmax(-np.dot(weights, V_final), 0) * rescaled_weights
         return log_S_final, V_final
 
-    def solve_stochastic_ODE(log_S, V):
+    def solve_stochastic_ODE(log_S, V, dW_, dB_):
         """
         Solves the ODE corresponding to the stochastic integrals in the Ninomiya-Victoir scheme for one time step.
         Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
@@ -235,17 +116,17 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
         :param V: Initial variance vector
         return: Final log-stock price, final variance vector, in the form log_S, V.
         """
-        Z_1 = np.random.normal()
-        Z_2 = np.random.normal()
+        Z_1 = dW_/sqrt_dt  # np.random.normal(size=m)
+        Z_2 = dB_/sqrt_dt  # np.random.normal(size=m)
         total_vol = np.sqrt(np.fmax(np.dot(weights, V), 0))
         if Z_1 < 0:
             tau = np.fmin(1, - total_vol / (temp_4*Z_1))
         else:
             tau = 1
         temp = sqrt_dt*tau*(total_vol + temp_5*Z_1*tau)
-        V_final = V + nu*Z_1*temp
         S_final = log_S + temp*(rho*Z_1 + rho_bar*Z_2)
-        V_final = V_final + np.fmax(-np.dot(weights, V_final), 0) * 2 * rescaled_weights
+        V_final = V + nu*Z_1*temp
+        V_final = V_final + np.fmax(-np.dot(weights, V_final), 0) * rescaled_weights
         return S_final, V_final
 
     log_S = np.zeros(N_time+1)
@@ -257,16 +138,16 @@ def get_sample_path(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, 
     V_components[:, 0] = V_
 
     for i in range(1, N_time+1):
-        if i % 100 == 0:
+        if i % 100000 == 0:
             print(f'{i} of {N_time}')
         log_S_, V_ = solve_drift_ODE(log_S_, V_)
-        log_S_, V_ = solve_stochastic_ODE(log_S_, V_)
+        log_S_, V_ = solve_stochastic_ODE(log_S_, V_, dW[i-1], dB[i-1])
         log_S_, V_ = solve_drift_ODE(log_S_, V_)
         log_S[i] = log_S_
         V[i] = np.dot(weights, V_)
         V_components[:, i] = V_
 
-    return np.exp(log_S), V, V_components
+    return np.exp(log_S), np.sqrt(np.fmax(V, 0)), V_components
 
 
 def get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="observation", m=1000):
@@ -347,6 +228,120 @@ def get_samples(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode
         log_S, V = solve_drift_ODE(log_S, V)
 
     return np.exp(log_S)
+
+
+def sample_func(H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., WB=None, m=1000, N_time=1000, mode="observation", nodes=None,
+                weights=None, sample_paths=False):
+    """
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_time: Number of time steps used in the solution of the fractional Riccati equation
+    :param N: Total number of points in the quadrature rule, N=n*m
+    :param S_0: Initial stock price
+    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
+    theorem.
+    """
+    if WB is None:
+        dW = np.random.normal(0, np.sqrt(T / N_time), (m, N_time))
+        dB = np.random.normal(0, np.sqrt(T / N_time), (m, N_time))
+    else:
+        m = WB.shape[1]
+        N_time = WB.shape[2]
+        dW = WB[0, :, :]
+        dB = WB[1, :, :]
+    S_BM = rho * dW + np.sqrt(1 - rho**2) * dB
+    dt = T / N_time
+    if nodes is None or weights is None:
+        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+    N = len(nodes)
+    if N == 1:
+        nodes = np.array([nodes[0], 1])
+        weights = np.array([weights[0], 0])
+        N = 2
+
+    # dt = T/N_time
+    sqrt_dt = np.sqrt(dt)
+    rho_bar = np.sqrt(1-rho*rho)
+    # nodes, weights = rk.quadrature_rule(H, N, T, mode)
+    # N = len(nodes)
+    weight_sum = np.sum(weights)
+    V_comp = np.zeros(N)
+    V_comp[0] = V_0/weights[0]
+    V_comp = V_0/(N*weights)
+    rescaled_weights = weights / np.sum(weights ** 2)
+
+    A = -(np.diag(nodes) + lambda_ * weights[None, :])*dt/2
+    A_inverse = np.linalg.inv(A)
+    b = (nodes * V_comp + theta - nu**2 * weight_sum/4) * dt/2
+    expA = scipy.linalg.expm(A)
+    expA_T = expA.T
+    temp_1 = A_inverse @ ((expA - np.eye(N)) @ b)
+    temp_2 = - dt/2 * (np.dot(weights, A_inverse @ (A_inverse @ (expA @ b - b) - b))/2 + nu*rho*weight_sum/4)
+    temp_3 = - dt/2 * np.einsum('i,ij->j', weights, A_inverse @ (expA-np.eye(N)))/2
+    temp_4 = nu * weight_sum / 2
+    temp_5 = temp_4 / 2
+
+    log_S = np.log(S_0)
+    if sample_paths:
+        log_S = np.empty((m, N_time+1))
+        V_comp_1 = np.empty((m, N, N_time+1))
+        V_comp_1[:, :, 0] = V_comp[None, :]
+        V_comp = V_comp_1
+        log_S[0] = np.log(S_0)
+
+    def solve_drift_ODE(log_S_, V_comp_):
+        """
+        Solves the ODE corresponding to the drift in the Ninomiya-Victoir scheme for one (half) time step.
+        :param log_S_: Initial log-stock price
+        :param V_comp_: Initial variance vector
+        return: Final log-stock price, final variance vector, in the form log_S, V.
+        """
+        log_S_ = log_S_ + V_comp_ @ temp_3 + temp_2
+        V_comp_ = V_comp_ @ expA_T + temp_1[None, :]
+        V_comp_ = V_comp_ + np.fmax(-V_comp_ @ weights, 0)[:, None] * rescaled_weights[None, :]
+        return log_S_, V_comp_
+
+    def solve_stochastic_ODE(log_S_, V_comp_, dW_, S_BM_):
+        """
+        Solves the ODE corresponding to the stochastic integrals in the Ninomiya-Victoir scheme for one time step.
+        Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
+        in closed form.
+        :param log_S_: Initial log-stock price
+        :param V_comp_: Initial variance vector
+        :param dW_: Increment of the Brownian motion W driving the volatility process
+        :param S_BM_: Increment of the Brownian motion driving the stock price process
+        return: Final log-stock price, final variance vector, in the form log_S, V.
+        """
+        total_vol = np.sqrt(np.fmax(V_comp_ @ weights, 0.))
+        tau = (dW_ < 0) * np.fmin(1, - total_vol / (temp_4*(dW_ + (dW_ == 0.)*1))) + (dW_ >= 0)
+        temp = tau*(total_vol + temp_5*dW_*tau)
+        log_S_ = log_S_ + temp*S_BM_
+        V_comp_ = V_comp_ + (nu*dW_*temp)[:, None]
+        V_comp_ = V_comp_ + np.fmax(-V_comp_ @ weights, 0)[:, None] * rescaled_weights[None, :]
+        return log_S_, V_comp_
+
+    if sample_paths:
+        for i in range(N_time):
+            if i % 100000 == 0:
+                print(f'{i} of {N_time}')
+            log_S[:, i+1], V_comp[:, :, i+1] = solve_drift_ODE(log_S[:, i], V_comp[:, :, i])
+            log_S[:, i+1], V_comp[:, :, i+1] = solve_stochastic_ODE(log_S[:, i+1], V_comp[:, :, i+1], dW[:, i], S_BM[:, i])
+            log_S[:, i+1], V_comp[:, :, i+1] = solve_drift_ODE(log_S[:, i+1], V_comp[:, :, i+1])
+        V = np.fmax(np.einsum('ijk,j->ik', V_comp, weights), 0)
+        return np.exp(log_S), np.sqrt(V), V_comp
+    else:
+        for i in range(N_time):
+            if i % 100 == 0:
+                print(f'{i} of {N_time}')
+            log_S, V_comp = solve_drift_ODE(log_S, V_comp)
+            log_S, V_comp = solve_stochastic_ODE(log_S, V_comp, dW[:, i], S_BM[:, i])
+            log_S, V_comp = solve_drift_ODE(log_S, V_comp)
+        return np.exp(log_S)
 
 
 def call(K, H, lambda_, rho, nu, theta, V_0, T, N, S_0=1., N_time=1000, mode="observation", m=1000):

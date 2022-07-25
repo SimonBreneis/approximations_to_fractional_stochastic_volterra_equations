@@ -1,12 +1,11 @@
 import numpy as np
 import scipy.interpolate
-
 import ComputationalFinance as cf
 import RoughKernel as rk
 import rHestonSplitKernel as sk
 
 
-def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=1000, WB=None, mode="best",
+def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, WB=None, mode="best",
                   vol_behaviour='sticky', nodes=None, weights=None, sample_paths=False, return_times=None):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model.
@@ -19,7 +18,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
     :param T: Final time/Time of maturity
     :param N_time: Number of time steps
     :param N: Total number of points in the quadrature rule
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
@@ -87,11 +86,14 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
     b_comp = theta * dt + (nodes * V_original)[None, :] * dt
 
-    def b(V_comp_, sq_V_, dW_):
-        return V_comp_ + nu * (sq_V_ * dW_)[:, None] + b_comp
+    def S_euler_step(S_, sq_V_, S_BM_):
+        return S_ + sq_V_ * S_ * S_BM_
 
+    def V_comp_euler_step(V_comp_, sq_V_, dW_):
+        return (V_comp_ + nu * (sq_V_ * dW_)[:, None] + b_comp) @ A_inv_T
+
+    S = S_0
     if sample_paths:
-        S_0 = S
         S = np.zeros((m, N_time + 1))
         V = np.zeros((m, N_time + 1))
         S[:, 0] = S_0
@@ -102,16 +104,16 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
     if vol_behaviour == 'sticky':
 
         def sticky(S_, sq_V_, S_BM_, V_comp_, dW_):
-            S_ = S_ + sq_V_ * S_ * S_BM_
-            V_comp_ = b(V_comp_, sq_V_, dW_[:, i]) @ A_inv_T
+            S_ = S_euler_step(S_, sq_V_, S_BM_)
+            V_comp_ = V_comp_euler_step(V_comp_, sq_V_, dW_)
             sq_V_ = np.sqrt(np.fmax(V_comp_ @ weights, 0))
             return S_, V_comp_, sq_V_
 
         if sample_paths:
             V[:, 0] = np.sqrt(V[:, 0])
             for i in range(N_time):
-                S[:, i+1], V_comp[:, :, i+1], V[:, i+1] = sticky(S_=S[:, i], sq_V_=V[:, i], S_BM_=S_BM[:, i],
-                                                                 V_comp_=V_comp[:, :, i], dW_=dW[:, i])
+                S[:, i + 1], V_comp[:, :, i + 1], V[:, i + 1] = sticky(S_=S[:, i], sq_V_=V[:, i], S_BM_=S_BM[:, i],
+                                                                       V_comp_=V_comp[:, :, i], dW_=dW[:, i])
             V = V**2
         else:
             for i in range(N_time):
@@ -120,26 +122,26 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
     elif vol_behaviour == 'constant':
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1] = S[:, i] + sq_V * S[:, i] * S_BM[:, i]
+                S[:, i + 1] = S_euler_step(S[:, i], sq_V, S_BM[:, i])
             V_comp[:, :, :] = V_comp[:, :, 0][:, :, None]
             V[:, :] = V_0
         else:
             for i in range(N_time):
-                S = S + sq_V * S * S_BM[:, i]
+                S = S_euler_step(S, sq_V, S_BM[:, i])
 
     elif vol_behaviour == 'mean reversion':
 
         def mean_reversion(S_, V_, S_BM_, V_comp_, dW_, zero_vol_):
             sq_V_ = np.sqrt(V_)
-            S_ = S_ + sq_V_ * S_ * S_BM_
-            V_comp_ = b(V_comp_, sq_V_, dW_) @ A_inv_T
+            S_ = S_euler_step(S_, sq_V_, S_BM_)
+            V_comp_ = V_comp_euler_step(V_comp_, sq_V_, dW_)
             V_ = np.fmax(V_comp_ @ weights, 0)
             sq_V_ = np.sqrt(V_)
             if np.sum(zero_vol_) > 0:
                 relevant_ind = np.logical_and(zero_vol_, V_ <= 0)
                 while np.sum(relevant_ind) > 0:
-                    V_comp_[relevant_ind, :] = b(V_comp_[relevant_ind, :], sq_V_[relevant_ind],
-                                                 dW_[relevant_ind]) @ A_inv_T
+                    V_comp_[relevant_ind, :] = V_comp_euler_step(V_comp_[relevant_ind, :], sq_V_[relevant_ind],
+                                                                 dW_[relevant_ind])
                     V_[relevant_ind] = np.fmax(V_comp_[relevant_ind, :] @ weights, 0)
                     sq_V_[relevant_ind] = np.sqrt(V_[relevant_ind])
                     relevant_ind = np.logical_and(zero_vol_, V_ <= 0)
@@ -148,10 +150,10 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
         zero_vol = V_0 <= 0
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1], V_comp[:, :, i+1], V[:, i+1], zero_vol = mean_reversion(S_=S[:, i], V_=V[:, i],
-                                                                                   S_BM_=S_BM[:, i],
-                                                                                   V_comp_=V_comp[:, :, i],
-                                                                                   dW_=dW[:, i], zero_vol_=zero_vol)
+                S[:, i + 1], V_comp[:, :, i + 1], V[:, i + 1], zero_vol = mean_reversion(S_=S[:, i], V_=V[:, i],
+                                                                                         S_BM_=S_BM[:, i],
+                                                                                         V_comp_=V_comp[:, :, i],
+                                                                                         dW_=dW[:, i], zero_vol_=zero_vol)
         else:
             V = V_0
             for i in range(N_time):
@@ -162,8 +164,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         def hyperplane_reset(S_, V_, S_BM_, V_comp_, dW_):
             sq_V_ = np.sqrt(V_)
-            S_ = S_ + sq_V_ * S_ * S_BM_
-            V_comp_ = b(V_comp_, sq_V_, dW_) @ A_inv_T
+            S_ = S_euler_step(S_, sq_V_, S_BM_)
+            V_comp_ = V_comp_euler_step(V_comp_, sq_V_, dW_)
             V_ = V_comp_ @ weights
             V_comp_ = V_comp_ + np.fmax(-V_, 0)[:, None] * rescaled_weights[None, :]
             V_ = np.fmax(V_, 0)
@@ -171,8 +173,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1], V_comp[:, :, i+1], V[:, i+1] = hyperplane_reset(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
-                                                                           V_comp_=V_comp[:, :, i], dW_=dW[:, i])
+                S[:, i + 1], V_comp[:, :, i + 1], V[:, i + 1] = hyperplane_reset(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
+                                                                                 V_comp_=V_comp[:, :, i], dW_=dW[:, i])
         else:
             for i in range(N_time):
                 S, V_comp, V = hyperplane_reset(S_=S, V_=V, S_BM_=S_BM[:, i], V_comp_=V_comp, dW_=dW[:, i])
@@ -181,8 +183,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         def hyperplane_reflection(S_, V_, S_BM_, V_comp_, dW_):
             sq_V_ = np.sqrt(V_)
-            S_ = S_ + sq_V_ * S_ * S_BM_
-            V_comp_ = b(V_comp_, sq_V_, dW_) @ A_inv_T
+            S_ = S_euler_step(S_, sq_V_, S_BM_)
+            V_comp_ = V_comp_euler_step(V_comp_, sq_V_, dW_)
             V_ = V_comp_ @ weights
             V_comp_ = V_comp_ + 2 * np.fmax(-V_, 0)[:, None] * rescaled_weights[None, :]
             V_ = np.abs(V_)
@@ -190,9 +192,9 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1], V_comp[:, :, i+1], V[:, i+1] = hyperplane_reflection(S_=S[:, i], V_=V[:, i],
-                                                                                S_BM_=S_BM[:, i],
-                                                                                V_comp_=V_comp[:, :, i], dW_=dW[:, i])
+                S[:, i + 1], V_comp[:, :, i + 1], V[:, i + 1] = hyperplane_reflection(S_=S[:, i], V_=V[:, i],
+                                                                                      S_BM_=S_BM[:, i],
+                                                                                      V_comp_=V_comp[:, :, i], dW_=dW[:, i])
         else:
             for i in range(N_time):
                 S, V_comp, V = hyperplane_reflection(S_=S, V_=V, S_BM_=S_BM[:, i], V_comp_=V_comp, dW_=dW[:, i])
@@ -210,34 +212,33 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
                 return V_comp_loc
             dW_mid = np.random.normal(dW_loc_ / 2, np.sqrt(dt / 2 ** (iteration + 1)), n)
 
-            b_ = b_comp / 2 ** iteration + V_comp_loc + (nu * np.sqrt(np.fmax(V_comp_loc @ weights, 0)) * dW_mid)[:,
-                                                        None]
-            V_comp_loc_updated = b_ @ A_list[iteration - 1]
-            V_loc_updated = V_comp_loc_updated @ weights
+            b_ = b_comp / 2 ** iteration + V_comp_loc \
+                + (nu * np.sqrt(np.fmax(V_comp_loc @ weights, 0)) * dW_mid)[:, None]
+            V_comp_loc_upd = b_ @ A_list[iteration - 1]
+            V_loc_upd = V_comp_loc_upd @ weights
             if iteration >= max_iter:
-                V_comp_loc_updated = V_comp_loc_updated + np.fmax(-V_loc_updated, 0)[:, None] * rescaled_weights[None,
-                                                                                                :]
+                V_comp_loc_upd = V_comp_loc_upd + np.fmax(-V_loc_upd, 0)[:, None] * rescaled_weights[None, :]
             else:
-                crit_ind = V_loc_updated < 0
-                V_comp_loc_updated[crit_ind] = nested_step(V_comp_loc[crit_ind], dW_mid[crit_ind], iteration + 1)
+                crit_ind = V_loc_upd < 0
+                V_comp_loc_upd[crit_ind] = nested_step(V_comp_loc[crit_ind], dW_mid[crit_ind], iteration + 1)
 
             dW_second = dW_loc_ - dW_mid
-            b_ = b_comp / 2 ** iteration + V_comp_loc_updated + (nu * np.sqrt(
-                np.fmax(V_comp_loc_updated @ weights, 0)) * dW_second)[:, None]
+            b_ = b_comp / 2 ** iteration + V_comp_loc_upd + (nu * np.sqrt(
+                np.fmax(V_comp_loc_upd @ weights, 0)) * dW_second)[:, None]
             V_comp_loc_final = b_ @ A_list[iteration - 1]
             V_loc_final = V_comp_loc_final @ weights
             if iteration >= max_iter:
                 V_comp_loc_final = V_comp_loc_final + np.fmax(-V_loc_final, 0)[:, None] * rescaled_weights[None, :]
             else:
                 crit_ind = V_loc_final < 0
-                V_comp_loc_final[crit_ind] = nested_step(V_comp_loc_updated[crit_ind], dW_second[crit_ind],
+                V_comp_loc_final[crit_ind] = nested_step(V_comp_loc_upd[crit_ind], dW_second[crit_ind],
                                                          iteration + 1)
             return V_comp_loc_final
 
         def adaptive(S_, V_, S_BM_, V_comp_, dW_):
             sq_V_ = np.sqrt(V_)
-            S_ = S_ + sq_V_ * S_ * S_BM_
-            V_comp_1 = b(V_comp_, sq_V_, dW_) @ A_inv_T
+            S_ = S_euler_step(S_, sq_V_, S_BM_)
+            V_comp_1 = V_comp_euler_step(V_comp_, sq_V_, dW_)
             critical_ind = V_comp_1 @ weights < 0
             V_comp_1[critical_ind] = nested_step(V_comp_[critical_ind, :], dW_[critical_ind, i], 1)
             V_comp_ = V_comp_1
@@ -246,8 +247,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1], V_comp[:, :, i+1], V[:, i+1] = adaptive(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
-                                                                   V_comp_=V_comp[:, :, i+1], dW_=dW[:, i])
+                S[:, i + 1], V_comp[:, :, i + 1], V[:, i + 1] = adaptive(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
+                                                                         V_comp_=V_comp[:, :, i+1], dW_=dW[:, i])
         else:
             for i in range(N_time):
                 S, V_comp, V = adaptive(S_=S, V_=V, S_BM_=S_BM[:, i], V_comp_=V_comp, dW_=dW[:, i])
@@ -284,16 +285,16 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
             return res
 
         def multiple_time_scales(S_, V_, S_BM_, V_comp_, dW_):
-            S_ = S_ + np.sqrt(V_) * S_ * S_BM_
+            S_ = S_euler_step(S_, np.sqrt(V_), S_BM_)
             dW_so_far = 0
             dt_so_far = 0
-            for j in range(n_triv_int, N):
+            for k in range(n_triv_int, N):
                 for _ in range(L):
-                    dW_loc = np.random.normal((dW_ - dW_so_far) * dt_loc[j - n_triv_int] / (dt - dt_so_far),
-                                              np.sqrt(dt_loc[j - n_triv_int]), m)
+                    dW_loc = np.random.normal((dW_ - dW_so_far) * dt_loc[k - n_triv_int] / (dt - dt_so_far),
+                                              np.sqrt(dt_loc[k - n_triv_int]), m)
                     dW_so_far += dW_loc
-                    dt_so_far += dt_loc[j - n_triv_int]
-                    V_comp_ = bs(j, V_comp_, dW_loc) @ A_inv[j - n_triv_int]
+                    dt_so_far += dt_loc[k - n_triv_int]
+                    V_comp_ = bs(k, V_comp_, dW_loc) @ A_inv[k - n_triv_int]
                     V_ = V_comp_ @ weights
                     V_comp_ = V_comp_ + np.fmax(-V_, 0)[:, None] * rescaled_weights[None, :]
                     V_ = np.fmax(V_, 0)
@@ -301,8 +302,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1], V_comp[:, i+1], V[:, i+1] = multiple_time_scales(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
-                                                                            V_comp_=V_comp[:, :, i], dW_=dW[:, i])
+                S[:, i + 1], V_comp[:, i + 1], V[:, i + 1] = multiple_time_scales(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
+                                                                                  V_comp_=V_comp[:, :, i], dW_=dW[:, i])
         else:
             for i in range(N_time):
                 S, V_comp, V = multiple_time_scales(S_=S, V_=V, S_BM_=S_BM[:, i], V_comp_=V_comp, dW_=dW[:, i])
@@ -310,7 +311,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
     elif vol_behaviour == 'split kernel' or vol_behaviour == 'split throw':
 
         if vol_behaviour == 'split kernel':
-            N = np.sum(nodes < 2 / dt)
+            N = int(np.sum(nodes < 2 / dt))
             fast_nodes = nodes[N:]
             fast_weights = weights[N:]
             if len(fast_nodes) == 0:
@@ -334,21 +335,21 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
 
         b_comp = nodes[None, :] * V_comp * dt + (theta - lambda_ * mu_b) * dt
 
-        def b(vol, sr_V_, dw):
-            return b_comp + vol + (nu * sr_V_ * dw)[:, None]
+        def V_comp_euler_step(vol, sr_V_, dw):
+            return (b_comp + vol + (nu * sr_V_ * dw)[:, None]) @ A_inv_T
 
         def split_whatever(S_, V_, S_BM_, V_comp_, dW_):
             sr_V = sr(V_)
-            S_ = S_ + sr_V * S_ * S_BM_
-            V_comp_ = b(V_comp_, sr_V, dW_) @ A_inv_T
+            S_ = S_euler_step(S_, sr_V, S_BM_)
+            V_comp_ = V_comp_euler_step(V_comp_, sr_V, dW_)
             V_ = V_comp_ @ weights
             V_comp_ = V_comp_ + np.fmax(-V_, 0)[:, None] * rescaled_weights[None, :]
             return S_, V_comp_, V_
 
         if sample_paths:
             for i in range(N_time):
-                S[:, i+1], V_comp[:, i+1], V[:, i+1] = split_whatever(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
-                                                                      V_comp_=V_comp[:, :, i], dW_=dW[:, i])
+                S[:, i + 1], V_comp[:, i + 1], V[:, i + 1] = split_whatever(S_=S[:, i], V_=V[:, i], S_BM_=S_BM[:, i],
+                                                                            V_comp_=V_comp[:, :, i], dW_=dW[:, i])
         for i in range(N_time):
             S, V_comp, V = split_whatever(S_=S, V_=V, S_BM_=S_BM[:, i], V_comp_=V_comp, dW_=dW[:, i])
 
@@ -362,7 +363,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S, N=None, m=1000, N_time=
     return S
 
 
-def call(K, lambda_, rho, nu, theta, V_0, H, N, S, T, m=1000, N_time=1000, WB=None, mode='best',
+def call(K, lambda_, rho, nu, theta, V_0, H, N, S_0, T, m=1000, N_time=1000, WB=None, mode='best',
          vol_behaviour='sticky'):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
@@ -375,7 +376,7 @@ def call(K, lambda_, rho, nu, theta, V_0, H, N, S, T, m=1000, N_time=1000, WB=No
     :param V_0: Initial variance
     :param H: Hurst parameter
     :param N: Number of quadrature points
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param T: Final time/Time of maturity
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param N_time: Number of time steps used in simulation
@@ -404,6 +405,6 @@ def call(K, lambda_, rho, nu, theta, V_0, H, N, S, T, m=1000, N_time=1000, WB=No
             negative, applies the hyperplane reset method
     return: The prices of the call option for the various strike prices in K
     """
-    samples_ = sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, m=m, S=S,
+    samples_ = sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, m=m, S_0=S_0,
                              N_time=N_time, WB=WB, mode=mode, vol_behaviour=vol_behaviour)
-    return cf.iv_eur_call_MC(S=S, K=K, T=T, samples=samples_)
+    return cf.iv_eur_call_MC(S=S_0, K=K, T=T, samples=samples_)
