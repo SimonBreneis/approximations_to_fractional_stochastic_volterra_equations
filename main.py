@@ -10,7 +10,6 @@ import rHestonMarkov
 import RoughKernel as rk
 import rHestonImplicitEuler as ie
 import rHestonSplitKernel as sk
-import rHestonNinomiyaVictoir as nv
 from numpy import nan
 from os.path import exists
 
@@ -204,12 +203,12 @@ WB_1 = WB_1 / 32
 WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
 
 S_1, V_1, _ = nv.sample_func(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB, m=1, mode=mode, sample_paths=True)
-S_2, V_2, _ = nv.get_sample_path(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB[:, :1, :], mode=mode)
+S_2, V_2, _ = ie.sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB[:, :1, :], mode=mode, vol_behaviour='ninomiya victoir', sample_paths=True)
 
 plt.plot(np.linspace(0, 1, 1048577), S_1[0, :], label='stock price 2097152 time steps')
 plt.plot(np.linspace(0, 1, 1048577), V_1[0, :], label='volatility 2097152 time steps')
-plt.plot(np.linspace(0, 1, 1048577), S_2[:], label='stock price 1048576 time steps')
-plt.plot(np.linspace(0, 1, 1048577), V_2[:], label='volatility 1048576 time steps')
+plt.plot(np.linspace(0, 1, 1048577), S_2[0, :], label='stock price 1048576 time steps')
+plt.plot(np.linspace(0, 1, 1048577), V_2[0, :], label='volatility 1048576 time steps')
 plt.legend(loc='best')
 plt.show()
 
