@@ -12,6 +12,8 @@ import rHestonImplicitEuler as ie
 import rHestonSplitKernel as sk
 import rHestonNinomiyaVictoir as nv
 from numpy import nan
+from os.path import exists
+
 
 c = ['r', 'C1', 'y', 'g', 'b', 'purple']
 c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
@@ -46,7 +48,7 @@ plt.show()
 '''
 
 vol_behaviour = 'hyperplane reset'
-mode = 'european'
+mode = 'optimized'
 
 a = np.array([1, 2, 3, 4, 5, 6, 7, 8])
 print(a[3::4])
@@ -56,16 +58,16 @@ final_S = np.empty(1000000)
 truth = Data.true_iv_surface_eur_call[-1, 200:-70]
 markov_truth = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, mode=mode, rel_tol=rel_tol)
 
-for i in range(10):
-    N_time = np.array([256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072])[i]
-    with open(f'rHeston samples 2 dim european hyperplane reset {N_time} time steps.npy', 'rb') as f:
+for i in range(8):
+    N_time = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072])[i]
+    with open(f'rHeston samples 2 dim optimized hyperplane reset {N_time} time steps.npy', 'rb') as f:
         final_S = np.load(f)
 
     vol, lower, upper = cf.iv_eur_call_MC(S=S, K=K, T=T, samples=final_S)
-    plt.plot(k_vec, vol, color=c_[i], label=f'N_time = {N_time}')
-    if i == 9:
-        plt.plot(k_vec, lower, '--', color=c_[i])
-        plt.plot(k_vec, upper, '--', color=c_[i])
+    plt.plot(k_vec, vol, color=c_[i % 10], label=f'N_time = {N_time}')
+    if i == 17:
+        plt.plot(k_vec, lower, '--', color=c_[i % 10])
+        plt.plot(k_vec, upper, '--', color=c_[i % 10])
     print(N_time, 'truth', np.amax(np.abs(truth - vol)/truth))
     print(N_time, 'discretization', np.amax(np.abs(markov_truth - vol)/markov_truth))
     print(N_time, 'Markov', np.amax(np.abs(truth - markov_truth)/truth))
@@ -78,138 +80,124 @@ plt.ylabel('Implied volatility')
 plt.title('Rough Heston 2-dimensional approximation with\nimplicit Euler and hyperplane reset')
 plt.show()
 
-with open(f'dW{i}.npy', 'rb') as f:
-    dW = np.load(f)
-with open(f'dB{i}.npy', 'rb') as f:
-    dB = np.load(f)
-WB = np.empty((2, 10, 2048))
-WB[0, :, :] = dW[:10, :]
-WB[1, :, :] = dB[:10, :]
-vbs = ['hyperplane reset', 'sticky', 'hyperplane reflection', 'adaptive', 'multiple time scales', 'split kernel', 'split throw']
-nodes, weights = rk.quadrature_rule(H=H, N=2, T=T, mode='european')
-for vb in vbs:
-    print(vb)
-    ie.samples(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, m=10, S=S, N_time=2048, WB=WB, mode='european', vol_behaviour=vb, nodes=nodes, weights=weights)
-print('finished')
-time.sleep(360000)
-
 
 modes = ['european', 'optimized', 'observation']
-vol_behaviours = ['hyperplane reset', 'sticky', 'hyperplane reflection']
+vol_behaviours = ['hyperplane reset'] #, 'sticky', 'hyperplane reflection', 'adaptive']
 
 for N in np.array([2, 1, 6, 4, 3, 5]):
     for N_time in np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4196, 8192, 16384, 32768, 65536, 131072]):
         print(N_time)
-        for vol_behaviours in vol_behaviours:
+        for vol_behaviour in vol_behaviours:
             print(N_time, vol_behaviour)
             for mode in modes:
                 print(N_time, vol_behaviour, mode)
-                if mode == 'european' and vol_behaviour == 'hyperplane reset':
-                    break
+                filename = f'rHeston samples {N} dim {mode} {vol_behaviour} {N_time} time steps.npy'
+                if exists(filename):
+                    pass
+                else:
+                    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
 
-                nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+                    for i in range(10):
+                        print(N_time, vol_behaviour, mode, i)
+                        with open(f'dW{i}.npy', 'rb') as f:
+                            dW = np.load(f)
+                        with open(f'dB{i}.npy', 'rb') as f:
+                            dB = np.load(f)
 
-                for i in range(10):
-                    print(N_time, vol_behaviour, mode, i)
-                    with open(f'dW{i}.npy', 'rb') as f:
-                        dW = np.load(f)
-                    with open(f'dB{i}.npy', 'rb') as f:
-                        dB = np.load(f)
+                        WB_1 = np.empty((2, 100000, 2048))
+                        WB_1[0, :, :] = dW
+                        WB_1[1, :, :] = dB
 
-                    WB_1 = np.empty((2, 100000, 2048))
-                    WB_1[0, :, :] = dW
-                    WB_1[1, :, :] = dB
+                        n_samples = 100000
+                        if N_time == 8192:
+                            n_samples = 25000
+                        elif N_time == 16384:
+                            n_samples = 12500
+                        elif N_time == 32768:
+                            n_samples = 6250
+                        elif N_time == 65536:
+                            n_samples = 3125
+                        elif N_time == 131072:
+                            n_samples = 2000
 
-                    n_samples = 100000
-                    if N_time == 8192:
-                        n_samples = 25000
-                    elif N_time == 16384:
-                        n_samples = 12500
-                    elif N_time == 32768:
-                        n_samples = 6250
-                    elif N_time == 65536:
-                        n_samples = 3125
-                    elif N_time == 131072:
-                        n_samples = 2000
+                        WB = np.empty((2, n_samples, N_time))
+                        for k in range(100000 // n_samples):
+                            print(N_time, vol_behaviour, mode, i, k)
+                            if N_time <= 256:
+                                WB = WB_1[:, :, ::8] + WB_1[:, :, 1::8] + WB_1[:, :, 2::8] + WB_1[:, :, 3::8] + WB_1[:, :, 4::8] + WB_1[:, :, 5::8] + WB_1[:, :, 6::8] + WB_1[:, :, 7::8]
+                            if N_time <= 128:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 64:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 32:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 16:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 8:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 4:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 2:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time <= 1:
+                                WB = WB[:, :, ::2] + WB[:, :, 1::2]
+                            if N_time == 512:
+                                WB = WB_1[:, :, ::4] + WB_1[:, :, 1::4] + WB_1[:, :, 2::4] + WB_1[:, :, 3::4]
+                            if N_time == 1024:
+                                WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
+                            if N_time == 2048:
+                                WB = WB_1
+                            if N_time == 4096:
+                                incr = np.random.normal(0, 1/np.sqrt(8192), (2, 100000, 2048))
+                                WB[:, :, 1::2] = WB_1/2 + incr
+                                WB[:, :, ::2] = WB_1/2 - incr
+                            if N_time >= 8192:
+                                WB = np.empty((2, n_samples, 8192))
+                                WB_1_ = WB_1[:, k*n_samples:(k+1)*n_samples, :]
+                                incr_1 = np.random.normal(0, 1/np.sqrt(8192), (2, n_samples, 2048))
+                                incr_2 = np.random.normal(0, 1/np.sqrt(16384), (2, n_samples, 2048))
+                                incr_3 = np.random.normal(0, 1/np.sqrt(16384), (2, n_samples, 2048))
+                                WB[:, :, ::4] = WB_1_/4 + incr_1/2 + incr_2
+                                WB[:, :, 1::4] = WB_1_/4 + incr_1/2 - incr_2
+                                WB[:, :, 2::4] = WB_1_/4 - incr_1/2 + incr_3
+                                WB[:, :, 3::4] = WB_1_/4 - incr_1/2 - incr_3
+                            if N_time >= 16384:
+                                WB_ = np.empty((2, n_samples, 16384))
+                                incr = np.random.normal(0, 1 / np.sqrt(32768), (2, n_samples, 8192))
+                                WB_[:, :, ::2] = WB / 2 + incr
+                                WB_[:, :, 1::2] = WB / 2 - incr
+                                WB = WB_
+                            if N_time >= 32768:
+                                WB_ = np.empty((2, n_samples, 32768))
+                                incr = np.random.normal(0, 1 / np.sqrt(65536), (2, n_samples, 16384))
+                                WB_[:, :, ::2] = WB / 2 + incr
+                                WB_[:, :, 1::2] = WB / 2 - incr
+                                WB = WB_
+                            if N_time >= 65536:
+                                WB_ = np.empty((2, n_samples, 65536))
+                                incr = np.random.normal(0, 1 / np.sqrt(131072), (2, n_samples, 32768))
+                                WB_[:, :, ::2] = WB / 2 + incr
+                                WB_[:, :, 1::2] = WB / 2 - incr
+                                WB = WB_
+                            if N_time >= 131072:
+                                WB_ = np.empty((2, n_samples, 131072))
+                                incr = np.random.normal(0, 1 / np.sqrt(262144), (2, n_samples, 65536))
+                                WB_[:, :, ::2] = WB / 2 + incr
+                                WB_[:, :, 1::2] = WB / 2 - incr
+                                WB = WB_
 
-                    WB = np.empty((2, n_samples, N_time))
-                    for k in range(100000 // n_samples):
-                        print(N_time, vol_behaviour, mode, i, k)
-                        if N_time <= 256:
-                            WB = WB_1[:, :, ::8] + WB_1[:, :, 1::8] + WB_1[:, :, 2::8] + WB_1[:, :, 3::8] + WB_1[:, :, 4::8] + WB_1[:, :, 5::8] + WB_1[:, :, 6::8] + WB_1[:, :, 7::8]
-                        if N_time <= 128:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 64:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 32:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 16:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 8:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 4:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 2:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time <= 1:
-                            WB = WB[:, :, ::2] + WB[:, :, 1::2]
-                        if N_time == 512:
-                            WB = WB_1[:, :, ::4] + WB_1[:, :, 1::4] + WB_1[:, :, 2::4] + WB_1[:, :, 3::4]
-                        if N_time == 1024:
-                            WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
-                        if N_time == 2048:
-                            WB = WB_1
-                        if N_time == 4096:
-                            incr = np.random.normal(0, 1/np.sqrt(8192), (2, 100000, 2048))
-                            WB[:, :, 1::2] = WB_1/2 + incr
-                            WB[:, :, ::2] = WB_1/2 - incr
-                        if N_time >= 8192:
-                            WB = np.empty((2, n_samples, 8192))
-                            WB_1_ = WB_1[:, k*n_samples:(k+1)*n_samples, :]
-                            incr_1 = np.random.normal(0, 1/np.sqrt(8192), (2, n_samples, 2048))
-                            incr_2 = np.random.normal(0, 1/np.sqrt(16384), (2, n_samples, 2048))
-                            incr_3 = np.random.normal(0, 1/np.sqrt(16384), (2, n_samples, 2048))
-                            WB[:, :, ::4] = WB_1_/4 + incr_1/2 + incr_2
-                            WB[:, :, 1::4] = WB_1_/4 + incr_1/2 - incr_2
-                            WB[:, :, 2::4] = WB_1_/4 - incr_1/2 + incr_3
-                            WB[:, :, 3::4] = WB_1_/4 - incr_1/2 - incr_3
-                        if N_time >= 16384:
-                            WB_ = np.empty((2, n_samples, 16384))
-                            incr = np.random.normal(0, 1 / np.sqrt(32768), (2, n_samples, 8192))
-                            WB_[:, :, ::2] = WB / 2 + incr
-                            WB_[:, :, 1::2] = WB / 2 - incr
-                            WB = WB_
-                        if N_time >= 32768:
-                            WB_ = np.empty((2, n_samples, 32768))
-                            incr = np.random.normal(0, 1 / np.sqrt(65536), (2, n_samples, 16384))
-                            WB_[:, :, ::2] = WB / 2 + incr
-                            WB_[:, :, 1::2] = WB / 2 - incr
-                            WB = WB_
-                        if N_time >= 65536:
-                            WB_ = np.empty((2, n_samples, 65536))
-                            incr = np.random.normal(0, 1 / np.sqrt(131072), (2, n_samples, 32768))
-                            WB_[:, :, ::2] = WB / 2 + incr
-                            WB_[:, :, 1::2] = WB / 2 - incr
-                            WB = WB_
-                        if N_time >= 131072:
-                            WB_ = np.empty((2, n_samples, 131072))
-                            incr = np.random.normal(0, 1 / np.sqrt(262144), (2, n_samples, 65536))
-                            WB_[:, :, ::2] = WB / 2 + incr
-                            WB_[:, :, 1::2] = WB / 2 - incr
-                            WB = WB_
+                            final_S[i*100000 + k*n_samples:i*100000 + (k+1)*n_samples] = ie.sample_values(H=H, lambda_=lambda_,
+                                                                                                          rho=rho, nu=nu,
+                                                                                                          theta=theta, V_0=V_0,
+                                                                                                          T=T, N=N, S=S,
+                                                                                                          N_time=N_time, WB=WB,
+                                                                                                          m=n_samples, mode=mode,
+                                                                                                          vol_behaviour=vol_behaviour,
+                                                                                                          nodes=nodes,
+                                                                                                          weights=weights)
 
-                        final_S[i*100000 + k*n_samples:i*100000 + (k+1)*n_samples] = ie.samples(H=H, lambda_=lambda_,
-                                                                                                rho=rho, nu=nu,
-                                                                                                theta=theta, V_0=V_0,
-                                                                                                T=T, N=N, S=S,
-                                                                                                N_time=N_time, WB=WB,
-                                                                                                m=n_samples, mode=mode,
-                                                                                                vol_behaviour=vol_behaviour,
-                                                                                                nodes=nodes,
-                                                                                                weights=weights)
-
-                with open(f'rHeston samples {N} dim {mode} {vol_behaviour} {N_time} time steps.npy', 'wb') as f:
-                    np.save(f, final_S)
+                    with open(filename, 'wb') as f:
+                        np.save(f, final_S)
 time.sleep(360000)
 
 
@@ -251,7 +239,7 @@ for N_time in np.array([2048, 4096, 8192]):
 
 
 
-        final_S[i*100000:(i+1)*100000] = ie.samples(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=N_time, WB=WB, m=100000, mode=mode, vol_behaviour=vol_behaviour)
+        final_S[i*100000:(i+1)*100000] = ie.sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=N_time, WB=WB, m=100000, mode=mode, vol_behaviour=vol_behaviour)
 
     with open(f'rHeston samples 2 dim european hyperplane reset {N_time} time steps.npy', 'wb') as f:
         np.save(f, final_S)
@@ -269,8 +257,8 @@ WB_1 = WB_1 / 32
 
 WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
 
-S_1, V_1, _ = ie.get_sample_paths(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=2097152, WB=WB_1, m=1, mode=mode, vol_behaviour=vol_behaviour)
-S_2, V_2, _ = ie.get_sample_paths(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB, m=1, mode=mode, vol_behaviour=vol_behaviour)
+S_1, V_1, _ = ie.sample_paths(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=2097152, WB=WB_1, m=1, mode=mode, vol_behaviour=vol_behaviour)
+S_2, V_2, _ = ie.sample_paths(H=0.49, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S=S, N_time=1048576, WB=WB, m=1, mode=mode, vol_behaviour=vol_behaviour)
 
 plt.plot(np.linspace(0, 1, 2097153), S_1[0, :], label='stock price 2097152 time steps')
 plt.plot(np.linspace(0, 1, 2097153), V_1[0, :], label='volatility 2097152 time steps')
@@ -1312,8 +1300,8 @@ for i in range(1024):
     WB_2[:, :, i] = WB_1[:, :, 2 * i] + WB_1[:, :, 2 * i + 1]
 for vb in methods:
     for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]):
-        S_1, V_1, _ = ie.get_sample_paths(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, WB=WB_1,
-                                          vol_behaviour=vb, mode=mode)
+        S_1, V_1, _ = ie.sample_paths(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, WB=WB_1,
+                                      vol_behaviour=vb, mode=mode)
         # S_2, V_2, _ = ie.get_sample_paths(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, WB=WB_2,
         # vol_behaviour=vb, mode=mode)
         plt.plot(np.linspace(0, 1, 2049), S_1[0, :], color=c_[N - 1], label=f'N={N}')
@@ -1373,7 +1361,7 @@ for vb in methods:
                 WB[0, :, j] = np.sum(dW[:, int(j * factor):int((j + 1) * factor)], axis=-1)
                 WB[1, :, j] = np.sum(dB[:, int(j * factor):int((j + 1) * factor)], axis=-1)
             print(vb, N_t, i)
-            samples[i * 100000:(i + 1) * 100000] = ie.samples(H=0.49, N=1, N_time=N_t, WB=WB, vol_behaviour=vb)
+            samples[i * 100000:(i + 1) * 100000] = ie.sample_values(H=0.49, N=1, N_time=N_t, WB=WB, vol_behaviour=vb)
         np.save(f'samples of {vb} mode with N_time={N_t} and H=0.49 and N=1', samples)
 time.sleep(3600000)
 for vb in methods:
@@ -1407,13 +1395,13 @@ for vb in methods:
                 WB[0, :, j] = np.sum(dW[:, int(j * factor):int((j + 1) * factor)], axis=-1)
                 WB[1, :, j] = np.sum(dB[:, int(j * factor):int((j + 1) * factor)], axis=-1)
             print(vb, N_t, i)
-            samples[i * 100000:(i + 1) * 100000] = ie.samples(N_time=N_t, WB=WB, vol_behaviour=vb)
+            samples[i * 100000:(i + 1) * 100000] = ie.sample_values(N_time=N_t, WB=WB, vol_behaviour=vb)
         np.save(f'samples of {vb} mode with N_time={N_t}', samples)
 
 time.sleep(3600000)
 
-S, V, _ = ie.get_sample_paths(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6,
-                              vol_behaviour='split kernel')
+S, V, _ = ie.sample_paths(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6,
+                          vol_behaviour='split kernel')
 plt.plot(np.linspace(0, 1, 1001), S, label='stock price')
 plt.plot(np.linspace(0, 1, 1001), V, label='volatility')
 plt.xlabel('t')
