@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import mpmath as mp
 from scipy.optimize import minimize
@@ -261,7 +263,7 @@ def Gaussian_rule(H, N, T, mode='observation'):
 
 def error(H, nodes, weights, T):
     """
-    Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
+    Computes an error estimate of the squared L^2-norm of the difference between the rough kernel and its approximation
     on [0, T].
     :param H: Hurst parameter
     :param nodes: The nodes of the approximation. Assumed that they are all non-zero
@@ -334,6 +336,165 @@ def gradient_of_error(H, T, nodes, weights):
     return grad
 
 
+def error_optimal_weights(H, T, nodes, output='error'):
+    """
+    Computes an error estimate of the squared L^2-norm of the difference between the rough kernel and its approximation
+    on [0, T]. Uses the best possible weights given the nodes specified.
+    :param H: Hurst parameter
+    :param nodes: The nodes of the approximation. Assumed that they are all non-zero
+    :param output: If error, returns the error and the optimal weights. If gradient, returns the error, the gradient
+        (of the nodes only), and the optimal weights. If hessian, returns the error, the gradient, the Hessian, and
+        the optimal weights
+    :param T: Final time, may also be a vector
+    :return: An error estimate
+    """
+
+    def invert_permutation(p):
+        s = np.empty_like(p)
+        s[p] = np.arange(p.size)
+        return s
+
+    perm = np.argsort(nodes)
+    nodes = nodes[perm]
+    nodes[0] = np.fmax(1e-04, nodes[0])
+    for i in range(len(nodes)-1):
+        if 1.001 * nodes[i] > nodes[i+1]:
+            nodes[i+1] = nodes[i] * 1.001
+    nodes = nodes[invert_permutation(perm)]
+
+    node_matrix = nodes[:, None] + nodes[None, :]
+    nT = nodes * T
+    nmT = node_matrix * T
+    gamma_1 = gamma(H + 0.5)
+    gamma_ints = gammainc(H + 0.5, nodes * T)
+    exp_node_matrix = np.exp(-np.fmin(nmT, 300))
+    exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
+    exp_node_vec = np.zeros(len(nodes))
+    indices = nodes * T < 300
+    exp_node_vec[indices] = np.exp(- T * nodes[indices])
+    A = (1 - exp_node_matrix) / node_matrix
+    b = -2 * gamma_ints / nodes ** (H + 0.5)
+    c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
+    v = np.linalg.solve(A, b)
+    err = c - 0.25 * np.dot(b, v)
+    opt_weights = -0.5 * v
+    if output == 'error' or output == 'err':
+        return err, opt_weights
+
+    A_grad = (-1 + (1 + nmT) * exp_node_matrix) / node_matrix ** 2
+    b_grad = -2 * (nT ** (H + 0.5) * exp_node_vec / gamma_1 - (H + 0.5) * gamma_ints) / nodes ** (H + 1.5)
+    grad = 0.5 * v * (A_grad @ v) - 0.5 * b_grad * v
+    if output == 'gradient' or output == 'grad':
+        return err, grad, opt_weights
+
+    A_hess = 2 * (1 - (1 + nmT + nmT ** 2 / 2) * exp_node_matrix) / node_matrix ** 3
+    b_hess = -2 * (-(nT ** (H + 1.5) + (H + 1.5) * nT ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
+                H + 1.5) * gamma_ints) / nodes ** (H + 2.5)
+    U = np.linalg.solve(A, np.diag(b_grad))
+    Y = np.diag(A_grad @ v) + A_grad * v[None, :]
+    YTU = Y.T @ U
+    hess = 0.5 * (YTU - np.linalg.solve(A, Y).T @ Y + np.diag(v * (A_hess @ v)) + v[None, :] * v[:, None] * A_hess
+                  - np.diag(b_hess * v) - b_grad[:, None] * U + YTU.T)
+    return err, grad, hess, opt_weights
+
+
+def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, iterative=False, method='hessian'):
+    """
+    Optimizes the L^2 strong approximation error with N points for fBm. Always uses the best weights and only
+    numerically optimizes over the nodes.
+    :param H: Hurst parameter
+    :param N: Number of points
+    :param T: Final time, may be a numpy array (only if grad is False and fast is True)
+    :param tol: Error tolerance
+    :param bound: Upper bound on the nodes. If no upper bound is desired, use None
+    :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
+    :param method: If error, uses only the error estimates for optimizing over the nodes, and uses the optimizer
+        L-BFGS-B. If gradient, uses also the gradient of the error with respect to the nodes, and uses the optimizer
+        L-BFGS-B. If hessian, uses also the gradient and the Hessian of the error with respect to the nodes, and uses
+        the optimizer trust-constr
+    :return: The minimal relative error together with the associated nodes and weights.
+    """
+    if bound is None:
+        bound = 1e+100
+
+    def optimize_error_given_rule(nodes_1):
+        N_ = len(nodes_1)
+        nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound / 2)
+        bounds = ((np.log(1/(10*N_*T)), np.log(bound)),) * N_
+
+        if method == 'error' or method == 'err':
+            def func(x):
+                return error_optimal_weights(H, T, np.exp(x), output='error')[0]
+
+            res = minimize(func, np.log(nodes_1), tol=tol ** 2, bounds=bounds)
+
+        elif method == 'gradient' or method == 'grad':
+            def func(x):
+                err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
+                return err_, np.exp(x) * grad
+
+            res = minimize(func, np.log(nodes_1), tol=tol ** 2, bounds=bounds, jac=True)
+
+        else:
+            def func(x):
+                err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
+                return err_, np.exp(x) * grad
+
+            def hess(x):
+                _, grad, hessian, _ = error_optimal_weights(H, T, np.exp(x), output='hessian')
+                return hessian * np.exp(x[None, :] + x[:, None]) + np.diag(grad * np.exp(x))
+
+            res = minimize(func, np.log(nodes_1), tol=tol ** 2, bounds=bounds, jac=True, hess=hess,
+                           method='trust-constr')
+
+        nodes_1 = np.sort(np.exp(res.x))
+        return np.sqrt(res.fun) / kernel_norm(H, T), nodes_1, error_optimal_weights(H, T, nodes_1, output='error')[1]
+
+    if not iterative:
+        if isinstance(T, np.ndarray):
+            nodes_, weights_ = quadrature_rule(H, N, (np.amin(T) + np.amax(T))/2, mode='optimized')
+        else:
+            nodes_, weights_ = quadrature_rule(H, N, T, mode='observation')
+        if len(nodes_) < N:
+            nodes = np.zeros(N)
+            nodes[:len(nodes)] = nodes_
+            for i in range(len(nodes_), N):
+                nodes[i] = nodes_[-1] * 10 ** (i - len(nodes_) + 1)
+        else:
+            nodes = nodes_[:N]
+
+        return optimize_error_given_rule(nodes)
+
+    if isinstance(T, np.ndarray):
+        nodes, weights = quadrature_rule(H, 1, (np.amin(T) + np.amax(T)) / 2, mode='optimized')
+    else:
+        nodes, weights = quadrature_rule(H, 1, T, mode='observation')
+    err, nodes, weights = optimize_error_given_rule(nodes)
+
+    while len(nodes) < N:
+        if bound is None:
+            nodes = np.append(nodes, 10 * nodes[-1])
+        else:
+            if len(nodes) == 1:
+                if bound > 10 * nodes[0]:
+                    nodes = np.array([nodes[0], 10 * nodes[0]])
+                elif bound >= 2 * nodes[0]:
+                    nodes = np.array([nodes[0], bound])
+                else:
+                    nodes = np.array([nodes[0] / 3, nodes[0]])
+            else:
+                if bound > 10 * nodes[-1]:
+                    nodes = np.append(nodes, 10 * nodes[-1])
+                elif bound > 2 * nodes[-1] or bound / nodes[-1] > nodes[-1] / nodes[-2]:
+                    nodes = np.append(nodes, bound)
+                else:
+                    nodes = np.append(nodes, np.sqrt(nodes[-1] * nodes[-2]))
+                    nodes = np.sort(nodes)
+        err, nodes, weights = optimize_error_given_rule(nodes)
+
+    return err, nodes, weights
+
+
 def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
@@ -344,7 +505,7 @@ def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
     :param tol: Error tolerance
     :param bound: Upper bound on the nodes. If no upper bound is desired, use None
     :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
-    :return: The minimal error together with the associated nodes and weights.
+    :return: The minimal relative error together with the associated nodes and weights.
     """
     if bound is None:
         bound = 1e+100

@@ -1,6 +1,7 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import special
 import ComputationalFinance as cf
 import Data
 import rBergomi
@@ -8,7 +9,7 @@ import rBergomiMarkov
 import rHeston
 import rHestonMarkov
 import RoughKernel as rk
-import rHestonImplicitEuler as ie
+import rHestonMarkovSamplePaths as rHestonSP
 import rHestonSplitKernel as sk
 from numpy import nan
 from os.path import exists
@@ -21,6 +22,16 @@ k_vec = np.linspace(-1.5, 0.75, 451)[200:-70]
 S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05
 # T = np.linspace(0.04, 1, 25)
 T = 1
+
+
+rk.error_optimal_weights(H=0.1, T=1., nodes=np.array([4., 10.]))
+tic = time.perf_counter()
+print(rk.optimize_error_optimal_weights(H=0.1, N=6, T=1., iterative=True, method='error'), time.perf_counter() - tic)
+tic = time.perf_counter()
+print(rk.optimize_error_optimal_weights(H=0.1, N=6, T=1., iterative=True, method='gradient'), time.perf_counter() - tic)
+tic = time.perf_counter()
+print(rk.optimize_error_optimal_weights(H=0.1, N=6, T=1., iterative=True, method='hessian'), time.perf_counter() - tic)
+time.sleep(36000)
 
 
 '''
@@ -38,13 +49,13 @@ vol_behaviour = 'hyperplane reset'
 mode = 'european'
 N = 2
 
-'''
+
 final_S = np.empty(1000000)
 
 truth = Data.true_iv_surface_eur_call[-1, 200:-70]
 markov_truth = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode=mode, rel_tol=rel_tol)
 
-for i in range(14):
+for i in range(1):
     N_time = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072])[i]
     with open(f'rHeston samples {N} dim {mode} {vol_behaviour} {N_time} time steps.npy', 'rb') as f:
         final_S = np.load(f)
@@ -172,20 +183,20 @@ for N in np.array([2, 1, 6, 4, 3, 5]):
                                 WB_[:, :, 1::2] = WB / 2 - incr
                                 WB = WB_
 
-                            final_S[i*100000 + k*n_samples:i*100000 + (k+1)*n_samples] = ie.sample_values(H=H, lambda_=lambda_,
-                                                                                                          rho=rho, nu=nu,
-                                                                                                          theta=theta, V_0=V_0,
-                                                                                                          T=T, N=N, S=S,
-                                                                                                          N_time=N_time, WB=WB,
-                                                                                                          m=n_samples, mode=mode,
-                                                                                                          vol_behaviour=vol_behaviour,
-                                                                                                          nodes=nodes,
-                                                                                                          weights=weights)
+                            final_S[i*100000 + k*n_samples:i*100000 + (k+1)*n_samples] = rHestonSP.sample_values(H=H, lambda_=lambda_,
+                                                                                                                 rho=rho, nu=nu,
+                                                                                                                 theta=theta, V_0=V_0,
+                                                                                                                 T=T, N=N, S_0=S,
+                                                                                                                 N_time=N_time, WB=WB,
+                                                                                                                 m=n_samples, mode=mode,
+                                                                                                                 vol_behaviour=vol_behaviour,
+                                                                                                                 nodes=nodes,
+                                                                                                                 weights=weights)
 
                     with open(filename, 'wb') as f:
                         np.save(f, final_S)
 time.sleep(360000)
-'''
+
 
 with open(f'dW0.npy', 'rb') as f:
     dW = np.load(f)
@@ -203,7 +214,7 @@ WB_1 = WB_1 / 32
 WB = WB_1[:, :, ::2] + WB_1[:, :, 1::2]
 
 S_1, V_1, _ = nv.sample_func(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB, m=1, mode=mode, sample_paths=True)
-S_2, V_2, _ = ie.sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB[:, :1, :], mode=mode, vol_behaviour='ninomiya victoir', sample_paths=True)
+S_2, V_2, _ = rHestonSP.sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=2, S_0=S, N_time=1048576, WB=WB[:, :1, :], mode=mode, vol_behaviour='ninomiya victoir', sample_paths=True)
 
 plt.plot(np.linspace(0, 1, 1048577), S_1[0, :], label='stock price 2097152 time steps')
 plt.plot(np.linspace(0, 1, 1048577), V_1[0, :], label='volatility 2097152 time steps')
@@ -252,24 +263,24 @@ lowers = np.empty((3, 6, 181))
 uppers = np.empty((3, 6, 181))
 
 for N in np.array([2, 3, 4, 5, 6]):
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
-                      m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
+    v, l, u = rHestonSP.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
+                             m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
     vols[0, N - 1, :] = v
     lowers[0, N - 1, :] = l
     uppers[0, N - 1, :] = u
     print(N, 'observation', np.amax(np.abs(v-truth)/truth))
     plt.plot(k_vec, v, '-', color='red', label='Paper')
     plt.plot(k_vec, rHestonMarkov.iv_eur_call(S=S, K=np.exp(k_vec), H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode='observation', rel_tol=rel_tol), '--', color='red')
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
-                      m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
+    v, l, u = rHestonSP.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
+                             m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
     vols[1, N - 1, :] = v
     lowers[1, N - 1, :] = l
     uppers[1, N - 1, :] = u
     print(N, 'optimized', np.amax(np.abs(v-truth)/truth))
     plt.plot(k_vec, v, '-', color='green', label='Kernel')
     plt.plot(k_vec, rHestonMarkov.iv_eur_call(S=S, K=np.exp(k_vec), H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode='optimized', rel_tol=rel_tol), '--', color='green')
-    v, l, u = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
-                      m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
+    v, l, u = rHestonSP.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=N, S_0=S, T=T,
+                             m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
     vols[2, N - 1, :] = v
     lowers[2, N - 1, :] = l
     uppers[2, N - 1, :] = u
@@ -290,8 +301,8 @@ time.sleep(360000)
 
 # vol, lower, upper = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6, S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='observation', vol_behaviour=vol_behaviour)
 # vol_2, lower_2, upper_2 = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6, S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='optimized', vol_behaviour=vol_behaviour)
-vol_3_2, lower_3, upper_3 = ie.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6,
-                                    S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
+vol_3_2, lower_3, upper_3 = rHestonSP.call(K=np.exp(k_vec), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, H=H, N=6,
+                                           S_0=1., T=1, m=m, N_time=2048, WB=WB, mode='european', vol_behaviour=vol_behaviour)
 
 # print((vol, lower, upper))
 # print((vol_2, lower_2, upper_2))
@@ -1245,8 +1256,8 @@ for i in range(1024):
     WB_2[:, :, i] = WB_1[:, :, 2 * i] + WB_1[:, :, 2 * i + 1]
 for vb in methods:
     for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]):
-        S_1, V_1, _ = ie.sample_paths(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, WB=WB_1,
-                                      vol_behaviour=vb, mode=mode)
+        S_1, V_1, _ = rHestonSP.sample_paths(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, WB=WB_1,
+                                             vol_behaviour=vb, mode=mode)
         # S_2, V_2, _ = ie.get_sample_paths(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, WB=WB_2,
         # vol_behaviour=vb, mode=mode)
         plt.plot(np.linspace(0, 1, 2049), S_1[0, :], color=c_[N - 1], label=f'N={N}')
@@ -1306,7 +1317,7 @@ for vb in methods:
                 WB[0, :, j] = np.sum(dW[:, int(j * factor):int((j + 1) * factor)], axis=-1)
                 WB[1, :, j] = np.sum(dB[:, int(j * factor):int((j + 1) * factor)], axis=-1)
             print(vb, N_t, i)
-            samples[i * 100000:(i + 1) * 100000] = ie.sample_values(H=0.49, N=1, N_time=N_t, WB=WB, vol_behaviour=vb)
+            samples[i * 100000:(i + 1) * 100000] = rHestonSP.sample_values(H=0.49, N=1, N_time=N_t, WB=WB, vol_behaviour=vb)
         np.save(f'samples of {vb} mode with N_time={N_t} and H=0.49 and N=1', samples)
 time.sleep(3600000)
 for vb in methods:
@@ -1340,13 +1351,13 @@ for vb in methods:
                 WB[0, :, j] = np.sum(dW[:, int(j * factor):int((j + 1) * factor)], axis=-1)
                 WB[1, :, j] = np.sum(dB[:, int(j * factor):int((j + 1) * factor)], axis=-1)
             print(vb, N_t, i)
-            samples[i * 100000:(i + 1) * 100000] = ie.sample_values(N_time=N_t, WB=WB, vol_behaviour=vb)
+            samples[i * 100000:(i + 1) * 100000] = rHestonSP.sample_values(N_time=N_t, WB=WB, vol_behaviour=vb)
         np.save(f'samples of {vb} mode with N_time={N_t}', samples)
 
 time.sleep(3600000)
 
-S, V, _ = ie.sample_paths(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6,
-                          vol_behaviour='split kernel')
+S, V, _ = rHestonSP.sample_paths(H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., N=6,
+                                 vol_behaviour='split kernel')
 plt.plot(np.linspace(0, 1, 1001), S, label='stock price')
 plt.plot(np.linspace(0, 1, 1001), V, label='volatility')
 plt.xlabel('t')
@@ -1358,7 +1369,7 @@ time.sleep(360000)
 K = np.exp(Data.k_rHeston)
 N = 6
 tic = time.perf_counter()
-vol, lower, upper = ie.call(K, N=N, N_time=1000, m=200000, vol_behaviour='multiple time scales')
+vol, lower, upper = rHestonSP.call(K, N=N, N_time=1000, m=200000, vol_behaviour='multiple time scales')
 toc = time.perf_counter()
 print(toc - tic)
 print(vol)
@@ -1373,7 +1384,7 @@ for N_time in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]:
     K = np.exp(-1.1 + 0.01 * np.arange(171))
     N = 12
     tic = time.perf_counter()
-    vol, lower, upper = ie.call(K, N=N, N_time=N_time, m=1000000, bounce_vol=False)
+    vol, lower, upper = rHestonSP.call(K, N=N, N_time=N_time, m=1000000, bounce_vol=False)
     toc = time.perf_counter()
     np.savetxt(f'rHestonIE N={N}, N_time={N_time}, vol.txt', vol, delimiter=',', header=f'time: {toc - tic}')
     np.savetxt(f'rHestonIE N={N}, N_time={N_time}, lower.txt', lower, delimiter=',', header=f'time: {toc - tic}')
