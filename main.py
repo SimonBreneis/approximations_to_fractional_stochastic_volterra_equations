@@ -18,10 +18,87 @@ from os.path import exists
 c = ['r', 'C1', 'y', 'g', 'b', 'purple']
 c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
 
-k_vec = np.linspace(-1.5, 0.75, 451)[200:-70]
-S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05
+# k_vec = np.linspace(-1.5, 0.75, 451)# [200:-70]
+k_vec = np.linspace(-0.5, 0.1, 181)
+# S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05
+S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.07, 0.6, -0.8, 0.5, 0.01, 0.01, 1e-05
 # T = np.linspace(0.04, 1, 25)
-T = 1
+# T = 1
+T = 0.04
+'''
+true_smile = rHeston.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol)
+print((true_smile,))
+
+# true_smile = Data.true_iv_surface_eur_call[-1, :]
+for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]):
+    print('\nobservation', N)
+    tic = time.perf_counter()
+    smile = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, rel_tol=rel_tol, T=T, N=N, mode='observation')
+    print(time.perf_counter() - tic)
+    print(np.amax(np.abs(smile-true_smile)/true_smile))
+
+
+    print('\noptimized', N)
+    tic = time.perf_counter()
+    smile = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, rel_tol=rel_tol, T=T, N=N, mode='optimized')
+    print(time.perf_counter() - tic)
+    print(np.amax(np.abs(smile-true_smile)/true_smile))
+
+
+    print('\neuropean', N)
+    tic = time.perf_counter()
+    smile = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, rel_tol=rel_tol, T=T, N=N, mode='european')
+    print(time.perf_counter() - tic)
+    print(np.amax(np.abs(smile-true_smile)/true_smile))
+
+    print('\neuro new', N)
+    tic = time.perf_counter()
+    smile = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, rel_tol=rel_tol, T=T, N=N, mode='euro new')
+    print(time.perf_counter() - tic)
+    print(np.amax(np.abs(smile-true_smile)/true_smile))
+
+# rk.optimize_error(H, 512, T, iterative=True)
+# rk.optimize_error_optimal_weights(H, 512, T, iterative=True, method='gradient')
+# rk.optimize_error_optimal_weights(H, 512, T, iterative=True, method='error')
+rk.optimize_error_optimal_weights(H, 512, T, iterative=True, method='hessian')
+time.sleep(360000)
+'''
+H, T = 0.1, 1.
+for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024]):
+    '''
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule(H, N, T, 'observation')
+    duration = time.perf_counter() - tic
+    error = np.sqrt(rk.error(H, nodes, weights, T)) / rk.kernel_norm(H, T)
+    largest_node = np.amax(nodes)
+    print('observation', N, largest_node, error, duration)
+
+    tic = time.perf_counter()
+    error, nodes, _ = rk.optimize_error(H, N, T)
+    duration = time.perf_counter() - tic
+    largest_node = np.amax(nodes)
+    print('optimized', N, largest_node, error, duration)
+    '''
+    '''
+    tic = time.perf_counter()
+    error, nodes, _ = rk.optimize_error_optimal_weights(H, N, T, method='error')
+    duration = time.perf_counter() - tic
+    largest_node = np.amax(nodes)
+    print('error', N, largest_node, error, duration)
+    '''
+    tic = time.perf_counter()
+    error, nodes, _ = rk.optimize_error_optimal_weights(H, N, T, method='gradient')
+    duration = time.perf_counter() - tic
+    largest_node = np.amax(nodes)
+    print('gradient', N, largest_node, error, duration)
+
+    tic = time.perf_counter()
+    error, nodes, _ = rk.optimize_error_optimal_weights(H, N, T, method='hessian')
+    duration = time.perf_counter() - tic
+    largest_node = np.amax(nodes)
+    print('hessian', N, largest_node, error, duration)
+
+time.sleep(360000)
 
 
 rk.error_optimal_weights(H=0.1, T=1., nodes=np.array([4., 10.]))

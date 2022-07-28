@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 import mpmath as mp
 from scipy.optimize import minimize
@@ -348,6 +346,17 @@ def error_optimal_weights(H, T, nodes, output='error'):
     :param T: Final time, may also be a vector
     :return: An error estimate
     """
+    '''nodes = np.fmax(nodes, 1e-04)
+    is_unstable = False
+    if len(nodes) > 1:
+        sorted_nodes = np.sort(nodes)
+        if np.amin(sorted_nodes[1:] / sorted_nodes[:-1]) < 1.001:
+            is_unstable = True
+
+    def solve_lin_eqn(A_, b_):
+        if is_unstable:
+            return np.linalg.lstsq(A_, b_, rcond=None)[0]
+        return np.linalg.solve(A, b)'''
 
     def invert_permutation(p):
         s = np.empty_like(p)
@@ -357,9 +366,9 @@ def error_optimal_weights(H, T, nodes, output='error'):
     perm = np.argsort(nodes)
     nodes = nodes[perm]
     nodes[0] = np.fmax(1e-04, nodes[0])
-    for i in range(len(nodes)-1):
-        if 1.001 * nodes[i] > nodes[i+1]:
-            nodes[i+1] = nodes[i] * 1.001
+    for i in range(len(nodes) - 1):
+        if 1.001 * nodes[i] > nodes[i + 1]:
+            nodes[i + 1] = nodes[i] * 1.001
     nodes = nodes[invert_permutation(perm)]
 
     node_matrix = nodes[:, None] + nodes[None, :]
@@ -398,7 +407,7 @@ def error_optimal_weights(H, T, nodes, output='error'):
     return err, grad, hess, opt_weights
 
 
-def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, iterative=False, method='hessian'):
+def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient'):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Always uses the best weights and only
     numerically optimizes over the nodes.
@@ -407,7 +416,6 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, iterative=Fal
     :param T: Final time, may be a numpy array (only if grad is False and fast is True)
     :param tol: Error tolerance
     :param bound: Upper bound on the nodes. If no upper bound is desired, use None
-    :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
     :param method: If error, uses only the error estimates for optimizing over the nodes, and uses the optimizer
         L-BFGS-B. If gradient, uses also the gradient of the error with respect to the nodes, and uses the optimizer
         L-BFGS-B. If hessian, uses also the gradient and the Hessian of the error with respect to the nodes, and uses
@@ -416,83 +424,51 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, iterative=Fal
     """
     if bound is None:
         bound = 1e+100
-
-    def optimize_error_given_rule(nodes_1):
-        N_ = len(nodes_1)
-        nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound / 2)
-        bounds = ((np.log(1/(10*N_*T)), np.log(bound)),) * N_
-
-        if method == 'error' or method == 'err':
-            def func(x):
-                return error_optimal_weights(H, T, np.exp(x), output='error')[0]
-
-            res = minimize(func, np.log(nodes_1), tol=tol ** 2, bounds=bounds)
-
-        elif method == 'gradient' or method == 'grad':
-            def func(x):
-                err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
-                return err_, np.exp(x) * grad
-
-            res = minimize(func, np.log(nodes_1), tol=tol ** 2, bounds=bounds, jac=True)
-
-        else:
-            def func(x):
-                err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
-                return err_, np.exp(x) * grad
-
-            def hess(x):
-                _, grad, hessian, _ = error_optimal_weights(H, T, np.exp(x), output='hessian')
-                return hessian * np.exp(x[None, :] + x[:, None]) + np.diag(grad * np.exp(x))
-
-            res = minimize(func, np.log(nodes_1), tol=tol ** 2, bounds=bounds, jac=True, hess=hess,
-                           method='trust-constr')
-
-        nodes_1 = np.sort(np.exp(res.x))
-        return np.sqrt(res.fun) / kernel_norm(H, T), nodes_1, error_optimal_weights(H, T, nodes_1, output='error')[1]
-
-    if not iterative:
+    if np.log(bound) < 10 * np.sqrt(H * N):  # roughly the size of the largest node
+        nodes = np.exp(np.linspace(0, np.log(np.fmin(bound, 5.**(np.fmin(140, N-1)))), N))
+    else:
         if isinstance(T, np.ndarray):
-            nodes_, weights_ = quadrature_rule(H, N, (np.amin(T) + np.amax(T))/2, mode='optimized')
+            nodes_, _ = quadrature_rule(H, N, (np.amin(T) + np.amax(T)) / 2, mode='optimized')
         else:
-            nodes_, weights_ = quadrature_rule(H, N, T, mode='observation')
+            nodes_, _ = quadrature_rule(H, N, T, mode='observation')
         if len(nodes_) < N:
             nodes = np.zeros(N)
-            nodes[:len(nodes)] = nodes_
+            nodes[:len(nodes_)] = nodes_
             for i in range(len(nodes_), N):
                 nodes[i] = nodes_[-1] * 10 ** (i - len(nodes_) + 1)
         else:
             nodes = nodes_[:N]
 
-        return optimize_error_given_rule(nodes)
+    nodes = np.fmin(np.fmax(nodes, 0.01), bound/2)
+    bounds = ((np.log(1/(10*N*T)), np.log(bound)),) * N
 
-    if isinstance(T, np.ndarray):
-        nodes, weights = quadrature_rule(H, 1, (np.amin(T) + np.amax(T)) / 2, mode='optimized')
+    if method == 'error' or method == 'err':
+        def func(x):
+            return error_optimal_weights(H, T, np.exp(x), output='error')[0]
+
+        res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds)
+
+    elif method == 'gradient' or method == 'grad':
+        def func(x):
+            err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
+            return err_, np.exp(x) * grad
+
+        res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True)
+
     else:
-        nodes, weights = quadrature_rule(H, 1, T, mode='observation')
-    err, nodes, weights = optimize_error_given_rule(nodes)
+        def func(x):
+            err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
+            return err_, np.exp(x) * grad
 
-    while len(nodes) < N:
-        if bound is None:
-            nodes = np.append(nodes, 10 * nodes[-1])
-        else:
-            if len(nodes) == 1:
-                if bound > 10 * nodes[0]:
-                    nodes = np.array([nodes[0], 10 * nodes[0]])
-                elif bound >= 2 * nodes[0]:
-                    nodes = np.array([nodes[0], bound])
-                else:
-                    nodes = np.array([nodes[0] / 3, nodes[0]])
-            else:
-                if bound > 10 * nodes[-1]:
-                    nodes = np.append(nodes, 10 * nodes[-1])
-                elif bound > 2 * nodes[-1] or bound / nodes[-1] > nodes[-1] / nodes[-2]:
-                    nodes = np.append(nodes, bound)
-                else:
-                    nodes = np.append(nodes, np.sqrt(nodes[-1] * nodes[-2]))
-                    nodes = np.sort(nodes)
-        err, nodes, weights = optimize_error_given_rule(nodes)
+        def hess(x):
+            _, grad, hessian, _ = error_optimal_weights(H, T, np.exp(x), output='hessian')
+            return hessian * np.exp(x[None, :] + x[:, None]) + np.diag(grad * np.exp(x))
 
-    return err, nodes, weights
+        res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True, hess=hess,
+                       method='trust-constr')
+
+    nodes = np.sort(np.exp(res.x))
+    return np.sqrt(res.fun) / kernel_norm(H, T), nodes, error_optimal_weights(H, T, nodes, output='error')[1]
 
 
 def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
@@ -540,8 +516,8 @@ def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
         if len(nodes_) < N:
             nodes = np.zeros(N)
             weights = np.zeros(N)
-            nodes[:len(nodes)] = nodes_
-            weights[:len(weights)] = weights_
+            nodes[:len(nodes_)] = nodes_
+            weights[:len(weights_)] = weights_
             for i in range(len(nodes_), N):
                 nodes[i] = nodes_[-1] * 10 ** (i - len(nodes_) + 1)
                 weights[i] = weights_[-1]
@@ -603,7 +579,7 @@ def optimized_rule(H, N, T):
     return nodes, weights
 
 
-def european_rule(H, N, T):
+def european_rule(H, N, T, optimal_weights=False):
     """
     Returns a quadrature rule that is optimized for pricing European options under the rough Heston model.
     :param H: Hurst parameter
@@ -612,54 +588,56 @@ def european_rule(H, N, T):
     :return: Nodes and weights
     """
 
+    def optimizing_func(N_, tol_, bound_):
+        if optimal_weights:
+            return optimize_error_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient')
+        return optimize_error(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
+
     if isinstance(T, np.ndarray):
         if N <= 5:
             T = (6-N)/6 * np.amin(T) + N/6 * np.amax(T)
         else:
             T = np.amax(T)
 
-    nodes, weights = optimized_rule(H=H, N=1, T=T)
+    _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
     if N == 1:
         return nodes, weights
 
-    L_step = 1.1
+    L_step = 1.05
     bound = np.amax(nodes) / L_step
-    L_0 = bound
-    kernel_tol = 0.997
+    kernel_tol = 0.999
     current_N = 1
 
-    while current_N <= N:
-        L_0 = bound
+    while current_N < N:
         increase_N = 0
 
         while increase_N < 3:
             bound = bound * L_step
-            error_1, _, _ = optimize_error(H=H, N=current_N, T=T, tol=1e-06/current_N, bound=bound, iterative=True)
-            error_2, _, _ = optimize_error(H=H, N=current_N + 1, T=T, tol=1e-06/current_N, bound=bound, iterative=True)
-            if error_2 / error_1 < 1 - (1 - kernel_tol)/current_N:
+            error_1, _, _ = optimizing_func(N_=current_N, tol_=1e-07/current_N, bound_=bound)
+            error_2, nodes, weights = optimizing_func(N_=current_N+1, tol_=1e-07/current_N, bound_=bound)
+            nodes = np.sort(nodes)
+            if np.amin(nodes[1:] / nodes[:-1]) < 2:
+                increase_N = 0
+            elif error_2 / error_1 < 1 - (1 - kernel_tol)/current_N:
                 increase_N += 1
             else:
                 increase_N = 0
 
         current_N = current_N + 1
-    L_1 = bound
 
+    if N >= 4:
+        return nodes, weights
     if N == 2:
-        L_4 = L_0 * (L_1 / L_0) ** 0.2
-        L_5 = L_0 * (L_1 / L_0) ** 0.3
-        L_6 = L_0 * (L_1 / L_0) ** 0.4
-    elif N == 3:
-        L_4 = L_0 * (L_1 / L_0) ** 0.05
-        L_5 = L_0 * (L_1 / L_0) ** 0.1
-        L_6 = L_0 * (L_1 / L_0) ** 0.15
-    else:
-        L_4 = L_0
-        L_5 = L_0 * (L_1 / L_0) ** 0.02
-        L_6 = L_0 * (L_1 / L_0) ** 0.04
-    error_4, nodes_4, weights_4 = optimize_error(H=H, N=N, T=T, bound=L_4, iterative=True)
-    error_5, nodes_5, weights_5 = optimize_error(H=H, N=N, T=T, bound=L_5, iterative=True)
-    error_6, nodes_6, weights_6 = optimize_error(H=H, N=N, T=T, bound=L_6, iterative=True)
-
+        L_4 = bound * 2
+        L_5 = bound * 3
+        L_6 = bound * 4
+    else:  # N == 3
+        L_4 = bound
+        L_5 = bound * 1.25
+        L_6 = bound * 1.5
+    error_4, nodes_4, weights_4 = optimizing_func(N_=N, tol_=1e-08, bound_=L_4)
+    error_5, nodes_5, weights_5 = optimizing_func(N_=N, tol_=1e-08, bound_=L_5)
+    error_6, nodes_6, weights_6 = optimizing_func(N_=N, tol_=1e-08, bound_=L_6)
     if error_4 <= error_5 and error_4 <= error_6:
         return nodes_4, weights_4
     if error_5 <= error_6:
