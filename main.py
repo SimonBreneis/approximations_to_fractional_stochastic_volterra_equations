@@ -18,13 +18,67 @@ from os.path import exists
 c = ['r', 'C1', 'y', 'g', 'b', 'purple']
 c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
 
-# k_vec = np.linspace(-1.5, 0.75, 451)# [200:-70]
-k_vec = np.linspace(-0.5, 0.1, 181)
-# S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05
-S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.07, 0.6, -0.8, 0.5, 0.01, 0.01, 1e-05
+k_vec = np.linspace(-1.5, 0.75, 451)[200:-70]
+# k_vec = np.linspace(-0.5, 0.1, 181)
+S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05
+# S, K, H, lambda_, rho, nu, theta, V_0, rel_tol = 1., np.exp(k_vec), 0.07, 0.6, -0.8, 0.5, 0.01, 0.01, 1e-05
 # T = np.linspace(0.04, 1, 25)
-# T = 1
-T = 0.04
+T = 1
+# T = 0.04
+
+true_surface = Data.true_iv_surface_eur_call
+
+nodes, weights = rk.quadrature_rule(H=H, N=10, T=1., mode='optimized')
+print(nodes)
+print(np.sqrt(rk.error(H=H, nodes=nodes, weights=weights, T=T)) / rk.kernel_norm(H=H, T=1))
+print(rk.quadrature_rule(H=H, T=np.linspace(0.04, 1, 25), N=10, mode='optimized'))
+
+'''
+# print(rk.quadrature_rule(H=H, N=10, T=1., mode='european'))
+print(rk.quadrature_rule(H=H, N=10, T=1., mode='european', optimal_weights=True))
+
+time.sleep(360000)
+'''
+for N in np.array([1, 2, 3, 4, 5, 6, 7]):
+    pass
+    '''
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=0.52, mode='observation')
+    print(N, 'observation', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=0.52, mode='optimized')
+    print(N, 'optimized T=0.52', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='optimized')
+    print(N, 'optimized, T=T', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=0.52, mode='european')
+    print(N, 'european, T=0.52', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+    
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='european')
+    print(N, 'european T=T', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=0.52, mode='european', optimal_weights=True)
+    print(N, 'european, T=0.52 new', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+    
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='european', optimal_weights=True)
+    print(N, 'european, T=T new', np.amax(nodes))
+    approx_surface = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(np.amax(np.abs(true_surface - approx_surface) / true_surface))
+    '''
+
+# time.sleep(36000)
 '''
 true_smile = rHeston.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol)
 print((true_smile,))
@@ -63,9 +117,9 @@ for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]):
 rk.optimize_error_optimal_weights(H, 512, T, iterative=True, method='hessian')
 time.sleep(360000)
 '''
+'''
 H, T = 0.1, 1.
 for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024]):
-    '''
     tic = time.perf_counter()
     nodes, weights = rk.quadrature_rule(H, N, T, 'observation')
     duration = time.perf_counter() - tic
@@ -78,14 +132,13 @@ for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 102
     duration = time.perf_counter() - tic
     largest_node = np.amax(nodes)
     print('optimized', N, largest_node, error, duration)
-    '''
-    '''
+    
     tic = time.perf_counter()
     error, nodes, _ = rk.optimize_error_optimal_weights(H, N, T, method='error')
     duration = time.perf_counter() - tic
     largest_node = np.amax(nodes)
     print('error', N, largest_node, error, duration)
-    '''
+    
     tic = time.perf_counter()
     error, nodes, _ = rk.optimize_error_optimal_weights(H, N, T, method='gradient')
     duration = time.perf_counter() - tic
@@ -99,17 +152,7 @@ for N in np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 102
     print('hessian', N, largest_node, error, duration)
 
 time.sleep(360000)
-
-
-rk.error_optimal_weights(H=0.1, T=1., nodes=np.array([4., 10.]))
-tic = time.perf_counter()
-print(rk.optimize_error_optimal_weights(H=0.1, N=6, T=1., iterative=True, method='error'), time.perf_counter() - tic)
-tic = time.perf_counter()
-print(rk.optimize_error_optimal_weights(H=0.1, N=6, T=1., iterative=True, method='gradient'), time.perf_counter() - tic)
-tic = time.perf_counter()
-print(rk.optimize_error_optimal_weights(H=0.1, N=6, T=1., iterative=True, method='hessian'), time.perf_counter() - tic)
-time.sleep(36000)
-
+'''
 
 '''
 tic = time.perf_counter()
@@ -122,9 +165,10 @@ plt.plot(np.linspace(0, 1, 1000001), V_components[1, :])
 plt.show()
 '''
 
+'''
 vol_behaviour = 'hyperplane reset'
 mode = 'european'
-N = 2
+N = 1
 
 
 final_S = np.empty(1000000)
@@ -132,14 +176,14 @@ final_S = np.empty(1000000)
 truth = Data.true_iv_surface_eur_call[-1, 200:-70]
 markov_truth = rHestonMarkov.iv_eur_call(S=S, K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, mode=mode, rel_tol=rel_tol)
 
-for i in range(1):
+for i in range(18):
     N_time = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072])[i]
     with open(f'rHeston samples {N} dim {mode} {vol_behaviour} {N_time} time steps.npy', 'rb') as f:
         final_S = np.load(f)
 
     vol, lower, upper = cf.iv_eur_call_MC(S=S, K=K, T=T, samples=final_S)
     plt.plot(k_vec, vol, color=c_[i % 10], label=f'N_time = {N_time}')
-    if i == 13:
+    if i == 17:
         plt.plot(k_vec, lower, '--', color=c_[i % 10])
         plt.plot(k_vec, upper, '--', color=c_[i % 10])
     print(N_time, 'truth', np.amax(np.abs(truth - vol)/truth))
@@ -153,12 +197,13 @@ plt.xlabel('Log-moneyness')
 plt.ylabel('Implied volatility')
 plt.title(f'Rough Heston {N}-dimensional approximation with\nimplicit Euler and hyperplane reset')
 plt.show()
+'''
 
-
+final_S = np.empty(1000000)
 modes = ['european', 'optimized', 'observation']
-vol_behaviours = ['hyperplane reset'] #, 'sticky', 'hyperplane reflection', 'adaptive']
+vol_behaviours = ['hyperplane reset', 'ninomiya victoir']  # , 'sticky', 'hyperplane reflection', 'adaptive']
 
-for N in np.array([2, 1, 6, 4, 3, 5]):
+for N in np.array([1, 2, 6, 4, 3, 5]):
     for N_time in np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]):
         print(N_time)
         for vol_behaviour in vol_behaviours:
@@ -169,7 +214,7 @@ for N in np.array([2, 1, 6, 4, 3, 5]):
                 if exists(filename):
                     pass
                 else:
-                    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+                    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode, optimal_weights=True)
 
                     for i in range(10):
                         print(N_time, vol_behaviour, mode, i)
@@ -273,7 +318,7 @@ for N in np.array([2, 1, 6, 4, 3, 5]):
                     with open(filename, 'wb') as f:
                         np.save(f, final_S)
 time.sleep(360000)
-
+'''
 
 with open(f'dW0.npy', 'rb') as f:
     dW = np.load(f)
@@ -299,6 +344,7 @@ plt.plot(np.linspace(0, 1, 1048577), S_2[0, :], label='stock price 1048576 time 
 plt.plot(np.linspace(0, 1, 1048577), V_2[0, :], label='volatility 1048576 time steps')
 plt.legend(loc='best')
 plt.show()
+'''
 
 '''
 WB = np.empty((2, m, 256))
@@ -334,6 +380,7 @@ WB[1, :, 6144:] = dB[:m, :]
 WB = WB / 2
 '''
 
+'''
 truth = Data.true_iv_surface_eur_call[-1, 200:-70]
 vols = np.empty((3, 6, 181))
 lowers = np.empty((3, 6, 181))
@@ -1345,7 +1392,7 @@ for vb in methods:
     plt.xlabel('t')
     plt.title(f'Sample paths of {vb} implementation')
     plt.show()
-
+'''
 '''
 for vb in methods:
     samples = 10000
@@ -1373,6 +1420,8 @@ for vb in methods:
     V_avg_error, V_std_error = cf.MC(V_errors)
     print(f'The strong error for S is roughly {S_avg_error} +/- {S_std_error}.')
     print(f'The strong error for V is roughly {V_avg_error} +/- {V_std_error}.')
+'''
+
 '''
 N_time = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
 samples = np.empty(1000000)
@@ -1466,3 +1515,4 @@ for N_time in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]:
     np.savetxt(f'rHestonIE N={N}, N_time={N_time}, vol.txt', vol, delimiter=',', header=f'time: {toc - tic}')
     np.savetxt(f'rHestonIE N={N}, N_time={N_time}, lower.txt', lower, delimiter=',', header=f'time: {toc - tic}')
     np.savetxt(f'rHestonIE N={N}, N_time={N_time}, upper.txt', upper, delimiter=',', header=f'time: {toc - tic}')
+'''
