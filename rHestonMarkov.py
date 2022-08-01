@@ -85,13 +85,8 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", re
     :param weights: Can specify the weights directly
     return: The price of the call option
     """
-    if mode == 'euro new':
-        nodes, weights = rk.european_rule(H, N, T, optimal_weights=True)
-        print(nodes, weights)
-    elif nodes is None or weights is None:
+    if nodes is None or weights is None:
         nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    print(np.amax(nodes))
-    print(np.sqrt(rk.error(H, nodes, weights, T))/rk.kernel_norm(H, T))
     return backbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, lambda_, rho, nu, theta, V_0, T_,
                                                                                    N_, nodes, weights),
                                 S=S, K=K, T=T, rel_tol=rel_tol)

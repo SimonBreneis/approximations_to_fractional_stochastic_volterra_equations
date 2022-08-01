@@ -219,7 +219,7 @@ def Gaussian_error_and_zero_weight(H, m, n, a, b, T):
         b = - 2 * T ** (H + 0.5) / gamma(H + 1.5)
         a = T
         w_0 = -b / (2 * a)
-        return np.sqrt(np.fmax(float(a * w_0 * w_0 + b * w_0 + c), 0.)), float(w_0)
+        return np.sqrt(np.fmax(a * w_0 * w_0 + b * w_0 + c, 0.)), w_0
 
     nodes, weights = Gaussian_no_zero_node(H, m, n, mp.mpf(a), mp.mpf(b))
     nodes, weights = mp_to_np(nodes), mp_to_np(weights)
@@ -351,15 +351,63 @@ def error_optimal_weights(H, T, nodes, output='error'):
     nodes = nodes[invert_permutation(perm)]
 
     node_matrix = nodes[:, None] + nodes[None, :]
+    gamma_1 = gamma(H + 0.5)
+
+    if isinstance(T, np.ndarray):
+        nT = np.outer(T, nodes)
+        nmT = np.einsum('i,jk->ijk', T, node_matrix)
+        gamma_ints = gammainc(H + 0.5, nT)
+        exp_node_matrix = np.exp(-np.fmin(nmT, 300))
+        exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
+        exp_node_vec = np.exp(-np.fmin(nT, 300))
+        exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
+        A = (1 - exp_node_matrix) / node_matrix[None, :, :]
+        b = -2 * gamma_ints / nodes[None, :] ** (H + 0.5)
+        c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
+        v = np.linalg.solve(A, b)
+        err = c - 0.25 * np.sum(b * v, axis=1)
+        opt_weights = -0.5 * v
+        if output == 'error' or output == 'err':
+            return err, opt_weights
+
+        def mvp(A_, b_):
+            return np.sum(A_ * b_[:, None, :], axis=-1)
+
+        A_grad = (-1 + (1 + nmT) * exp_node_matrix[None, :, :]) / node_matrix[None, :, :] ** 2
+        b_grad = -2 * (nT ** (H + 0.5) * exp_node_vec[None, :] / gamma_1 - (H + 0.5) * gamma_ints) \
+            / nodes[None, :] ** (H + 1.5)
+        grad = 0.5 * v * mvp(A_grad, v) - 0.5 * b_grad * v
+        if output == 'gradient' or output == 'grad':
+            return err, grad, opt_weights
+
+        def diagonalize(x):
+            new_x = np.empty((x.shape[0], x.shape[1], x.shape[1]))
+            for i in range(x.shape[0]):
+                new_x[i, :, :] = np.diag(x[i, :])
+            return new_x
+
+        def trans(x):
+            return np.transpose(x, (0, 2, 1))
+
+        A_hess = 2 * (1 - (1 + nmT + nmT ** 2 / 2) * exp_node_matrix[None, :, :]) / node_matrix[None, :, :] ** 3
+        b_hess = -2 * (-(nT ** (H + 1.5) + (H + 1.5) * nT ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
+                    H + 1.5) * gamma_ints) / nodes[None, :] ** (H + 2.5)
+        U = np.linalg.solve(A, diagonalize(b_grad))
+        Y = diagonalize(mvp(A_grad, v)) + A_grad * v[:, None, :]
+        YTU = trans(Y) @ U
+        hess = 0.5 * (YTU - trans(np.linalg.solve(A, Y)) @ Y + diagonalize(v * mvp(A_hess, v))
+                      + v[:, None, :] * v[:, :, None] * A_hess - diagonalize(b_hess * v) - b_grad[:, :, None] * U
+                      + trans(YTU))
+        return err, grad, hess, opt_weights
+
     nT = nodes * T
     nmT = node_matrix * T
-    gamma_1 = gamma(H + 0.5)
-    gamma_ints = gammainc(H + 0.5, nodes * T)
+    gamma_ints = gammainc(H + 0.5, nT)
     exp_node_matrix = np.exp(-np.fmin(nmT, 300))
     exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
     exp_node_vec = np.zeros(len(nodes))
-    indices = nodes * T < 300
-    exp_node_vec[indices] = np.exp(- T * nodes[indices])
+    indices = nT < 300
+    exp_node_vec[indices] = np.exp(- nT[indices])
     A = (1 - exp_node_matrix) / node_matrix
     b = -2 * gamma_ints / nodes ** (H + 0.5)
     c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
@@ -377,7 +425,7 @@ def error_optimal_weights(H, T, nodes, output='error'):
 
     A_hess = 2 * (1 - (1 + nmT + nmT ** 2 / 2) * exp_node_matrix) / node_matrix ** 3
     b_hess = -2 * (-(nT ** (H + 1.5) + (H + 1.5) * nT ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
-                H + 1.5) * gamma_ints) / nodes ** (H + 2.5)
+            H + 1.5) * gamma_ints) / nodes ** (H + 2.5)
     U = np.linalg.solve(A, np.diag(b_grad))
     Y = np.diag(A_grad @ v) + A_grad * v[None, :]
     YTU = Y.T @ U
@@ -401,12 +449,15 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
         the optimizer trust-constr
     :return: The minimal relative error together with the associated nodes and weights.
     """
+    if isinstance(T, np.ndarray):
+        if N <= 7:
+            T = (8-N)/8 * np.amin(T) + N/8 * np.amax(T)
+        else:
+            T = np.amax(T)
+
     if bound is None:
         bound = 1e+100
-        if isinstance(T, np.ndarray):
-            nodes_, _ = quadrature_rule(H, N, (np.amin(T) + np.amax(T)) / 2, mode='optimized')
-        else:
-            nodes_, _ = quadrature_rule(H, N, T, mode='observation')
+        nodes_, _ = quadrature_rule(H, N, T, mode='observation')
         if len(nodes_) < N:
             nodes = np.zeros(N)
             nodes[:len(nodes_)] = nodes_
@@ -633,7 +684,7 @@ def european_rule(H, N, T, optimal_weights=False):
     return nodes_6, weights_6
 
 
-def quadrature_rule(H, N, T, mode="optimized", optimal_weights=False):
+def quadrature_rule(H, N, T, mode="optimized"):
     """
     Returns the nodes and weights of a quadrature rule for the fractional kernel with Hurst parameter H.
     :param H: Hurst parameter
@@ -641,12 +692,20 @@ def quadrature_rule(H, N, T, mode="optimized", optimal_weights=False):
     :param T: Final time
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
         parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If european, chooses a
-        rule that is especially suitable for pricing European options
-    :param optimal_weights: If True, uses the optimal weights for the kernel error
+        rule that is especially suitable for pricing European options. Appending old leads to using suboptimal weights
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
+    print(mode)
     if mode == "optimized":
-        return optimized_rule(H=H, N=N, T=T, optimal_weights=optimal_weights)
+        return optimized_rule(H=H, N=N, T=T, optimal_weights=True)
     if mode == "european":
-        return european_rule(H=H, N=N, T=T, optimal_weights=optimal_weights)
-    return Gaussian_rule(H=H, N=N, T=T, mode=mode, optimal_weights=optimal_weights)
+        return european_rule(H=H, N=N, T=T, optimal_weights=True)
+    if mode == "optimized old":
+        return optimized_rule(H=H, N=N, T=T, optimal_weights=False)
+    if mode == "european old":
+        return european_rule(H=H, N=N, T=T, optimal_weights=False)
+    if mode == "observation" or mode == "theorem":
+        return Gaussian_rule(H=H, N=N, T=T, mode=mode, optimal_weights=True)
+    if mode == "observation old" or mode == "paper":
+        return Gaussian_rule(H=H, N=N, T=T, mode="observation", optimal_weights=False)
+    return Gaussian_rule(H=H, N=N, T=T, mode="theorem", optimal_weights=False)
