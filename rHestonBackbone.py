@@ -60,8 +60,8 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
             L = L * 1.25
             N_Fourier = N_Fourier * 2
             N_Riccati = int(N_Riccati * 1.5)
-            print(error, error_Fourier, error_Riccati, L, N_Fourier, N_Riccati, duration,
-                  time.strftime("%H:%M:%S", time.localtime()))
+            # print(error, error_Fourier, error_Riccati, L, N_Fourier, N_Riccati, duration,
+            #       time.strftime("%H:%M:%S", time.localtime()))
             tic = time.perf_counter()
             with np.errstate(all='raise'):
                 try:
@@ -74,7 +74,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
                         return iv
             duration = time.perf_counter() - tic
             error = np.amax(np.abs(iv_approx - iv) / iv)
-            print(error)
+            # print(error)
 
         return iv
 
