@@ -243,6 +243,8 @@ def Gaussian_rule(H, N, T, mode='observation', optimal_weights=False):
     :param optimal_weights: If True, uses the optimal weights for the kernel error
     :return: The nodes and weights, ordered by the size of the nodes
     """
+    if isinstance(T, np.ndarray):
+        T = T[-1]
     if N == 1:
         w_0 = Gaussian_error_and_zero_weight(H, 0, 0, 0, 0, T)[1]
         return np.array([0]), np.array([w_0])
@@ -695,7 +697,6 @@ def quadrature_rule(H, N, T, mode="optimized"):
         rule that is especially suitable for pricing European options. Appending old leads to using suboptimal weights
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
-    print(mode)
     if mode == "optimized":
         return optimized_rule(H=H, N=N, T=T, optimal_weights=True)
     if mode == "european":
