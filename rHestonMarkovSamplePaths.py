@@ -152,8 +152,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
 
     else:  # Some implicit Euler scheme
         A = np.eye(N) + np.diag(nodes) * dt + lambda_ * weights[None, :] * dt
-        A_inv = np.linalg.inv(A)
-        A_inv_T = A_inv.T
+        A_inv_T = np.linalg.inv(A).T
 
         b_comp = theta * dt + (nodes * V_orig)[None, :] * dt
 
@@ -276,7 +275,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
 
         elif vol_behaviour == 'adaptive':
             max_iter = 5
-            A_list = []
+            A_list = [A_inv_T]
             for i in range(1, max_iter + 1):
                 A = np.diag(1 + nodes * (dt / 2 ** i)) + lambda_ * weights[None, :] * (dt / 2 ** i)
                 A_list.append(np.linalg.inv(A).T)
@@ -285,31 +284,32 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 n = len(V_comp_loc)
                 if n == 0:
                     return V_comp_loc
-                dW_mid = np.random.normal(dW_loc_ / 2, np.sqrt(dt / 2 ** (iteration + 1)), n)
+                dW_first = np.random.normal(dW_loc_ / 2, np.sqrt(dt / 2 ** (iteration + 1)), n)
 
                 b_ = b_comp / 2 ** iteration + V_comp_loc \
-                    + (nu * np.sqrt(np.fmax(V_comp_loc @ weights, 0)) * dW_mid)[:, None]
-                V_comp_loc_upd = b_ @ A_list[iteration - 1]
+                    + (nu * np.sqrt(np.fmax(V_comp_loc @ weights, 0)) * dW_first)[:, None]
+                V_comp_loc_upd = b_ @ A_list[iteration]
                 V_loc_upd = V_comp_loc_upd @ weights
                 if iteration >= max_iter:
                     # V_comp_loc_upd = V_comp_loc_upd + np.fmax(-V_loc_upd, 0)[:, None] * rescaled_weights[None, :]
                     pass
                 else:
                     crit_ind = V_loc_upd < 0
-                    V_comp_loc_upd[crit_ind] = nested_step(V_comp_loc[crit_ind], dW_mid[crit_ind], iteration + 1)
+                    V_comp_loc_upd[crit_ind, :] = nested_step(V_comp_loc[crit_ind, :], dW_first[crit_ind],
+                                                              iteration + 1)
 
-                dW_second = dW_loc_ - dW_mid
+                dW_second = dW_loc_ - dW_first
                 b_ = b_comp / 2 ** iteration + V_comp_loc_upd + (nu * np.sqrt(
                     np.fmax(V_comp_loc_upd @ weights, 0)) * dW_second)[:, None]
-                V_comp_loc_final = b_ @ A_list[iteration - 1]
+                V_comp_loc_final = b_ @ A_list[iteration]
                 V_loc_final = V_comp_loc_final @ weights
                 if iteration >= max_iter:
                     # V_comp_loc_final = V_comp_loc_final + np.fmax(-V_loc_final, 0)[:, None] * rescaled_weights[None, :]
                     pass
                 else:
                     crit_ind = V_loc_final < 0
-                    V_comp_loc_final[crit_ind] = nested_step(V_comp_loc_upd[crit_ind], dW_second[crit_ind],
-                                                             iteration + 1)
+                    V_comp_loc_final[crit_ind, :] = nested_step(V_comp_loc_upd[crit_ind, :], dW_second[crit_ind],
+                                                                iteration + 1)
                 return V_comp_loc_final
 
             def adaptive(S_, V_, S_BM_, V_comp_, dW_):
@@ -317,7 +317,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 S_ = S_euler_step(S_, sq_V_, S_BM_)
                 V_comp_2 = V_comp_euler_step(V_comp_, sq_V_, dW_)
                 critical_ind = V_comp_2 @ weights < 0
-                V_comp_2[critical_ind] = nested_step(V_comp_[critical_ind, :], dW_[critical_ind], 1)
+                V_comp_2[critical_ind, :] = nested_step(V_comp_[critical_ind, :], dW_[critical_ind], 1)
                 V_comp_ = V_comp_2
                 V_ = np.fmax(V_comp @ weights, 0)
                 return S_, V_comp_, V_
@@ -352,7 +352,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 A[j + 1:, :] = 0
                 A = A + np.eye(N)
                 A_invs.append(np.linalg.inv(A).T)
-            A_invs.append(A_inv)
+            A_invs.append(A_inv_T)
             A_inv = A_invs.copy()
 
             def bs(k, vol, dw):
@@ -404,8 +404,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                                                     adaptive=True, M=1000000)
 
                     A = np.eye(N) + np.diag(nodes) * dt + lambda_ * (1 + mu_a) * weights[None, :] * dt
-                    A_inv = np.linalg.inv(A)
-                    A_inv_T = A_inv.T
+                    A_inv_T = np.linalg.inv(A).T
             else:
                 N = np.sum(nodes < 2 / dt)
                 nodes = nodes[:N]

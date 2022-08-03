@@ -3,10 +3,11 @@ import RoughKernel as rk
 import rHestonBackbone as backbone
 
 
-def characteristic_function(z, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
+def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
     """
     Gives the characteristic function of the log-price in the Markovian approximation of the rough Heston model.
     :param z: Argument of the characteristic function (assumed to be a vector)
+    :param S: Initial stock price
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
@@ -58,7 +59,7 @@ def characteristic_function(z, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes
         psi = psi_x @ weights
         F_psi[:, i + 1] = F(psi)
 
-    return np.exp(np.trapz(F_psi * g, dx=dt))
+    return np.exp(complex(0, 1) * z * np.log(S) + np.trapz(F_psi * g, dx=dt))
 
 
 def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,
@@ -87,6 +88,6 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", re
     """
     if nodes is None or weights is None:
         nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    return backbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, lambda_, rho, nu, theta, V_0, T_,
-                                                                                   N_, nodes, weights),
+    return backbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S, lambda_, rho, nu, theta, V_0,
+                                                                                   T_, N_, nodes, weights),
                                 S=S, K=K, T=T, rel_tol=rel_tol)

@@ -264,8 +264,8 @@ def kernel_errors(H, T, Ns=None, modes=None):
             largest_nodes[j, i] = np.amax(nodes)
             kernel_errs[j, i] = np.amax(np.sqrt(rk.error(H=H, nodes=nodes, weights=weights, T=T, output='error'))
                                         / ker_norm)
-            print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, error={100*kernel_errs[j, i]:.4}%, '
-                  + f'time={duration[j, i]:.3}sec')
+            # print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, error={100*kernel_errs[j, i]:.4}%, '
+            #       + f'time={duration[j, i]:.3}sec')
     return largest_nodes, kernel_errs, duration
 
 
@@ -737,8 +737,8 @@ def compute_strong_discretization_errors(Ns=None, N_times=None, N_time_ref=13107
                     S_approx = np.load(filename)
                     errs = np.abs(S - S_approx)**2
                     errors[i, j, k, m], stds[i, j, k, m] = cf.MC(errs)
-    lower = np.sqrt(np.fmax(errors - stats, 0))
-    upper = np.sqrt(errors + stats)
+    lower = np.sqrt(np.fmax(errors - stds, 0))
+    upper = np.sqrt(errors + stds)
     errors = np.sqrt(errors)
 
     def node_line_plots(col_):
@@ -1025,3 +1025,13 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     return largest_nodes, true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, total_errors, \
         lower_total_errors, upper_total_errors, markov_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors
+
+
+Hs = np.linspace(0.01, 0.49, 49)
+Ts = np.exp(np.linspace(np.log(0.001), np.log(10), 101))
+Hs, Ts = np.meshgrid(Hs, Ts)
+Hs, Ts = Hs.flatten(), Ts.flatten()
+
+def nasty_parallelization(i):
+
+    return kernel_errors(H=Hs[i], T=Ts[i], Ns=np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), modes=None)
