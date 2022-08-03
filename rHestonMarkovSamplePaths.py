@@ -292,7 +292,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 V_comp_loc_upd = b_ @ A_list[iteration - 1]
                 V_loc_upd = V_comp_loc_upd @ weights
                 if iteration >= max_iter:
-                    V_comp_loc_upd = V_comp_loc_upd + np.fmax(-V_loc_upd, 0)[:, None] * rescaled_weights[None, :]
+                    # V_comp_loc_upd = V_comp_loc_upd + np.fmax(-V_loc_upd, 0)[:, None] * rescaled_weights[None, :]
+                    pass
                 else:
                     crit_ind = V_loc_upd < 0
                     V_comp_loc_upd[crit_ind] = nested_step(V_comp_loc[crit_ind], dW_mid[crit_ind], iteration + 1)
@@ -303,7 +304,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 V_comp_loc_final = b_ @ A_list[iteration - 1]
                 V_loc_final = V_comp_loc_final @ weights
                 if iteration >= max_iter:
-                    V_comp_loc_final = V_comp_loc_final + np.fmax(-V_loc_final, 0)[:, None] * rescaled_weights[None, :]
+                    # V_comp_loc_final = V_comp_loc_final + np.fmax(-V_loc_final, 0)[:, None] * rescaled_weights[None, :]
+                    pass
                 else:
                     crit_ind = V_loc_final < 0
                     V_comp_loc_final[crit_ind] = nested_step(V_comp_loc_upd[crit_ind], dW_second[crit_ind],
@@ -315,7 +317,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 S_ = S_euler_step(S_, sq_V_, S_BM_)
                 V_comp_2 = V_comp_euler_step(V_comp_, sq_V_, dW_)
                 critical_ind = V_comp_2 @ weights < 0
-                V_comp_2[critical_ind] = nested_step(V_comp_[critical_ind, :], dW_[critical_ind, i], 1)
+                V_comp_2[critical_ind] = nested_step(V_comp_[critical_ind, :], dW_[critical_ind], 1)
                 V_comp_ = V_comp_2
                 V_ = np.fmax(V_comp @ weights, 0)
                 return S_, V_comp_, V_

@@ -369,6 +369,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
         v = np.linalg.solve(A, b)
         err = c - 0.25 * np.sum(b * v, axis=1)
         opt_weights = -0.5 * v
+        if len(opt_weights.shape) > 1:
+            opt_weights = opt_weights[-1, ...]
         if output == 'error' or output == 'err':
             return err, opt_weights
 
@@ -384,8 +386,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
 
         def diagonalize(x):
             new_x = np.empty((x.shape[0], x.shape[1], x.shape[1]))
-            for i in range(x.shape[0]):
-                new_x[i, :, :] = np.diag(x[i, :])
+            for j in range(x.shape[0]):
+                new_x[j, :, :] = np.diag(x[j, :])
             return new_x
 
         def trans(x):
@@ -519,25 +521,26 @@ def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
 
     def optimize_error_given_rule(nodes_1, weights_1):
         N_ = len(nodes_1)
-        coeff = 1 / kernel_norm(H, T) ** 2
+        coefficient = 1 / kernel_norm(H, T) ** 2
 
         nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound / 2)
-        bounds = (((np.log(1/(10*N_*np.amin(T))), np.log(bound)),) * N_) + (((np.log(0.1), np.log(np.fmax(bound, 1e+60))),) * N_)
+        bounds = (((np.log(1/(10*N_*np.amin(T))), np.log(bound)),) * N_) \
+            + (((np.log(0.1), np.log(np.fmax(bound, 1e+60))),) * N_)
         rule = np.log(np.concatenate((nodes_1, weights_1)))
 
         if isinstance(T, np.ndarray):
 
             def func(x):
-                return np.amax(coeff * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T, output='error'))
+                return np.amax(coefficient * error(H, np.exp(x[:N_]), np.exp(x[N_:]), T, output='error'))
 
             res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
         else:
 
             def func(x):
-                err, grad = error(H, np.exp(x[:N_]), np.exp(x[N_:]), T, output='gradient')
-                err = np.amax(coeff * err)
-                grad = coeff * np.exp(x) * grad
-                return err, grad
+                err_, grad = error(H, np.exp(x[:N_]), np.exp(x[N_:]), T, output='gradient')
+                err_ = np.amax(coefficient * err_)
+                grad = coefficient * np.exp(x) * grad
+                return err_, grad
 
             res = minimize(func, rule, tol=tol ** 2, bounds=bounds, jac=True)
 
