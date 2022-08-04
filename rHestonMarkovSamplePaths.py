@@ -150,6 +150,91 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 log_S, V_comp = solve_drift_ODE(log_S, V_comp)
             S = np.exp(log_S)
 
+    elif vol_behaviour == 'correct ninomiya victoir':
+        weight_sum = np.sum(weights)
+        A = -(np.diag(nodes) + lambda_ * weights[None, :]) * dt / 2
+        A_inverse = np.linalg.inv(A)
+        b = (nodes * V_orig + theta - nu ** 2 * weight_sum / 4) * dt / 2
+        expA = scipy.linalg.expm(A)
+        expA_T = expA.T
+        temp_1 = A_inverse @ ((expA - np.eye(N)) @ b)
+        temp_2 = - dt / 2 * (
+                    np.dot(weights, A_inverse @ (A_inverse @ (expA @ b - b) - b)) / 2 + nu * rho * weight_sum / 4)
+        temp_3 = - dt / 2 * np.einsum('i,ij->j', weights, A_inverse @ (expA - np.eye(N))) / 2
+        temp_4 = nu * weight_sum / 2
+        temp_5 = temp_4 / 2
+
+        log_S = np.log(S_0)
+        if sample_paths:
+            log_S = np.empty((m, N_time + 1))
+            V_comp_1 = np.empty((m, N, N_time + 1))
+            V_comp_1[:, :, 0] = V_comp
+            V_comp = V_comp_1
+            log_S[0] = np.log(S_0)
+
+        def solve_drift_ODE(log_S_, V_comp_):
+            """
+            Solves the ODE corresponding to the drift in the Ninomiya-Victoir scheme for one (half) time step.
+            :param log_S_: Initial log-stock price
+            :param V_comp_: Initial variance vector
+            return: Final log-stock price, final variance vector, in the form log_S, V.
+            """
+            log_S_ = log_S_ + V_comp_ @ temp_3 + temp_2
+            V_comp_ = V_comp_ @ expA_T + temp_1[None, :]
+            V_comp_ = V_comp_ + np.fmax(-V_comp_ @ weights, 0)[:, None] * rescaled_weights[None, :]
+            return log_S_, V_comp_
+
+        def solve_dB_ODE(log_S_, V_comp_, dB_):
+            """
+            Solves the ODE corresponding to the stochastic integrals in the Ninomiya-Victoir scheme for one time step.
+            Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
+            in closed form.
+            :param log_S_: Initial log-stock price
+            :param V_comp_: Initial variance vector
+            :param dB_: Increment of the Brownian motion W driving the stock price process
+            return: Final log-stock price, final variance vector, in the form log_S, V.
+            """
+            total_vol = np.sqrt(np.fmax(V_comp_ @ weights, 0.))
+            return log_S_ + total_vol * np.sqrt(1-rho**2) * dB_, V_comp_
+
+        def solve_dW_ODE(log_S_, V_comp_, dW_):
+            """
+            Solves the ODE corresponding to the stochastic integrals in the Ninomiya-Victoir scheme for one time step.
+            Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
+            in closed form.
+            :param log_S_: Initial log-stock price
+            :param V_comp_: Initial variance vector
+            :param dW_: Increment of the Brownian motion W driving the volatility process
+            return: Final log-stock price, final variance vector, in the form log_S, V.
+            """
+            total_vol = np.sqrt(np.fmax(V_comp_ @ weights, 0.))
+            tau = (dW_ < 0) * np.fmin(1, - total_vol / (temp_4 * (dW_ + (dW_ == 0.) * 1))) + (dW_ >= 0)
+            temp = tau * (total_vol + temp_5 * dW_ * tau)
+            log_S_ = log_S_ + temp * rho * dW_
+            V_comp_ = V_comp_ + (nu * dW_ * temp)[:, None]
+            V_comp_ = V_comp_ + np.fmax(-V_comp_ @ weights, 0)[:, None] * rescaled_weights[None, :]
+            return log_S_, V_comp_
+
+        if sample_paths:
+            for i in range(N_time):
+                log_S[:, i + 1], V_comp[:, :, i + 1] = solve_drift_ODE(log_S[:, i], V_comp[:, :, i])
+                # log_S[:, i + 1], V_comp[:, :, i + 1] = solve_stochastic_ODE(log_S[:, i + 1], V_comp[:, :, i + 1],
+                #                                                             dW[:, i], S_BM[:, i])
+                log_S[:, i + 1], V_comp[:, :, i + 1] = solve_drift_ODE(log_S[:, i + 1], V_comp[:, :, i + 1])
+            V = np.fmax(np.einsum('ijk,j->ik', V_comp, weights), 0)
+            S = np.exp(log_S)
+        else:
+            for i in range(N_time):
+                log_S, V_comp = solve_drift_ODE(log_S, V_comp)
+                indices = np.random.binomial(1, 0.5, len(log_S)) == 0
+                log_S[indices], V_comp[indices, :] = solve_dB_ODE(log_S[indices], V_comp[indices, :], dB[indices, i])
+                log_S, V_comp = solve_dW_ODE(log_S, V_comp, dW[:, i])
+                log_S[~indices], V_comp[~indices, :] = solve_dB_ODE(log_S[~indices], V_comp[~indices, :],
+                                                                    dB[~indices, i])
+                # log_S, V_comp = solve_stochastic_ODE(log_S, V_comp, dW[:, i], S_BM[:, i])
+                log_S, V_comp = solve_drift_ODE(log_S, V_comp)
+            S = np.exp(log_S)
+
     else:  # Some implicit Euler scheme
         A = np.eye(N) + np.diag(nodes) * dt + lambda_ * weights[None, :] * dt
         A_inv_T = np.linalg.inv(A).T

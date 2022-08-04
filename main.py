@@ -38,10 +38,9 @@ if __name__ == '__main__':
 
 
 '''
-# compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['paper', 'optimized', 'european'], vol_behaviours=['adaptive'], recompute=True)
+compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['paper', 'optimized', 'european'], vol_behaviours=['correct ninomiya victoir'], recompute=True)
 # print('Finished')
 # time.sleep(360000)
-rHestonMarkov.iv_eur_call(S=1., K=np.array([1.]), H=0.1, lambda_=1.0, rho=-0.7, nu=0.8, theta=0.04, V_0=0.04, T=1.0, rel_tol=1e-5, N=2)
 print('Finished')
 time.sleep(360000)
 k = np.linspace(-1.5, 0.75, 451)[220:-70]
