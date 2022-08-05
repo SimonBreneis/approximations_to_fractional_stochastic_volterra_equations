@@ -4,7 +4,7 @@ from scipy.stats import norm
 
 def maturity_tensor_strike(S, K, T):
     """
-    Given a vector of strikes K for maturity T[-1], computes appropriate vectors of strikes for all other
+    Given a numpy array of strikes K for maturity T[-1], computes appropriate array of strikes for all other
     maturities in T for the computation of an implied volatility surface.
     :param S: Initial stock price
     :param K: Strikes for maturity T[-1]
@@ -170,7 +170,7 @@ def iv_eur_call_MC(S, K, T, samples):
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param S: The initial stock price
-    :return: Three vectors: The implied volatility smile, and a lower and an upper bound on the volatility smile,
+    :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
     price_estimate, price_stat = MC(payoff_call(S=samples, K=K))
@@ -187,7 +187,7 @@ def iv_eur_put_MC(S, K, T, samples):
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param S: The initial stock price
-    :return: Three vectors: The implied volatility smile, and a lower and an upper bound on the volatility smile,
+    :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
     price_estimate, price_stat = MC(payoff_put(S=samples, K=K))
@@ -201,9 +201,9 @@ def fourier_payoff_call_put(K, u):
     """
     Returns the value of the Fourier transform of the payoff of a put or call option (same Fourier transform).
     Is a complex number.
-    :param K: Strike price, may also be a vector
+    :param K: Strike price, may also be a numpy array
     :param u: Argument of the Fourier transform
-    :return: hat(f)(u) (or hat(f)(K, u) if K is a vector)
+    :return: hat(f)(u) (or hat(f)(K, u) if K is a numpy array)
     """
     u = complex(0, 1) * u
     if isinstance(K, np.ndarray):
@@ -216,7 +216,7 @@ def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
     Computes the option price of an European call option using Fourier inversion.
     :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
     :param R: The (dampening) shift that we use
-    :param K: The strike prices, assumed to be a vector
+    :param K: The strike prices, assumed to be a numpy array
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
@@ -237,7 +237,7 @@ def iv_eur_call_fourier(mgf, S, K, T, r=0., R=2., L=50., N=300):
     :param T: Maturity
     :param r: Drift
     :param R: The (dampening) shift that we use
-    :param K: The strike prices, assumed to be a vector
+    :param K: The strike prices, assumed to be a numpy array
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price

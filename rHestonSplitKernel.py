@@ -11,8 +11,8 @@ def solve_Riccati_high_mean_reversion(u, nodes, weights, lambda_, nu, dt):
     :param weights: The weights of the Markovian approximation
     :param lambda_:
     :param nu:
-    :param dt: Vector of step sizes taken in the numerical approximation
-    return: The solution psi as a vector of shape (2, len(dt)+1). First component is the real part of psi, second
+    :param dt: Numpy array of step sizes taken in the numerical approximation
+    return: The solution psi as a numpy array of shape (2, len(dt)+1). First component is the real part of psi, second
         component is the imaginary part of psi
     """
     N = len(nodes)

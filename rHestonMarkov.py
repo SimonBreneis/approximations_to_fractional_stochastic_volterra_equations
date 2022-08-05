@@ -6,7 +6,7 @@ import rHestonBackbone as backbone
 def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
     """
     Gives the characteristic function of the log-price in the Markovian approximation of the rough Heston model.
-    :param z: Argument of the characteristic function (assumed to be a vector)
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
     :param S: Initial stock price
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -69,7 +69,7 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", re
     as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
     Uses Fourier inversion.
     :param S: Initial stock price
-    :param K: Strike price, assumed to be a vector
+    :param K: Strike price, assumed to be a numpy array
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions

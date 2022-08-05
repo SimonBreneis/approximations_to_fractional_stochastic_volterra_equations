@@ -32,7 +32,7 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
             components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
             intervals
         - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
-            reset by adding the correct multiple of the weights vector
+            reset by adding the correct multiple of the weights array
         - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
             This ensures that V changes sign and does not stay 0
         - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued
@@ -108,8 +108,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
             """
             Solves the ODE corresponding to the drift in the Ninomiya-Victoir scheme for one (half) time step.
             :param log_S_: Initial log-stock price
-            :param V_comp_: Initial variance vector
-            return: Final log-stock price, final variance vector, in the form log_S, V.
+            :param V_comp_: Initial variance array
+            return: Final log-stock price, final variance array, in the form log_S, V.
             """
             log_S_ = log_S_ + V_comp_ @ temp_3 + temp_2
             V_comp_ = V_comp_ @ expA_T + temp_1[None, :]
@@ -122,10 +122,10 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
             Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
             in closed form.
             :param log_S_: Initial log-stock price
-            :param V_comp_: Initial variance vector
+            :param V_comp_: Initial variance array
             :param dW_: Increment of the Brownian motion W driving the volatility process
             :param S_BM_: Increment of the Brownian motion driving the stock price process
-            return: Final log-stock price, final variance vector, in the form log_S, V.
+            return: Final log-stock price, final variance array, in the form log_S, V.
             """
             total_vol = np.sqrt(np.fmax(V_comp_ @ weights, 0.))
             tau = (dW_ < 0) * np.fmin(1, - total_vol / (temp_4 * (dW_ + (dW_ == 0.) * 1))) + (dW_ >= 0)
@@ -176,8 +176,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
             """
             Solves the ODE corresponding to the drift in the Ninomiya-Victoir scheme for one (half) time step.
             :param log_S_: Initial log-stock price
-            :param V_comp_: Initial variance vector
-            return: Final log-stock price, final variance vector, in the form log_S, V.
+            :param V_comp_: Initial variance array
+            return: Final log-stock price, final variance array, in the form log_S, V.
             """
             log_S_ = log_S_ + V_comp_ @ temp_3 + temp_2
             V_comp_ = V_comp_ @ expA_T + temp_1[None, :]
@@ -186,26 +186,22 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
 
         def solve_dB_ODE(log_S_, V_comp_, dB_):
             """
-            Solves the ODE corresponding to the stochastic integrals in the Ninomiya-Victoir scheme for one time step.
-            Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
-            in closed form.
+            Solves the ODE corresponding to the dB integral in the Ninomiya-Victoir scheme for one time step.
             :param log_S_: Initial log-stock price
-            :param V_comp_: Initial variance vector
+            :param V_comp_: Initial variance array
             :param dB_: Increment of the Brownian motion W driving the stock price process
-            return: Final log-stock price, final variance vector, in the form log_S, V.
+            return: Final log-stock price, final variance array, in the form log_S, V.
             """
             total_vol = np.sqrt(np.fmax(V_comp_ @ weights, 0.))
             return log_S_ + total_vol * np.sqrt(1-rho**2) * dB_, V_comp_
 
         def solve_dW_ODE(log_S_, V_comp_, dW_):
             """
-            Solves the ODE corresponding to the stochastic integrals in the Ninomiya-Victoir scheme for one time step.
-            Solves both vector fields (corresponding to the two Brownian motions) simultaneously, as this is possible
-            in closed form.
+            Solves the ODE corresponding to the dW integral in the Ninomiya-Victoir scheme for one time step.
             :param log_S_: Initial log-stock price
-            :param V_comp_: Initial variance vector
+            :param V_comp_: Initial variance array
             :param dW_: Increment of the Brownian motion W driving the volatility process
-            return: Final log-stock price, final variance vector, in the form log_S, V.
+            return: Final log-stock price, final variance array, in the form log_S, V.
             """
             total_vol = np.sqrt(np.fmax(V_comp_ @ weights, 0.))
             tau = (dW_ < 0) * np.fmin(1, - total_vol / (temp_4 * (dW_ + (dW_ == 0.) * 1))) + (dW_ >= 0)
@@ -218,8 +214,14 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
         if sample_paths:
             for i in range(N_time):
                 log_S[:, i + 1], V_comp[:, :, i + 1] = solve_drift_ODE(log_S[:, i], V_comp[:, :, i])
-                # log_S[:, i + 1], V_comp[:, :, i + 1] = solve_stochastic_ODE(log_S[:, i + 1], V_comp[:, :, i + 1],
-                #                                                             dW[:, i], S_BM[:, i])
+                indices = np.random.binomial(1, 0.5, len(log_S)) == 0
+                log_S[indices, i + 1], V_comp[indices, :, i + 1] = solve_dB_ODE(log_S[indices, i + 1],
+                                                                                V_comp[indices, :, i + 1],
+                                                                                dB[indices, i])
+                log_S[:, i + 1], V_comp[:, :, i + 1] = solve_dW_ODE(log_S[:, i + 1], V_comp[:, :, i + 1], dW[:, i])
+                log_S[~indices, i + 1], V_comp[~indices, :, i + 1] = solve_dB_ODE(log_S[~indices, i + 1],
+                                                                                  V_comp[~indices, :, i + 1],
+                                                                                  dB[~indices, i])
                 log_S[:, i + 1], V_comp[:, :, i + 1] = solve_drift_ODE(log_S[:, i + 1], V_comp[:, :, i + 1])
             V = np.fmax(np.einsum('ijk,j->ik', V_comp, weights), 0)
             S = np.exp(log_S)
@@ -532,7 +534,7 @@ def call(K, lambda_, rho, nu, theta, V_0, H, N, S_0, T, m=1000, N_time=1000, WB=
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
     Uses the implicit Euler scheme.
-    :param K: Strike prices, assumed to be a vector
+    :param K: Strike prices, assumed to be a numpy array
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
@@ -556,7 +558,7 @@ def call(K, lambda_, rho, nu, theta, V_0, H, N, S_0, T, m=1000, N_time=1000, WB=
             components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
             intervals
         - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
-            reset by adding the correct multiple of the weights vector
+            reset by adding the correct multiple of the weights array
         - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
             This ensures that V changes sign and does not stay 0
         - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued

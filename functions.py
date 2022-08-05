@@ -9,6 +9,8 @@ import rHestonMarkov
 import RoughKernel as rk
 import rHestonMarkovSamplePaths as rHestonSP
 from os.path import exists
+import multiprocessing as mp
+import itertools
 
 c = ['r', 'C1', 'y', 'g', 'b', 'purple']
 c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
@@ -235,14 +237,42 @@ def max_errors_MC(truth, estimate, lower, upper):
     return np.amax(e_err), np.amax(l_err_vec), np.amax(u_err_vec)
 
 
-def kernel_errors(H, T, Ns=None, modes=None):
+def geometric_average(x):
+    """
+    Computes the geometric average of the samples in x.
+    :param x: Numpy array of samples
+    :return: The geometric average of x
+    """
+    return np.exp(np.average(np.log(x)))
+
+
+def arr_argmin(x):
+    """
+    Returns the argmin of x given as an index that can be used on x.
+    :param x: Array
+    :return: Index with the argmin.
+    """
+    return np.unravel_index(np.argmin(x), x.shape)
+
+
+def arr_argmax(x):
+    """
+    Returns the argmax of x given as an index that can be used on x.
+    :param x: Array
+    :return: Index with the argmax.
+    """
+    return np.unravel_index(np.argmax(x), x.shape)
+
+
+def kernel_errors(H, T, Ns=None, modes=None, verbose=0):
     """
     Prints the largest nodes, the relative errors and the computational times for the strong L^2-error approximation
     of the fractional kernel.
     :param H: Hurst parameter
-    :param T: Final time, may also be a vector
-    :param Ns: Vector of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024]
+    :param T: Final time, may also be a numpy array
+    :param Ns: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024]
     :param modes: List of modes of the quadrature rule. Default is ['paper', 'optimized old', 'optimized']
+    :param verbose: Determines how many intermediate results are printed to the console
     :return: Arrays containing the largest nodes, relative errors and computational times, all of
         shape (len(modes), len(Ns))
     """
@@ -262,11 +292,95 @@ def kernel_errors(H, T, Ns=None, modes=None):
             nodes, weights = rk.quadrature_rule(H=H, N=Ns[i], T=T, mode=modes[j])
             duration[j, i] = time.perf_counter() - tic
             largest_nodes[j, i] = np.amax(nodes)
-            kernel_errs[j, i] = np.amax(np.sqrt(rk.error(H=H, nodes=nodes, weights=weights, T=T, output='error'))
-                                        / ker_norm)
-            # print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, error={100*kernel_errs[j, i]:.4}%, '
-            #       + f'time={duration[j, i]:.3}sec')
+            kernel_errs[j, i] = np.amax(np.sqrt(np.fmax(
+                rk.error(H=H, nodes=nodes, weights=weights, T=T, output='error'), 0)) / ker_norm)
+
+            if verbose >= 1:
+                print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, error={100*kernel_errs[j, i]:.4}%, '
+                      + f'time={duration[j, i]:.3}sec')
     return largest_nodes, kernel_errs, duration
+
+
+def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None):
+    """
+    Parallelization of the function kernel_errors for testing purposes.
+    :param H: Numpy array of Hurst parameters. Default is np.exp(np.linspace(np.log(0.01), np.log(0.49), 300))
+    :param T: Numpy array of final times. Default is np.exp(np.linspace(np.log(0.0001), np.log(10), 300))
+    :param N: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    :param mode: List of modes of the quadrature rule. Default is ['paper', 'optimized old', 'optimized']
+    :return: Numpy arrays containing the largest nodes, relative errors and computational times, of
+        shape (len(H), len(T), 3, len(mode), len(N)). The three represents the three kinds of information (nodes,
+        errors, times) present
+    """
+    H = set_array_default(H, np.exp(np.linspace(np.log(0.01), np.log(0.49), 300)))
+    T = set_array_default(T, np.exp(np.linspace(np.log(0.0001), np.log(10), 300)))
+    H_grid, T_grid = np.meshgrid(H, T)
+    H_grid, T_grid = H_grid.flatten(), T_grid.flatten()
+    N = set_array_default(N, np.arange(1, 11))
+    mode = set_list_default(mode, ['paper', 'optimized'])
+
+    num_threads = 5
+
+    with mp.Pool(processes=num_threads) as pool:
+        result = pool.starmap(kernel_errors, zip(H_grid, T_grid, itertools.repeat(N), itertools.repeat(mode)))
+    result = np.asarray(result)
+    result = result.reshape((len(H), len(T)) + result.shape[1:])
+    largest_nodes = result[:, :, 0, :, :]
+    errors = result[:, :, 1, :, :]
+    largest_nodes_paper = largest_nodes[:, :, 0, :]
+    largest_nodes_optimized = largest_nodes[:, :, 1, :]
+    errors_paper = errors[:, :, 0, :]
+    errors_optimized = errors[:, :, 1, :]
+    for i in range(len(N)):
+        print(f'Results for N={N[i]}')
+        print(f'The highest error in the kernel using paper quadrature is {100 * np.amax(errors_paper[..., i]):.4}%, '
+              f'which is attained at H={H[arr_argmax(errors_paper[..., i])[0]]:.3} and '
+              f'T={T[arr_argmax(errors_paper[..., i])[1]]:.3}.')
+        print(f'The lowest error in the kernel using paper quadrature is {100 * np.amin(errors_paper[..., i]):.4}%, '
+              f'which is attained at H={H[arr_argmin(errors_paper[..., i])[0]]:.3} and '
+              f'T={T[arr_argmin(errors_paper[..., i])[1]]:.3}.')
+        print(f'The geometric average error in the kernel using paper quadrature is '
+              f'{100 * geometric_average(errors_paper[..., i]):.4}%.')
+        print(f'The median error in the kernel using paper quadrature is {100 * np.median(errors_paper[..., i]):.4}%.')
+        print(f'The highest error in the kernel using optimized quadrature is '
+              f'{100 * np.amax(errors_optimized[..., i]):.4}%, which is attained at '
+              f'H={H[arr_argmax(errors_optimized[..., i])[0]]:.3} and '
+              f'T={T[arr_argmax(errors_optimized[..., i])[1]]:.3}.')
+        print(f'The lowest error in the kernel using optimized quadrature is '
+              f'{100 * np.amin(errors_optimized[..., i]):.4}%, which is attained at '
+              f'H={H[arr_argmin(errors_optimized[..., i])[0]]:.3} and '
+              f'T={T[arr_argmin(errors_optimized[..., i])[1]]:.3}.')
+        print(f'The geometric average error in the kernel using optimized quadrature is '
+              + f'{100 * geometric_average(errors_optimized[..., i]):.4}%.')
+        print(f'The median error in the kernel using optimized quadrature is '
+              + f'{100 * np.median(errors_optimized[..., i]):.4}%.')
+        keo_flat = errors_optimized[..., i].flatten()
+        kep_flat = errors_paper[..., i].flatten()
+        faulty_ind = np.logical_or(kep_flat < 1e-6, keo_flat < 1e-6)
+        keo_flat, kep_flat = keo_flat[~faulty_ind], kep_flat[~faulty_ind]
+        error_improvements = keo_flat / kep_flat
+        print(f'The smallest improvement of the error in the kernel using optimized quadrature instead of paper '
+              f'quadrature is {100 * np.amax(error_improvements):.4}%.')
+        print(f'The biggest improvement of the error in the kernel using optimized quadrature instead of paper '
+              f'quadrature is {100 * np.amin(error_improvements):.4}%.')
+        print(f'The geometric average improvement of the error in the kernel using optimized quadrature instead of '
+              f'paper quadrature is {100 * geometric_average(error_improvements):.4}%.')
+        print(f'The median improvement of the error in the kernel using optimized quadrature instead of '
+              f'paper quadrature is {100 * np.median(error_improvements):.4}%.')
+        if N[i] >= 2:
+            node_improvements = largest_nodes_optimized[..., i] / largest_nodes_paper[..., i]
+            print(f'The largest increase of the largest node when using optimized quadrature instead of paper '
+                  f'quadrature is {100 * np.amax(node_improvements):.4}%, which is attained at '
+                  f'H={H[arr_argmax(node_improvements)[0]]:.3} and T={T[arr_argmax(node_improvements)[1]]:.3}.')
+            print(f'The largest decrease of the largest node when using optimized quadrature instead of paper '
+                  f'quadrature is {100 * np.amin(node_improvements):.4}%, which is attained at '
+                  f'H={H[arr_argmin(node_improvements)[0]]:.3} and T={T[arr_argmin(node_improvements)[1]]:.3}.')
+            print(f'The geometric average increase of the largest node when using optimized quadrature instead of '
+                  + f'paper quadrature is {100 * geometric_average(node_improvements):.3}%.')
+            print(f'The median increase of the largest node when using optimized quadrature instead of paper '
+                  + f'quadrature is {100 * np.median(node_improvements):.3}%.')
+        print('-----------------------------------------------------------------------')
+    return result
 
 
 def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
@@ -274,7 +388,7 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
     Prints the largest nodes, the relative errors and the computational times for the strong L^2-error approximation
     of the fractional kernel.
     :param params: Parameters of the rough Heston model
-    :param Ns: Vector of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    :param Ns: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     :param modes: List of modes of the quadrature rule. Default is ['paper', 'optimized', 'european old', 'european']
     :param true_smile: May specify the actual, non-approximated smile. If None, computes the smile and prints the
         computational time
@@ -375,10 +489,10 @@ def plot_rHeston_sample_path(params, N=2, N_time=1024, mode='european', vol_beha
                              plot_vol=True):
     """
     Plots a sample path of the stock price under the Markovian approximation of the rough Heston model. If one of
-    N, N_steps or modes is a vector, plots all these sample paths in the same plot.
+    N, N_steps or modes is a numpy array, plots all these sample paths in the same plot.
     :param params: Parameters of the rough Heston model
-    :param N: Integer or vector of values for the number of dimensions of the Markovian approximation
-    :param N_time: Integer or vector of values for the number of time steps
+    :param N: Integer or numpy array of values for the number of dimensions of the Markovian approximation
+    :param N_time: Integer or numpy array of values for the number of time steps
     :param mode: Mode or list of modes of the quadrature rule
     :param vol_behaviour: Behaviour of the volatility when it hits zero
     :param plot_vol: If True, plots the volatility in the same plot
@@ -458,8 +572,8 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
     """
     Computes the final stock prices of 1000000 sample paths of the Markovian approximation of the rough Heston model.
     :param params: Parameters of the rough Heston model
-    :param Ns: Vector of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
-    :param N_times: Vector of values for the number of time steps. Default is 2**np.arange(18)
+    :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(18)
     :param modes: List of modes of the quadrature rule. Default is ['european', 'optimized', 'paper']
     :param vol_behaviours: Behaviour of the volatility when it hits zero. Default is
         ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
@@ -527,8 +641,8 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
     """
     Computes the implied volatility smiles given the final stock prices
     :param params: Parameters of the rough Heston model
-    :param Ns: Vector of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
-    :param N_times: Vector of values for the number of time steps. Default is 2**np.arange(18)
+    :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(18)
     :param modes: List of modes of the quadrature rule. Default is ['european', 'optimized', 'paper']
     :param vol_behaviours: Behaviour of the volatility when it hits zero. Default is
         ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
@@ -704,8 +818,8 @@ def compute_strong_discretization_errors(Ns=None, N_times=None, N_time_ref=13107
                                          plot='N_time'):
     """
     Computes the strong discretization error for the path simulation of the rough Heston model.
-    :param Ns: Vector of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
-    :param N_times: Vector of values for the number of time steps. Default is 2**np.arange(17)
+    :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(17)
     :param N_time_ref: Reference number of time steps. These solutions are taken as exact
     :param modes: List of modes of the quadrature rule. Default is ['european', 'optimized', 'paper']
     :param vol_behaviours: Behaviour of the volatility when it hits zero. Default is
@@ -887,9 +1001,9 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     Optimizes the nodes such that the error in the MC simulation of the implied volatility smile is as small as
     possible.
     :param params: Parameters of the rough Heston model
-    :param Ns: Vector of numbers of dimensions of the Markovian approximation. Default is [1, 2, 6]
-    :param N_times: Vector of numbers of time steps. Default is 2 ** np.arange(10)
-    :param vol_behaviours: Vector of behaviours of the volatility when it hits zero. Default is
+    :param Ns: Numpy array of numbers of dimensions of the Markovian approximation. Default is [1, 2, 6]
+    :param N_times: Numpy array of numbers of time steps. Default is 2 ** np.arange(10)
+    :param vol_behaviours: List of behaviours of the volatility when it hits zero. Default is
         ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
     :param true_smile: May specify the smile of the actual rough Heston model. If not, it is computed
     :param plot: Creates plots depending on that parameter
@@ -1025,13 +1139,3 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     return largest_nodes, true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, total_errors, \
         lower_total_errors, upper_total_errors, markov_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors
-
-
-Hs = np.linspace(0.01, 0.49, 49)
-Ts = np.exp(np.linspace(np.log(0.001), np.log(10), 101))
-Hs, Ts = np.meshgrid(Hs, Ts)
-Hs, Ts = Hs.flatten(), Ts.flatten()
-
-def nasty_parallelization(i):
-
-    return kernel_errors(H=Hs[i], T=Ts[i], Ns=np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), modes=None)

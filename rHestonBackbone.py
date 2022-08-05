@@ -8,8 +8,8 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
     :param S: Initial stock price
-    :param K: Strike price, assumed to be a vector or a matrix
-    :param T: Vector of maturities
+    :param K: Strike price, assumed to be a numpy array (1d or 2d)
+    :param T: Numpy array of maturities
     :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
         function, the maturity, and the number of steps used for the Riccati equation
     :param rel_tol: Required maximal relative error in the implied volatility
@@ -20,7 +20,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
         """
         Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
         Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
-        :param K_: Strike price, assumed to be a vector
+        :param K_: Strike price, assumed to be a numpy array
         :param char_fun_: Characteristic function of the log-price. Is a function of the argument of the characteristic
             function and the number of steps used for the Riccati equation
         :param T_: Maturity

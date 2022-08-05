@@ -7,7 +7,7 @@ def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=
     """
     Gives the characteristic function of the log-price in the rough Heston model as described in El Euch and Rosenbaum,
     The characteristic function of rough Heston models. Uses the Adams scheme.
-    :param a: Argument of the characteristic function (assumed to be a vector)
+    :param a: Argument of the characteristic function (assumed to be a numpy array)
     :param S: Initial stock price
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -51,7 +51,7 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03):
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
     :param S: Initial stock price
-    :param K: Strike price, assumed to be a vector
+    :param K: Strike price, assumed to be a numpy array
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
