@@ -12,13 +12,9 @@ from os.path import exists
 import multiprocessing as mp
 import itertools
 
-c = ['r', 'C1', 'y', 'g', 'b', 'purple']
-c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
-c_short = ['r', 'g', 'b']
-simple_params = {'S': 1., 'K': np.exp(np.linspace(-1.5, 0.75, 451)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
-                 'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05}
-difficult_params = {'S': 1., 'K': np.exp(np.linspace(-0.5, 0.1, 181)), 'H': 0.07, 'T': 0.04, 'lambda': 0.6, 'rho': -0.8,
-                    'nu': 0.5, 'theta': 0.01, 'V_0': 0.01, 'rel_tol': 1e-05}
+
+def log_linspace(a, b, n):
+    return np.exp(np.linspace(np.log(a), np.log(b), n))
 
 
 def rHeston_params(params):
@@ -29,12 +25,34 @@ def rHeston_params(params):
         specified is given the corresponding value in simple_params
     :return: The modified and completed params dictionary
     """
+    simple_params = {'S': 1., 'K': np.exp(np.linspace(-1.5, 0.75, 451)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
+                     'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05}
+    difficult_params = {'S': 1., 'K': np.exp(np.linspace(-0.5, 0.1, 181)), 'H': 0.07, 'T': 0.04, 'lambda': 0.6,
+                        'rho': -0.8, 'nu': 0.5, 'theta': 0.01, 'V_0': 0.01, 'rel_tol': 1e-05}
     if params is None or params == 'simple':
         return simple_params
     if params == 'difficult':
         return difficult_params
     for key in simple_params:
         params[key] = params.get(key, simple_params[key])
+    return params
+
+
+def rHeston_params_grid(params):
+    simple_params = {'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)), 'H': log_linspace(0.05, 0.15, 5),
+                     'T': log_linspace(0.04, 2., 5), 'lambda': log_linspace(0.1, 1., 5),
+                     'rho': np.linspace(-0.5, -0.8, 5), 'nu': log_linspace(0.1, 1., 5),
+                     'theta': log_linspace(0.01, 0.1, 5), 'V_0': log_linspace(0.01, 0.1, 5), 'rel_tol': 1e-05}
+    difficult_params = {'S': 1., 'K': np.exp(np.linspace(-1.5, 0.75, 451)), 'H': log_linspace(0.01, 0.2, 15),
+                        'T': log_linspace(0.003, 10., 50), 'lambda': log_linspace(0.05, 5., 15),
+                        'rho': np.linspace(-0.3, -0.95, 15), 'nu': log_linspace(0.05, 5., 15),
+                        'theta': log_linspace(0.005, 0.3, 15), 'V_0': log_linspace(0.005, 0.3, 15), 'rel_tol': 1e-05}
+    if params is None or params == 'simple':
+        return simple_params
+    if params == 'difficult':
+        return difficult_params
+    for key in simple_params:
+        params[key] = set_array_default(params.get(key, simple_params[key]), simple_params[key])
     return params
 
 
@@ -46,8 +64,14 @@ def color(i, N):
         ensure that the colors are well distinguishable.
     :return: Some color for plotting (a string)
     """
+    c = ['r', 'C1', 'y', 'g', 'b', 'purple']
+    c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
+    c_short = ['r', 'g', 'b']
+    c_intermediate = ['r', 'C1', 'g', 'b']
     if N <= 3:
         return c_short[i % 3]
+    if N <= 4:
+        return c_intermediate[i % 4]
     if N <= 6 or N == 11 or N == 12:
         return c[i % 6]
     return c_[i % 10]
@@ -200,23 +224,23 @@ def rHeston_samples(params, N=-1, N_time=-1, WB=None, m=1, mode=None, vol_behavi
                                    weights=weights, sample_paths=sample_paths, return_times=return_times)
 
 
-def rHeston_iv_eur_call(params):
+def rHeston_iv_eur_call(params, verbose=0):
     """
     Shorthand for rHeston.iv_eur_call.
     """
     return rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'], rho=params['rho'],
                                nu=params['nu'], theta=params['theta'], V_0=params['V_0'], T=params['T'],
-                               rel_tol=params['rel_tol'])
+                               rel_tol=params['rel_tol'], verbose=verbose)
 
 
-def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None):
+def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None, verbose=0):
     """
     Shorthand for rHestonMarkov.iv_eur_call.
     """
     return rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
                                      rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
                                      T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
-                                     weights=weights)
+                                     weights=weights, verbose=verbose)
 
 
 def max_errors_MC(truth, estimate, lower, upper):
@@ -276,10 +300,8 @@ def kernel_errors(H, T, Ns=None, modes=None, verbose=0):
     :return: Arrays containing the largest nodes, relative errors and computational times, all of
         shape (len(modes), len(Ns))
     """
-    if Ns is None:
-        Ns = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024])
-    if modes is None:
-        modes = ['paper', 'optimized old', 'optimized']
+    Ns = set_array_default(Ns, np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024]))
+    modes = set_list_default(modes, ['paper', 'optimized old', 'optimized'])
 
     kernel_errs = np.empty((len(modes), len(Ns)))
     largest_nodes = np.empty((len(modes), len(Ns)))
@@ -294,32 +316,30 @@ def kernel_errors(H, T, Ns=None, modes=None, verbose=0):
             largest_nodes[j, i] = np.amax(nodes)
             kernel_errs[j, i] = np.amax(np.sqrt(np.fmax(
                 rk.error(H=H, nodes=nodes, weights=weights, T=T, output='error'), 0)) / ker_norm)
-
             if verbose >= 1:
                 print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, error={100*kernel_errs[j, i]:.4}%, '
                       + f'time={duration[j, i]:.3}sec')
     return largest_nodes, kernel_errs, duration
 
 
-def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None):
+def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None, num_threads=5):
     """
     Parallelization of the function kernel_errors for testing purposes.
     :param H: Numpy array of Hurst parameters. Default is np.exp(np.linspace(np.log(0.01), np.log(0.49), 300))
     :param T: Numpy array of final times. Default is np.exp(np.linspace(np.log(0.0001), np.log(10), 300))
     :param N: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     :param mode: List of modes of the quadrature rule. Default is ['paper', 'optimized old', 'optimized']
+    :param num_threads: Number of parallel threads
     :return: Numpy arrays containing the largest nodes, relative errors and computational times, of
         shape (len(H), len(T), 3, len(mode), len(N)). The three represents the three kinds of information (nodes,
         errors, times) present
     """
-    H = set_array_default(H, np.exp(np.linspace(np.log(0.01), np.log(0.49), 300)))
-    T = set_array_default(T, np.exp(np.linspace(np.log(0.0001), np.log(10), 300)))
-    H_grid, T_grid = np.meshgrid(H, T)
+    H = set_array_default(H, log_linspace(0.01, 0.2, 300))
+    T = set_array_default(T, log_linspace(0.001, 2., 300))
+    H_grid, T_grid = np.meshgrid(H, T, indexing='ij')
     H_grid, T_grid = H_grid.flatten(), T_grid.flatten()
     N = set_array_default(N, np.arange(1, 11))
     mode = set_list_default(mode, ['paper', 'optimized'])
-
-    num_threads = 5
 
     with mp.Pool(processes=num_threads) as pool:
         result = pool.starmap(kernel_errors, zip(H_grid, T_grid, itertools.repeat(N), itertools.repeat(mode)))
@@ -360,30 +380,37 @@ def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None):
         keo_flat, kep_flat = keo_flat[~faulty_ind], kep_flat[~faulty_ind]
         error_improvements = keo_flat / kep_flat
         print(f'The smallest improvement of the error in the kernel using optimized quadrature instead of paper '
-              f'quadrature is {100 * np.amax(error_improvements):.4}%.')
+              f'quadrature is attaining an error equal to {100 * np.amax(error_improvements):.4}% of the original '
+              f'error.')
         print(f'The biggest improvement of the error in the kernel using optimized quadrature instead of paper '
-              f'quadrature is {100 * np.amin(error_improvements):.4}%.')
+              f'quadrature is attaining an error equal to {100 * np.amin(error_improvements):.4}% of the original '
+              f'error.')
         print(f'The geometric average improvement of the error in the kernel using optimized quadrature instead of '
-              f'paper quadrature is {100 * geometric_average(error_improvements):.4}%.')
+              f'paper quadrature is attaining an error equal to {100 * geometric_average(error_improvements):.4}% of '
+              f'the original error.')
         print(f'The median improvement of the error in the kernel using optimized quadrature instead of '
-              f'paper quadrature is {100 * np.median(error_improvements):.4}%.')
+              f'paper quadrature is attaining an error equal to {100 * np.median(error_improvements):.4}% of the '
+              f'original error.')
         if N[i] >= 2:
             node_improvements = largest_nodes_optimized[..., i] / largest_nodes_paper[..., i]
             print(f'The largest increase of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is {100 * np.amax(node_improvements):.4}%, which is attained at '
-                  f'H={H[arr_argmax(node_improvements)[0]]:.3} and T={T[arr_argmax(node_improvements)[1]]:.3}.')
+                  f'quadrature is a node equal to {100 * np.amax(node_improvements):.4}% of the original node, which '
+                  f'is attained at H={H[arr_argmax(node_improvements)[0]]:.3} and '
+                  f'T={T[arr_argmax(node_improvements)[1]]:.3}.')
             print(f'The largest decrease of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is {100 * np.amin(node_improvements):.4}%, which is attained at '
-                  f'H={H[arr_argmin(node_improvements)[0]]:.3} and T={T[arr_argmin(node_improvements)[1]]:.3}.')
+                  f'quadrature is a node equal to {100 * np.amin(node_improvements):.4}% of the original node, which '
+                  f'is attained at H={H[arr_argmin(node_improvements)[0]]:.3} and '
+                  f'T={T[arr_argmin(node_improvements)[1]]:.3}.')
             print(f'The geometric average increase of the largest node when using optimized quadrature instead of '
-                  + f'paper quadrature is {100 * geometric_average(node_improvements):.3}%.')
+                  f'paper quadrature is a node equal to {100 * geometric_average(node_improvements):.3}% of the'
+                  f'original node.')
             print(f'The median increase of the largest node when using optimized quadrature instead of paper '
-                  + f'quadrature is {100 * np.median(node_improvements):.3}%.')
+                  f'quadrature is a node equal to {100 * np.median(node_improvements):.3}% of the original node.')
         print('-----------------------------------------------------------------------')
     return result
 
 
-def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
+def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, verbose=0):
     """
     Prints the largest nodes, the relative errors and the computational times for the strong L^2-error approximation
     of the fractional kernel.
@@ -393,6 +420,7 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
     :param true_smile: May specify the actual, non-approximated smile. If None, computes the smile and prints the
         computational time
     :param plot: If True, plots all sorts of plots
+    :param verbose: Determines how many intermediate results are printed to the console
     :return: Arrays containing the true smile, approximate smiles, largest nodes, relative kernel errors,
         relative smile errors, computational time of the true smile, and computational times of the approximate smiles
     """
@@ -409,9 +437,7 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
 
     if true_smile is None:
         tic = time.perf_counter()
-        true_smile = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                         rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                         T=params['T'], rel_tol=params['rel_tol'])
+        true_smile = rHeston_iv_eur_call(params=params, verbose=verbose)
         true_duration = time.perf_counter() - tic
         print(f'The computation of the true smile took {true_duration:.3} seconds.')
     else:
@@ -429,7 +455,7 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
             tic = time.perf_counter()
             nodes, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
             approx_smiles[j, i] = rHestonMarkov_iv_eur_call(params=params, N=Ns[i], mode=modes[j], nodes=nodes,
-                                                            weights=weights)
+                                                            weights=weights, verbose=verbose)
             duration[j, i] = time.perf_counter() - tic
             largest_nodes[j, i] = np.amax(nodes)
             kernel_errs[j, i] = np.amax(np.sqrt(rk.error(H=params['H'], nodes=nodes, weights=weights, T=params['T'],
@@ -482,7 +508,53 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False):
                 plt.ylabel('Implied volatility')
                 plt.title(f'Implied volatility for European call option\nwith {Ns[i]} nodes')
                 plt.show()
+
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        for j in range(len(modes)):
+            ax1.loglog(Ns, smile_errs[j, :], color=color(j, len(modes)), label=modes[j])
+            ax1.loglog(Ns, kernel_errs[j, :], '--', color=color(j, len(modes)))
+            ax2.loglog(Ns, largest_nodes[j, :], ':', color=color(j, len(modes)))
+        ax1.loglog(Ns, 2 * params['rel_tol'] * np.ones(len(Ns)), '--', color='k', label='discretization error')
+        ax1.set_xlabel('Number of nodes')
+        ax1.set_ylabel('Relative error')
+        ax2.set_ylabel('Largest node')
+        ax1.legend(loc='best')
+        plt.title(f'Relative errors and largest nodes of the implied volatility')
+        plt.show()
     return true_smile, approx_smiles, largest_nodes, kernel_errs, smile_errs, true_duration, duration
+
+
+def smile_errors_parallelized_testing(params=None, N=None, mode=None, surface=False, num_threads=5, verbose=0):
+    """
+    Prints the largest nodes, the relative errors and the computational times for the strong L^2-error approximation
+    of the fractional kernel.
+    :param params: Parameters of the rough Heston model
+    :param Ns: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    :param modes: List of modes of the quadrature rule. Default is ['paper', 'optimized', 'european old', 'european']
+    :param true_smile: May specify the actual, non-approximated smile. If None, computes the smile and prints the
+        computational time
+    :param plot: If True, plots all sorts of plots
+    :param verbose: Determines how many intermediate results are printed to the console
+    :return: Arrays containing the true smile, approximate smiles, largest nodes, relative kernel errors,
+        relative smile errors, computational time of the true smile, and computational times of the approximate smiles
+    """
+    params = rHeston_params_grid(params)
+    H, lambda_, rho, nu, theta, V_0, T = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                     params['theta'], params['V_0'], params['T'], indexing='ij')
+    H, lambda_, rho, nu, theta, V_0, T = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), theta.flatten(), \
+        V_0.flatten(), T.flatten()
+    dictionaries = [{'S': params['S'], 'K': np.exp(np.log(params['K'] * np.sqrt(T[i]))), 'H': H[i], 'T': T[i],
+                     'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
+                     'rel_tol': params['rel_tol']} for i in range(len(H))]
+    N = set_array_default(N, np.arange(1, 11))
+    mode = set_list_default(mode, ['paper', 'optimized', 'european'])
+    with mp.Pool(processes=num_threads) as pool:
+        result = pool.starmap(smile_errors, zip(dictionaries, itertools.repeat(N), itertools.repeat(mode)))
+    result = np.asarray(result)
+    result = result.reshape((len(params['H']), len(params['lambda']), len(params['rho']), len(params['nu']),
+                             len(params['theta']), len(params['V_0']), len(params['T'])) + result.shape[1:])
+
 
 
 def plot_rHeston_sample_path(params, N=2, N_time=1024, mode='european', vol_behaviour='hyperplane reset',

@@ -46,7 +46,7 @@ def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=
     return np.exp(complex(0, 1) * a * np.log(S) + theta * integral + V_0 * fractional_integral)
 
 
-def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03):
+def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbose=0):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
@@ -60,8 +60,9 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03):
     :param V_0: Initial variance
     :param T: Maturity
     :param rel_tol: Required maximal relative error in the implied volatility
+    :param verbose: Determines how many intermediate results are printed to the console
     return: The price of the call option
     """
     return backbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S, H, lambda_, rho, nu, theta,
                                                                                    V_0, T_, N_),
-                                S=S, K=K, T=T, rel_tol=rel_tol)
+                                S=S, K=K, T=T, rel_tol=rel_tol, verbose=verbose)

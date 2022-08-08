@@ -350,8 +350,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
     nodes = nodes[perm]
     nodes[0] = np.fmax(1e-04, nodes[0])
     for i in range(len(nodes) - 1):
-        if 1.001 * nodes[i] > nodes[i + 1]:
-            nodes[i + 1] = nodes[i] * 1.001
+        if 1.01 * nodes[i] > nodes[i + 1]:
+            nodes[i + 1] = nodes[i] * 1.01
     nodes = nodes[invert_permutation(perm)]
 
     node_matrix = nodes[:, None] + nodes[None, :]
@@ -440,7 +440,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
     return err, grad, hess, opt_weights
 
 
-def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False):
+def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False,
+                                   post_processing=True):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Always uses the best weights and only
     numerically optimizes over the nodes.
@@ -453,19 +454,24 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
         L-BFGS-B. If gradient, uses also the gradient of the error with respect to the nodes, and uses the optimizer
         L-BFGS-B. If hessian, uses also the gradient and the Hessian of the error with respect to the nodes, and uses
         the optimizer trust-constr
+    :param force_order: Forces the nodes to stay in order, i.e. not switch places. May improve numerical stability
+    :param post_processing: After optimizing the error, ensures that the results are reasonable and yield good results.
+        If this is not the case, may call this function, or other processes again to potentially achieve better results
     :return: The minimal relative error together with the associated nodes and weights.
     """
     original_bound = bound
 
+    # if T is a vector, choose a single T
     if isinstance(T, np.ndarray):
         if N <= 7:
             T = (8-N)/8 * np.amin(T) + N/8 * np.amax(T)
         else:
             T = np.amax(T)
 
+    # get starting value and bounds for the optimization problem
     if bound is None:
         bound = 1e+100
-        nodes_, _ = quadrature_rule(H, N, T, mode='observation')
+        nodes_, w = quadrature_rule(H, N, T, mode='observation')
         if N == 2:
             bound = np.fmax(bound, np.amax(nodes_))
         if len(nodes_) < N:
@@ -477,13 +483,13 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
             nodes = nodes_[:N]
     else:
         nodes = np.exp(np.linspace(0, np.log(np.fmin(bound, 5. ** (np.fmin(140, N - 1)))), N))
-
     lower_bound = 1/(10*N*np.amin(T)) * ((0.5-H)/0.4)**2
     nodes = np.fmin(np.fmax(nodes, lower_bound*2), bound/2)
     bounds = ((np.log(lower_bound), np.log(bound)),) * N
     original_error, original_weights = error_optimal_weights(H=H, T=T, nodes=nodes, output='error')
     original_nodes = nodes.copy()
 
+    # carry out the optimization
     if force_order:
         constraints = ()
         for i in range(1, N):
@@ -533,19 +539,51 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
             res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True, hess=hess,
                            method='trust-constr')
 
+    # post-processing, ensuring that the results are of good quality
     nodes = np.sort(np.exp(res.x))
     err, weights = error_optimal_weights(H=H, T=T, nodes=nodes, output='error')
-    if err < 0 or np.fmax(original_error, 1e-5) < err or err > kernel_norm(H, T) ** 2 \
-            or (N >= 3 and np.sqrt(nodes[-1]/nodes[-2]) > nodes[-2]/nodes[-3]):
-        # print(force_order, H, T, err, nodes)
-        if force_order is False:
-            return optimize_error_optimal_weights(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
-                                                  force_order=True)
-        elif bound >= 1e+24:
-            return optimize_error_optimal_weights(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
-                                                  force_order=True)
+    if post_processing:
+        if err < 0 or np.fmax(original_error, 1e-9) < err or err > kernel_norm(H, T) ** 2 \
+                or (N >= 3 and np.sqrt(nodes[-1]/nodes[-2]) > nodes[-2]/nodes[-3]) \
+                or (N >= 2 and bound >= 1e+51 and (np.amin(weights) < 0 or np.amin(nodes[1:]/nodes[:-1]) < 1.01)):
+            if force_order is False:
+                return optimize_error_optimal_weights(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
+                                                      force_order=True, post_processing=True)
+            elif bound >= 1e+24:
+                return optimize_error_optimal_weights(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
+                                                      force_order=True, post_processing=True)
 
-    if err > 2 * np.fmax(original_error, 1e-5):
+        factor = 3.
+        if N >= 2 and np.amin(weights) < 0:
+            if np.log(bound / lower_bound) < (N-1) * np.log(factor):
+                nodes = np.exp(np.linspace(np.log(lower_bound), np.log(bound), N))
+            elif np.log(bound / nodes[0]) < (N-1) * np.log(factor):
+                nodes = bound / factor ** (N-1) * factor ** np.arange(N)
+            elif np.log(nodes[-1]/lower_bound) < (N-1) * np.log(factor):
+                nodes = lower_bound * factor ** np.arange(N)
+            else:
+                nodes = np.fmax(nodes, lower_bound * factor ** np.arange(N))
+                nodes = np.fmin(nodes, bound / factor ** (N-1) * factor ** np.arange(N))
+                for i in range(N-1):
+                    nodes[i+1] = np.fmax(nodes[i] * factor, nodes[i+1])
+            err, weights = error_optimal_weights(H=H, T=T, nodes=nodes, output='error')
+
+        if err > 1e-9:
+            paper_nodes, paper_weights = quadrature_rule(H=H, N=N, T=T, mode='paper')
+            if np.amax(paper_nodes) <= bound:
+                paper_nodes = np.fmax(paper_nodes, lower_bound)
+                paper_error = error(H=H, nodes=paper_nodes, weights=paper_weights, T=T, output='error')
+                paper_opt_error, paper_opt_weights = error_optimal_weights(H=H, T=T, nodes=paper_nodes, output='error')
+                if paper_opt_error < paper_error and paper_opt_error < err:
+                    nodes = paper_nodes
+                    weights = paper_opt_weights
+                    err = paper_opt_error
+                elif paper_error < err:
+                    nodes = paper_nodes
+                    weights = paper_weights
+                    err = paper_error
+
+    if err > 2 * np.fmax(original_error, 1e-9):
         return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
 
     return np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T), nodes, weights

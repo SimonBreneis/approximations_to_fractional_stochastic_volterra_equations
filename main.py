@@ -1,6 +1,36 @@
+import time
+import numpy as np
+import qdarkstyle.style_rc
+
 from functions import *
+import Data
+'''
+a = np.array([1, 2, 3])
+b = np.array([4, 5])
+aa, bb = np.meshgrid(a, b)
+print(aa, bb)
+aa, bb = aa.flatten(), bb.flatten()
+aa, bb = aa.reshape((3, 2)), bb.reshape((3, 2))
+print(aa, bb)
+aa, bb = np.meshgrid(a, b, indexing='ij')
+print(aa, bb)
+aa, bb = aa.flatten(), bb.flatten()
+aa, bb = aa.reshape((3, 2)), bb.reshape((3, 2))
+print(aa, bb)
+aa, bb = np.meshgrid(a, b, indexing='xy')
+print(aa, bb)
+aa, bb = aa.flatten(), bb.flatten()
+aa, bb = aa.reshape((3, 2)), bb.reshape((3, 2))
+print(aa, bb)
+time.sleep(36000)
+'''
 
-
+'''tic = time.perf_counter()
+params = rHeston_params('simple')
+rHeston_iv_eur_call(params)
+print('time', time.perf_counter()-tic)
+time.sleep(36000)
+'''
 if __name__ == '__main__':
     kernel_errors_parallelized_testing()
 

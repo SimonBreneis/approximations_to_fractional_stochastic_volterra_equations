@@ -3,7 +3,7 @@ import numpy as np
 import ComputationalFinance as cf
 
 
-def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
+def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
@@ -13,6 +13,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
     :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
         function, the maturity, and the number of steps used for the Riccati equation
     :param rel_tol: Required maximal relative error in the implied volatility
+    :param verbose: Determines how many intermediate results are printed to the console
     return: The implied volatility of the call option
     """
 
@@ -60,8 +61,9 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
             L = L * 1.25
             N_Fourier = N_Fourier * 2
             N_Riccati = int(N_Riccati * 1.5)
-            print(error, error_Fourier, error_Riccati, L, N_Fourier, N_Riccati, duration,
-                  time.strftime("%H:%M:%S", time.localtime()))
+            if verbose >= 1:
+                print(error, error_Fourier, error_Riccati, L, N_Fourier, N_Riccati, duration,
+                      time.strftime("%H:%M:%S", time.localtime()))
             tic = time.perf_counter()
             with np.errstate(all='raise'):
                 try:
@@ -74,7 +76,8 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
                         return iv
             duration = time.perf_counter() - tic
             error = np.amax(np.abs(iv_approx - iv) / iv)
-            print(error)
+            if verbose >= 1:
+                print(error)
 
         return iv
 
@@ -87,7 +90,8 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03):
 
     iv_surface = np.empty_like(K)
     for i in range(len(T)):
-        # print('-------------------------------------------------------------', i)
+        if verbose >= 1:
+            print(f'Now simulating maturity {i+1} of {len(T)}')
         iv_surface[i, :] = single_smile(K_=K[i, :], T_=T[i], char_fun_=lambda u, N: char_fun(u, T[i], N))
     if T_is_float:
         iv_surface = iv_surface[0, :]
