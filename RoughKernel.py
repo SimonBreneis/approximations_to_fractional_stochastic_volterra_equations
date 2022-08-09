@@ -719,7 +719,8 @@ def european_rule(H, N, T, optimal_weights=False):
 
     def optimizing_func(N_, tol_, bound_):
         if optimal_weights:
-            return optimize_error_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient')
+            return optimize_error_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
+                                                  post_processing=False)
         return optimize_error(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
 
     if isinstance(T, np.ndarray):

@@ -39,10 +39,10 @@ def rHeston_params(params):
 
 
 def rHeston_params_grid(params):
-    simple_params = {'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)), 'H': log_linspace(0.05, 0.15, 5),
-                     'T': log_linspace(0.04, 2., 5), 'lambda': log_linspace(0.1, 1., 5),
-                     'rho': np.linspace(-0.5, -0.8, 5), 'nu': log_linspace(0.1, 1., 5),
-                     'theta': log_linspace(0.01, 0.1, 5), 'V_0': log_linspace(0.01, 0.1, 5), 'rel_tol': 1e-05}
+    simple_params = {'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)), 'H': log_linspace(0.05, 0.1, 2),
+                     'T': log_linspace(0.04, 1., 25), 'lambda': log_linspace(0.2, 1., 2),
+                     'rho': np.linspace(-0.6, -0.8, 2), 'nu': log_linspace(0.2, 0.6, 2),
+                     'theta': log_linspace(0.01, 0.03, 2), 'V_0': log_linspace(0.01, 0.03, 2), 'rel_tol': 1e-05}
     difficult_params = {'S': 1., 'K': np.exp(np.linspace(-1.5, 0.75, 451)), 'H': log_linspace(0.01, 0.2, 15),
                         'T': log_linspace(0.003, 10., 50), 'lambda': log_linspace(0.05, 5., 15),
                         'rho': np.linspace(-0.3, -0.95, 15), 'nu': log_linspace(0.05, 5., 15),
@@ -169,7 +169,7 @@ def set_list_default(x, default):
     return x
 
 
-def get_filename(N, mode, vol_behaviour, N_time, kind):
+def get_filename(kind, N=None, mode=None, vol_behaviour=None, N_time=None, params=None, truth=False, markov=False):
     """
     Filename under which we save our simulated data.
     :param N: Number of nodes
@@ -177,9 +177,44 @@ def get_filename(N, mode, vol_behaviour, N_time, kind):
     :param vol_behaviour: The behaviour of the volatility when it hits zero
     :param N_time: The number of time steps
     :param kind: The kind of object we are saving (i.e. 'samples' or 'sample paths' or 'nodes', etc.)
+    :param params: If None, assumes params is simple_params and does not include it in the file name
+    :param truth: True if the smile is a true smile, False if not, i.e. if the smile is approximated
+    :param markov: True if the smile is an exact Markovian smile. False if not, i.e. if it is a true smile or an
+        approximated Markovian smile
     :return: A string representing the file name
     """
-    return f'rHeston {kind} {N} dim {mode} {vol_behaviour} {N_time} time steps.npy'
+    if params is None:
+        if truth:
+            return f'rHeston {kind}.npy'
+        else:
+            if markov:
+                return f'rHeston {kind} {N} dim {mode}.npy'
+            else:
+                return f'rHeston {kind} {N} dim {mode} {vol_behaviour} {N_time} time steps.npy'
+
+    H = params['H']
+    lambda_ = params['lambda']
+    rho = params['rho']
+    nu = params['nu']
+    theta = params['theta']
+    V_0 = params['V_0']
+    T = params['T']
+    K = (np.log(np.amin(params['K'])), np.log(np.amax(params['K'])), len(params['K']))
+    if isinstance(T, np.ndarray):
+        T_string = f'T={T:.4}'
+    else:
+        T_string = f'T=({np.amin(T):.4}, {np.amax(T):.4}, {len(T)})'
+    if truth:
+        return f'rHeston {kind}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, ' \
+               f'V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
+    else:
+        if markov:
+            return f'rHeston {kind} {N} dim {mode}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, ' \
+                   f'V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
+        else:
+            return f'rHeston {kind} {N} dim {mode} {vol_behaviour} {N_time} time steps, H={H:.3}, ' \
+                   f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, {T_string}, ' \
+                   f'K=({K[0]}, {K[1]}, {K[2]}).npy'
 
 
 def log_linear_regression(x, y):
@@ -224,23 +259,93 @@ def rHeston_samples(params, N=-1, N_time=-1, WB=None, m=1, mode=None, vol_behavi
                                    weights=weights, sample_paths=sample_paths, return_times=return_times)
 
 
-def rHeston_iv_eur_call(params, verbose=0):
+def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
     """
     Shorthand for rHeston.iv_eur_call.
+    :param params: Parameters of the rough Heston model
+    :param load: If True, loads the smile instead of computing it, if it is saved
+    :param save: If True, saves the smile after computing it
+    :param verbose: Determines how many intermediate results are printed to the console
+    :return: The smile
     """
-    return rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'], rho=params['rho'],
-                               nu=params['nu'], theta=params['theta'], V_0=params['V_0'], T=params['T'],
-                               rel_tol=params['rel_tol'], verbose=verbose)
+    filename = get_filename(kind='true', params=params, truth=True)
+    if load and exists(filename):
+        return np.load(filename)
+    result = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                 rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                 T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
+    if save:
+        np.save(filename, result)
+    return result
 
 
-def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None, verbose=0):
+def rHeston_iv_eur_call_parallelized(params, num_threads=5):
+    """
+    Parallelized version of rHeston_iv_eur_call.
+    :param params: Parameters of the rough Heston model
+    :param num_threads: Number of parallel processes
+    :return: The smiles
+    """
+    params = rHeston_params_grid(params)
+    H, lambda_, rho, nu, theta, V_0 = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                  params['theta'], params['V_0'], indexing='ij')
+    H, lambda_, rho, nu, theta, V_0 = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), theta.flatten(), \
+        V_0.flatten()
+    dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
+                     'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
+                    for i in range(len(H))]
+    with mp.Pool(processes=num_threads) as pool:
+        result = pool.starmap(rHeston_iv_eur_call, zip(dictionaries, itertools.repeat(True), itertools.repeat(True)))
+    return result
+
+
+def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None, load=True, save=False, verbose=0):
     """
     Shorthand for rHestonMarkov.iv_eur_call.
+    :param params: Parameters of the rough Heston model
+    :param N: Number of nodes
+    :param mode: The mode of the quadrature rule
+    :param nodes: The nodes of the quadrature rule
+    :param weights: The weights of the quadrature rule
+    :param load: If True, loads the smile instead of computing it, if it is saved
+    :param save: If True, saves the smile after computing it
+    :param verbose: Determines how many intermediate results are printed to the console
+    :return: The smile
     """
-    return rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                     rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                     T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
-                                     weights=weights, verbose=verbose)
+    filename = get_filename(kind='Markov', params=params, truth=False, markov=True, N=N, mode=mode)
+    if load and exists(filename):
+        return np.load(filename)
+    result = rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                       rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                       T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
+                                       weights=weights, verbose=verbose)
+    if save:
+        np.save(filename, result)
+    return result
+
+
+def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15):
+    """
+    Parallelized version of rHestonMarkov_iv_eur_call.
+    :param params: Parameters of the rough Heston model
+    :param Ns: Numpy array of N values
+    :param modes: List of modes of the quadrature rule
+    :param num_threads: Number of parallel processes
+    :return: The smiles
+    """
+    params = rHeston_params_grid(params)
+    H, lambda_, rho, nu, theta, V_0, N, mode = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                           params['theta'], params['V_0'], Ns, modes, indexing='ij')
+    H, lambda_, rho, nu, theta, V_0, N, mode = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), \
+        theta.flatten(), V_0.flatten(), N.flatten(), mode.flatten()
+    dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
+                     'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
+                    for i in range(len(H))]
+    with mp.Pool(processes=num_threads) as pool:
+        result = pool.starmap(rHestonMarkov_iv_eur_call, zip(dictionaries, N, mode, itertools.repeat(None),
+                                                             itertools.repeat(None), itertools.repeat(True),
+                                                             itertools.repeat(True)))
+    return result
 
 
 def max_errors_MC(truth, estimate, lower, upper):
@@ -394,23 +499,24 @@ def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None, num_th
         if N[i] >= 2:
             node_improvements = largest_nodes_optimized[..., i] / largest_nodes_paper[..., i]
             print(f'The largest increase of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is a node equal to {100 * np.amax(node_improvements):.4}% of the original node, which '
+                  f'quadrature is a node equal to {np.amax(node_improvements):.4} times of the original node, which '
                   f'is attained at H={H[arr_argmax(node_improvements)[0]]:.3} and '
                   f'T={T[arr_argmax(node_improvements)[1]]:.3}.')
             print(f'The largest decrease of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is a node equal to {100 * np.amin(node_improvements):.4}% of the original node, which '
+                  f'quadrature is a node equal to {np.amin(node_improvements):.4} times of the original node, which '
                   f'is attained at H={H[arr_argmin(node_improvements)[0]]:.3} and '
                   f'T={T[arr_argmin(node_improvements)[1]]:.3}.')
             print(f'The geometric average increase of the largest node when using optimized quadrature instead of '
-                  f'paper quadrature is a node equal to {100 * geometric_average(node_improvements):.3}% of the'
+                  f'paper quadrature is a node equal to {geometric_average(node_improvements):.4} times of the'
                   f'original node.')
             print(f'The median increase of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is a node equal to {100 * np.median(node_improvements):.3}% of the original node.')
+                  f'quadrature is a node equal to {np.median(node_improvements):.4} times of the original node.')
         print('-----------------------------------------------------------------------')
     return result
 
 
-def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, verbose=0):
+def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, load=True, save=False, verbose=0,
+                 parallelizable_output=False):
     """
     Prints the largest nodes, the relative errors and the computational times for the strong L^2-error approximation
     of the fractional kernel.
@@ -425,23 +531,26 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
         relative smile errors, computational time of the true smile, and computational times of the approximate smiles
     """
     params = rHeston_params(params)
-    if Ns is None:
-        Ns = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    if modes is None:
-        modes = ['paper', 'optimized', 'european old', 'european']
+    Ns = set_array_default(Ns, np.arange(1, 11))
+    modes = set_list_default(modes, ['paper', 'optimized', 'european old', 'european'])
 
     kernel_errs = np.empty((len(modes), len(Ns)))
     largest_nodes = np.empty((len(modes), len(Ns)))
-    duration = np.empty((len(modes), len(Ns)))
     smile_errs = np.empty((len(modes), len(Ns)))
 
     if true_smile is None:
-        tic = time.perf_counter()
-        true_smile = rHeston_iv_eur_call(params=params, verbose=verbose)
-        true_duration = time.perf_counter() - tic
-        print(f'The computation of the true smile took {true_duration:.3} seconds.')
-    else:
-        true_duration = 0.
+        got_smile = False
+        if load and not isinstance(params['T'], np.ndarray):
+            T_vec = np.linspace(0.04, 1., 25)
+            if np.amin(np.abs(params['T'] - T_vec)) < 1e-06:
+                min_ind = np.argmin(np.abs(params['T'] - T_vec))
+                filename = get_filename(kind='true', params=params, truth=True, markov=False)
+                if exists(filename):
+                    true_smile = np.load(filename)
+                    true_smile = true_smile[min_ind, :]
+                    got_smile = True
+        if not got_smile:
+            true_smile = rHeston_iv_eur_call(params=params, load=load, save=save, verbose=verbose)
 
     if isinstance(params['T'], np.ndarray):
         approx_smiles = np.empty((len(modes), len(Ns), len(params['T']), len(params['K'])))
@@ -452,18 +561,15 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
 
     for i in range(len(Ns)):
         for j in range(len(modes)):
-            tic = time.perf_counter()
             nodes, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
             approx_smiles[j, i] = rHestonMarkov_iv_eur_call(params=params, N=Ns[i], mode=modes[j], nodes=nodes,
-                                                            weights=weights, verbose=verbose)
-            duration[j, i] = time.perf_counter() - tic
+                                                            weights=weights, verbose=verbose, load=load, save=save)
             largest_nodes[j, i] = np.amax(nodes)
             kernel_errs[j, i] = np.amax(np.sqrt(rk.error(H=params['H'], nodes=nodes, weights=weights, T=params['T'],
                                                          output='error')) / ker_norm)
             smile_errs[j, i] = np.amax(np.abs(true_smile - approx_smiles[j, i]) / true_smile)
             print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, kernel error='
-                  + f'{100 * kernel_errs[j, i]:.4}%, smile error={100 * smile_errs[j, i]:.4}%, '
-                  + f'time={duration[j, i]:.3}sec')
+                  + f'{100 * kernel_errs[j, i]:.4}%, smile error={100 * smile_errs[j, i]:.4}%')
 
     k = np.log(params['K'] / params['S'])
     if plot:
@@ -522,39 +628,89 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
         ax1.legend(loc='best')
         plt.title(f'Relative errors and largest nodes of the implied volatility')
         plt.show()
-    return true_smile, approx_smiles, largest_nodes, kernel_errs, smile_errs, true_duration, duration
+
+    if not parallelizable_output:
+        return true_smile, approx_smiles, largest_nodes, kernel_errs, smile_errs
+    else:
+        return largest_nodes, kernel_errs, smile_errs
 
 
-def smile_errors_parallelized_testing(params=None, N=None, mode=None, surface=False, num_threads=5, verbose=0):
+def smile_errors_parallelized_testing(params=None, N=None, mode=None, surface=False, num_threads=5):
     """
     Prints the largest nodes, the relative errors and the computational times for the strong L^2-error approximation
     of the fractional kernel.
     :param params: Parameters of the rough Heston model
-    :param Ns: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    :param modes: List of modes of the quadrature rule. Default is ['paper', 'optimized', 'european old', 'european']
-    :param true_smile: May specify the actual, non-approximated smile. If None, computes the smile and prints the
-        computational time
-    :param plot: If True, plots all sorts of plots
-    :param verbose: Determines how many intermediate results are printed to the console
-    :return: Arrays containing the true smile, approximate smiles, largest nodes, relative kernel errors,
-        relative smile errors, computational time of the true smile, and computational times of the approximate smiles
+    :param N: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    :param mode: List of modes of the quadrature rule. Default is ['paper', 'optimized', 'european']
+    :param surface: Since T is a vector here, it is not clear whether smiles or surfaces have to be compared. If
+        True, compares surfaces, else compares smiles
+    :param num_threads: Number of parallel processes
+    :return: Arrays containing the largest nodes, relative kernel errors and relative smile errors
     """
     params = rHeston_params_grid(params)
-    H, lambda_, rho, nu, theta, V_0, T = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                     params['theta'], params['V_0'], params['T'], indexing='ij')
-    H, lambda_, rho, nu, theta, V_0, T = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), theta.flatten(), \
-        V_0.flatten(), T.flatten()
-    dictionaries = [{'S': params['S'], 'K': np.exp(np.log(params['K'] * np.sqrt(T[i]))), 'H': H[i], 'T': T[i],
-                     'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
-                     'rel_tol': params['rel_tol']} for i in range(len(H))]
+    if surface:
+        H, lambda_, rho, nu, theta, V_0 = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                      params['theta'], params['V_0'], indexing='ij')
+        H, lambda_, rho, nu, theta, V_0 = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), \
+            theta.flatten(), V_0.flatten()
+        dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
+                         'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
+                        for i in range(len(H))]
+    else:
+        H, lambda_, rho, nu, theta, V_0, T = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                         params['theta'], params['V_0'], params['T'], indexing='ij')
+        H, lambda_, rho, nu, theta, V_0, T = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), \
+            theta.flatten(), V_0.flatten(), T.flatten()
+        dictionaries = [{'S': params['S'], 'K': np.exp(np.log(params['K'] * np.sqrt(T[i]))), 'H': H[i], 'T': T[i],
+                         'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
+                         'rel_tol': params['rel_tol']} for i in range(len(H))]
     N = set_array_default(N, np.arange(1, 11))
     mode = set_list_default(mode, ['paper', 'optimized', 'european'])
     with mp.Pool(processes=num_threads) as pool:
-        result = pool.starmap(smile_errors, zip(dictionaries, itertools.repeat(N), itertools.repeat(mode)))
+        result = pool.starmap(smile_errors, zip(dictionaries, itertools.repeat(N), itertools.repeat(mode),
+                                                itertools.repeat(None), itertools.repeat(False), itertools.repeat(True),
+                                                itertools.repeat(True), itertools.repeat(0), itertools.repeat(True)))
     result = np.asarray(result)
-    result = result.reshape((len(params['H']), len(params['lambda']), len(params['rho']), len(params['nu']),
-                             len(params['theta']), len(params['V_0']), len(params['T'])) + result.shape[1:])
-
+    largest_nodes = result[:, 0, :, :]
+    kernel_errs = result[:, 1, :, :]
+    smile_errs = result[:, 2, :, :]
+    for i in range(len(N)):
+        for j in range(len(mode)):
+            print(f'For N={N[i]} and mode={mode[j]}, the largest node is {largest_nodes[0, j, i]:.3}.')
+            print(f'For N={N[i]} and mode={mode[j]}, the kernel error is {100*kernel_errs[0, j, i]:.4}%.')
+            print(f'For N={N[i]} and mode={mode[j]}, the largest smile error is '
+                  f'{100*np.amax(smile_errs[:, j, i]):.4}%.')
+            print(f'For N={N[i]} and mode={mode[j]}, the smallest smile error is '
+                  f'{100*np.amin(smile_errs[:, j, i]):.4}%.')
+            print(f'For N={N[i]} and mode={mode[j]}, the geometric average smile error is '
+                  f'{100*geometric_average(smile_errs[:, j, i]):.4}%.')
+            print(f'For N={N[i]} and mode={mode[j]}, the median smile error is '
+                  f'{100*np.median(smile_errs[:, j, i]):.4}%.')
+        print(f'For N={N[i]}, the smile error when using {mode[1]} instead of {mode[0]} is at most '
+              f'{100 * np.amax(smile_errs[:, 1, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[1]} instead of {mode[0]} is at least '
+              f'{100 * np.amin(smile_errs[:, 1, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[1]} instead of {mode[0]} is on average (geometrically) '
+              f'{100 * geometric_average(smile_errs[:, 1, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[1]} instead of {mode[0]} is on average (median) '
+              f'{100 * np.median(smile_errs[:, 1, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[1]} is at most '
+              f'{100 * np.amax(smile_errs[:, 2, i] / smile_errs[:, 1, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[1]} is at least '
+              f'{100 * np.amin(smile_errs[:, 2, i] / smile_errs[:, 1, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[1]} is on average (geometrically) '
+              f'{100 * geometric_average(smile_errs[:, 2, i] / smile_errs[:, 1, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[1]} is on average (median) '
+              f'{100 * np.median(smile_errs[:, 2, i] / smile_errs[:, 1, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[0]} is at most '
+              f'{100 * np.amax(smile_errs[:, 2, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[0]} is at least '
+              f'{100 * np.amin(smile_errs[:, 2, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[0]} is on average (geometrically) '
+              f'{100 * geometric_average(smile_errs[:, 2, i] / smile_errs[:, 0, i]):.4}% the size.')
+        print(f'For N={N[i]}, the smile error when using {mode[2]} instead of {mode[0]} is on average (median) '
+              f'{100 * np.median(smile_errs[:, 2, i] / smile_errs[:, 0, i]):.4}% the size.')
+    return largest_nodes, kernel_errs, smile_errs
 
 
 def plot_rHeston_sample_path(params, N=2, N_time=1024, mode='european', vol_behaviour='hyperplane reset',
