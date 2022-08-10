@@ -9,19 +9,39 @@ rHeston_iv_eur_call(params)
 print('time', time.perf_counter()-tic)
 time.sleep(36000)
 '''
-'''
+
+array = np.random.uniform(0, 1, 120).reshape((5, 2, 3, 4))
+print(np.amax(array, axis=3) == array[argmax_indices(array, axis=3)])
+time.sleep(3600)
+ind = np.argmax(array, axis=0)
+print(ind)
+print(array)
+print(np.amax(array, axis=0))
+indexing = (ind,)
+for i in range(len(array.shape)-1):
+    subindexing = ()
+    for j in range(len(array.shape)-1):
+        if i == j:
+            subindexing = subindexing + (slice(None),)
+        else:
+            subindexing = subindexing + (None,)
+    indi = np.arange(array.shape[i+1])
+    indi = indi[subindexing]
+    indexing = indexing + (indi,)
+print(indexing)
+print(array[indexing])
+time.sleep(3600)
+
+
 if __name__ == '__main__':
     # 'nu': log_linspace(0.2, 0.6, 2),
     # 'theta': log_linspace(0.01, 0.03, 2),
     # 'V_0': log_linspace(0.01, 0.03, 2)
-    params = {'nu': np.array([0.6]), 'theta': np.array([0.03]), 'V_0': np.array([0.03])}
+    params = {'H': np.array([0.05]), 'lambda': np.array([1.0]), 'rho': np.array([-0.6]), 'nu': np.array([0.6]), 'theta': np.array([0.01]), 'V_0': np.array([0.01])}
     print(params)
-    rHeston_iv_eur_call_parallelized(params=params, num_threads=15)
-'''
-if __name__ == '__main__':
-    kernel_errors(H=0.1, T=1., Ns=np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), modes=['paper', 'optimized', 'european'], verbose=1)
-    print('finished')
+    rHeston_iv_eur_call_parallelized(params=params, num_threads=1)
     time.sleep(36000)
+
 # compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['paper', 'optimized', 'european'], vol_behaviours=['correct ninomiya victoir'], recompute=False)
 # print('Finished')
 # time.sleep(360000)

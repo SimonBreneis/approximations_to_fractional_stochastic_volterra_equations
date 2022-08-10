@@ -169,6 +169,46 @@ def set_list_default(x, default):
     return x
 
 
+def flat_mesh(*xi):
+    """
+    Given a sequence of iterable objects x0, ..., xn, creates the corresponding n-dimensional mesh, and then flattens
+    all the components.
+    :param xi: The iterable objects the mesh consists of
+    :return: The flattened mesh
+    """
+    mesh = np.meshgrid(*xi, indexing='ij')
+    return [x.flatten() for x in mesh]
+
+
+def argmax_indices(x, axis=0):
+    """
+    If one applies np.argmax(x, axis=i), one gets a single (n-1)-dimensional array denoting the indices of the i-th
+    dimension where the maximum is attained. Conversely, this function returns an n-tuple of (n-1)-dimensional arrays
+    such that np.amax(x, axis=i) == x[argmax_indices(x, axis=i)] holds true.
+    :param x: A numpy array
+    :param axis: An integer, the axis over which the maximum should be taken
+    :return: An n-tuple of (n-1)-dimensional arrays such that np.amax(x, axis=i) == x[argmax_indices(x, axis=i)] holds
+        true.
+    """
+    ind = np.argmax(x, axis=axis)
+    indexing = ()
+    for k in range(len(x.shape)):
+        if k == axis:
+            k_th_index = (ind,)
+        else:
+            temp_indices = ()
+            for j in range(len(x.shape)):
+                if j != axis:
+                    if k == j:
+                        temp_indices = temp_indices + (slice(None),)
+                    else:
+                        temp_indices = temp_indices + (None,)
+            k_th_index = np.arange(x.shape[k])
+            k_th_index = k_th_index[temp_indices]
+        indexing = indexing + (k_th_index,)
+    return indexing
+
+
 def get_filename(kind, N=None, mode=None, vol_behaviour=None, N_time=None, params=None, truth=False, markov=False):
     """
     Filename under which we save our simulated data.
@@ -201,16 +241,16 @@ def get_filename(kind, N=None, mode=None, vol_behaviour=None, N_time=None, param
     T = params['T']
     K = (np.log(np.amin(params['K'])), np.log(np.amax(params['K'])), len(params['K']))
     if isinstance(T, np.ndarray):
-        T_string = f'T={T:.4}'
-    else:
         T_string = f'T=({np.amin(T):.4}, {np.amax(T):.4}, {len(T)})'
+    else:
+        T_string = f'T={T:.4}'
     if truth:
         return f'rHeston {kind}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, ' \
                f'V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
     else:
         if markov:
-            return f'rHeston {kind} {N} dim {mode}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, ' \
-                   f'V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
+            return f'rHeston {kind} {N} dim {mode}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, ' \
+                   f'theta={theta:.3}, V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
         else:
             return f'rHeston {kind} {N} dim {mode} {vol_behaviour} {N_time} time steps, H={H:.3}, ' \
                    f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, {T_string}, ' \
@@ -268,9 +308,23 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
     :param verbose: Determines how many intermediate results are printed to the console
     :return: The smile
     """
-    filename = get_filename(kind='true', params=params, truth=True)
-    if load and exists(filename):
-        return np.load(filename)
+    filename = get_filename(kind='true', params=params, truth=True, markov=False)
+    if load:
+        if exists(filename):
+            return np.load(filename)
+        if not isinstance(params['T'], np.ndarray):
+            T_vec = np.linspace(0.04, 1., 25)
+            if np.amin(np.abs(params['T'] - T_vec)) < 1e-06:
+                min_ind = np.argmin(np.abs(params['T'] - T_vec))
+                alt_params = params.copy()
+                alt_params['T'] = T_vec
+                alt_filename = get_filename(kind='true', params=alt_params, truth=True, markov=False)
+                if exists(alt_filename):
+                    true_smile = np.load(alt_filename)
+                    true_smile = true_smile[min_ind, :]
+                    if save:
+                        np.save(filename, true_smile)
+                    return true_smile
     result = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
                                  rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
                                  T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
@@ -287,10 +341,8 @@ def rHeston_iv_eur_call_parallelized(params, num_threads=5):
     :return: The smiles
     """
     params = rHeston_params_grid(params)
-    H, lambda_, rho, nu, theta, V_0 = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                  params['theta'], params['V_0'], indexing='ij')
-    H, lambda_, rho, nu, theta, V_0 = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), theta.flatten(), \
-        V_0.flatten()
+    H, lambda_, rho, nu, theta, V_0 = flat_mesh(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                params['theta'], params['V_0'])
     dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
                      'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
                     for i in range(len(H))]
@@ -334,10 +386,8 @@ def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15):
     :return: The smiles
     """
     params = rHeston_params_grid(params)
-    H, lambda_, rho, nu, theta, V_0, N, mode = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                           params['theta'], params['V_0'], Ns, modes, indexing='ij')
-    H, lambda_, rho, nu, theta, V_0, N, mode = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), \
-        theta.flatten(), V_0.flatten(), N.flatten(), mode.flatten()
+    H, lambda_, rho, nu, theta, V_0, N, mode = flat_mesh(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                         params['theta'], params['V_0'], Ns, modes)
     dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
                      'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
                     for i in range(len(H))]
@@ -441,8 +491,7 @@ def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None, num_th
     """
     H = set_array_default(H, log_linspace(0.01, 0.2, 300))
     T = set_array_default(T, log_linspace(0.001, 2., 300))
-    H_grid, T_grid = np.meshgrid(H, T, indexing='ij')
-    H_grid, T_grid = H_grid.flatten(), T_grid.flatten()
+    H_grid, T_grid = flat_mesh(H, T)
     N = set_array_default(N, np.arange(1, 11))
     mode = set_list_default(mode, ['paper', 'optimized'])
 
@@ -526,9 +575,13 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
     :param true_smile: May specify the actual, non-approximated smile. If None, computes the smile and prints the
         computational time
     :param plot: If True, plots all sorts of plots
+    :param load: If True, loads the smile instead of computing it, if it is saved
+    :param save: If True, saves the smile after computing it
     :param verbose: Determines how many intermediate results are printed to the console
-    :return: Arrays containing the true smile, approximate smiles, largest nodes, relative kernel errors,
-        relative smile errors, computational time of the true smile, and computational times of the approximate smiles
+    :param parallelizable_output: If True, returns the largest nodes, kernel errors and smile errors (all of the same
+        shape). If False, returns the true smiles, Markovian smiles, largest nodes, kernel errors and smile errors
+    :return: Arrays containing the true smile, approximate smiles, largest nodes, relative kernel errors, and
+        relative smile errors
     """
     params = rHeston_params(params)
     Ns = set_array_default(Ns, np.arange(1, 11))
@@ -539,18 +592,7 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
     smile_errs = np.empty((len(modes), len(Ns)))
 
     if true_smile is None:
-        got_smile = False
-        if load and not isinstance(params['T'], np.ndarray):
-            T_vec = np.linspace(0.04, 1., 25)
-            if np.amin(np.abs(params['T'] - T_vec)) < 1e-06:
-                min_ind = np.argmin(np.abs(params['T'] - T_vec))
-                filename = get_filename(kind='true', params=params, truth=True, markov=False)
-                if exists(filename):
-                    true_smile = np.load(filename)
-                    true_smile = true_smile[min_ind, :]
-                    got_smile = True
-        if not got_smile:
-            true_smile = rHeston_iv_eur_call(params=params, load=load, save=save, verbose=verbose)
+        true_smile = rHeston_iv_eur_call(params=params, load=load, save=save, verbose=verbose)
 
     if isinstance(params['T'], np.ndarray):
         approx_smiles = np.empty((len(modes), len(Ns), len(params['T']), len(params['K'])))
@@ -649,18 +691,14 @@ def smile_errors_parallelized_testing(params=None, N=None, mode=None, surface=Fa
     """
     params = rHeston_params_grid(params)
     if surface:
-        H, lambda_, rho, nu, theta, V_0 = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                      params['theta'], params['V_0'], indexing='ij')
-        H, lambda_, rho, nu, theta, V_0 = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), \
-            theta.flatten(), V_0.flatten()
+        H, lambda_, rho, nu, theta, V_0 = flat_mesh(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                    params['theta'], params['V_0'])
         dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
                          'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
                         for i in range(len(H))]
     else:
-        H, lambda_, rho, nu, theta, V_0, T = np.meshgrid(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                         params['theta'], params['V_0'], params['T'], indexing='ij')
-        H, lambda_, rho, nu, theta, V_0, T = H.flatten(), lambda_.flatten(), rho.flatten(), nu.flatten(), \
-            theta.flatten(), V_0.flatten(), T.flatten()
+        H, lambda_, rho, nu, theta, V_0, T = flat_mesh(params['H'], params['lambda'], params['rho'], params['nu'],
+                                                       params['theta'], params['V_0'], params['T'])
         dictionaries = [{'S': params['S'], 'K': np.exp(np.log(params['K'] * np.sqrt(T[i]))), 'H': H[i], 'T': T[i],
                          'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
                          'rel_tol': params['rel_tol']} for i in range(len(H))]
@@ -864,8 +902,122 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                             np.save(filename, final_S)
 
 
+def compute_final_rHeston_stock_prices_parallelized(params, Ns=None, N_times=None, modes=None, vol_behaviours=None,
+                                                    recompute=False, sample_paths=False, return_times=None,
+                                                    num_threads=5):
+    """
+    Computes the final stock prices of 1000000 sample paths of the Markovian approximation of the rough Heston model.
+    :param params: Parameters of the rough Heston model
+    :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(18)
+    :param modes: List of modes of the quadrature rule. Default is ['european', 'optimized', 'paper']
+    :param vol_behaviours: Behaviour of the volatility when it hits zero. Default is
+        ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
+    :param recompute: If False, checks first whether the file in which the results will be saved already exist. If so,
+        does not recompute the stock prices
+    :param sample_paths: If True, returns the entire sample paths, not just the final values. Also returns the sample
+        paths of the square root of the volatility and the components of the volatility
+    :param return_times: May specify an array of times at which the sample path values should be returned. If None and
+        sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
+    :param num_threads: Number of parallel processes
+    :return: None, the stock prices are saved in a file
+    """
+    params = rHeston_params_grid(params)
+    Ns = set_array_default(Ns, np.array([1, 2, 6]))
+    N_times = set_array_default(N_times, 2 ** np.arange(18))
+    modes = set_list_default(modes, ['european', 'optimized', 'paper'])
+    vol_behaviours = set_list_default(vol_behaviours, ['hyperplane reset', 'ninomiya victoir', 'sticky',
+                                                       'hyperplane reflection', 'adaptive'])
+    H, lambda_, rho, nu, theta, V_0, T, N, N_time, mode, vol_behaviour = flat_mesh(params['H'], params['lambda'],
+                                                                                   params['rho'], params['nu'],
+                                                                                   params['theta'], params['V_0'],
+                                                                                   params['T'], Ns, N_times, modes,
+                                                                                   vol_behaviours)
+    dictionaries = [{'S': params['S'], 'K': np.exp(np.log(params['K'] * np.sqrt(T[i]))), 'H': H[i], 'T': T[i],
+                     'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
+                     'rel_tol': params['rel_tol']} for i in range(len(H))]
+    with mp.Pool(processes=num_threads) as pool:
+        pool.starmap(compute_final_rHeston_stock_prices, zip(dictionaries, N, N_time, mode, vol_behaviour,
+                                                             itertools.repeat(recompute),
+                                                             itertools.repeat(sample_paths),
+                                                             itertools.repeat(return_times)))
+
+
+def plot_smile_errors_given_stock_prices(Ns, N_times, modes, vol_behaviours, nodes, markov_errors, total_errors,
+                                         lower_total_errors, upper_total_errors, discretization_errors, plot=True):
+    """
+    Produces some plots for smile_errors_given_stock_prices and smile_errors_given_stock_prices_parallelized.
+    :param Ns: Numpy array of dimensions N
+    :param N_times: Numpy array of number of time steps
+    :param modes: List of quadrature modes for approximating the kernel
+    :param vol_behaviours: List of behaviours if the volatility hits zero
+    :param nodes: The nodes associated to the modes and Ns
+    :param markov_errors: The errors of the exact Markovian approximations
+    :param total_errors: The errors of the simulated Markovian approximations
+    :param lower_total_errors: The lower MC bounds of the errors of the simulated Markovian approximations
+    :param upper_total_errors: The upper MC bounds of the errors of the simulated Markovian approximations
+    :param discretization_errors: The discretization errors of the simulated Markovian approximations
+    :param plot: Plots various plots depending on this parameter
+    :return: None
+    """
+
+    def finalize_plot_2():
+        plt.xlabel('Number of time steps')
+        plt.ylabel('Maximal relative error')
+        plt.legend(loc='best')
+        plt.show()
+
+    def node_line_plots(col):
+        nodes_1 = nodes[i][j, :]
+        min_val = np.fmin(np.fmin(np.amin(lower_total_errors[i, j, k, :]),
+                                  np.amin(discretization_errors[i, j, k, :])), markov_errors[i, j])
+        max_val = np.fmax(np.fmax(np.amax(upper_total_errors[i, j, k, :]),
+                                  np.amax(discretization_errors[i, j, k, :])), markov_errors[i, j])
+        for node in nodes_1:
+            if node >= 1:
+                plt.loglog(np.array([node, node]), np.array([min_val, max_val]), color=col)
+
+    if plot == 'N' or (isinstance(plot, bool) and plot):
+        for j in range(len(modes)):
+            for k in range(len(vol_behaviours)):
+                for i in range(len(Ns)):
+                    plt.loglog(N_times, total_errors[i, j, k, :], color=color(i, len(Ns)), label=f'N={Ns[i]}')
+                    plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(i, len(Ns)))
+                    plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(i, len(Ns)))
+                    plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(i, len(Ns)))
+                    plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'x-', color=color(i, len(Ns)))
+                    node_line_plots(col=color(i, len(Ns)))
+                plt.title(f'Rough Heston with {modes[j]} quadrature rule\nand {vol_behaviours[k]}')
+                finalize_plot_2()
+    if plot == 'mode' or (isinstance(plot, bool) and plot):
+        for i in range(len(Ns)):
+            for k in range(len(vol_behaviours)):
+                for j in range(len(modes)):
+                    plt.loglog(N_times, total_errors[i, j, k, :], color=color(j, len(modes)), label=modes[j])
+                    plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(j, len(modes)))
+                    plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(j, len(modes)))
+                    plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(j, len(modes)))
+                    plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'x-', color=color(j, len(modes)))
+                    node_line_plots(col=color(j, len(modes)))
+                plt.title(f'Rough Heston with {Ns[i]} nodes\nand {vol_behaviours[k]}')
+                finalize_plot_2()
+    if plot == 'vol_behaviour' or (isinstance(plot, bool) and plot):
+        for i in range(len(Ns)):
+            for j in range(len(modes)):
+                for k in range(len(vol_behaviours)):
+                    plt.loglog(N_times, total_errors[i, j, k, :], color=color(k, len(vol_behaviours)),
+                               label=vol_behaviours[k])
+                    plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(k, len(vol_behaviours)))
+                    plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(k, len(vol_behaviours)))
+                    plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(k, len(vol_behaviours)))
+                    node_line_plots(col=color(k, len(vol_behaviours)))
+                plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'k-', label='Markovian error')
+                plt.title(f'Rough Heston with {Ns[i]} nodes\nand {modes[j]} quadrature rule')
+                finalize_plot_2()
+
+
 def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None, vol_behaviours=None, plot=True,
-                                      true_smile=None):
+                                      true_smile=None, parallelizable_output=False):
     """
     Computes the implied volatility smiles given the final stock prices
     :param params: Parameters of the rough Heston model
@@ -876,6 +1028,10 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
         ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
     :param plot: Creates plots depending on that parameter
     :param true_smile: The smile under the true rough Heston model can be specified here. Otherwise it is computed
+    :param parallelizable_output: If True, returns only the Markovian errors, the total errors of the approximated
+        smiles, the lower MC errors, the upper MC errors, the discretization errors of the approximated smiles, the
+        lower MC discretization errors and the upper MC discretization errors, all of shape
+        (len(Ns), len(modes), len(vol_behaviours), len(N_times)). If False, returns what is written below
     :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
         the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
         MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
@@ -942,22 +1098,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
         plt.ylabel('Implied volatility')
         plt.show()
 
-    def finalize_plot_2():
-        plt.xlabel('Number of time steps')
-        plt.ylabel('Maximal relative error')
-        plt.legend(loc='best')
-        plt.show()
-
-    def node_line_plots(col):
-        nodes_1 = nodes[i][j, :]
-        min_val = np.fmin(np.fmin(np.amin(lower_total_errors[i, j, k, :]),
-                                  np.amin(discretization_errors[i, j, k, :])), markov_errors[i, j])
-        max_val = np.fmax(np.fmax(np.amax(upper_total_errors[i, j, k, :]),
-                                  np.amax(discretization_errors[i, j, k, :])), markov_errors[i, j])
-        for node in nodes_1:
-            if node >= 1:
-                plt.loglog(np.array([node, node]), np.array([min_val, max_val]), color=col)
-
     if plot == 'N' or (isinstance(plot, bool) and plot):
         for j in range(len(modes)):
             for k in range(len(vol_behaviours)):
@@ -970,15 +1110,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                     plt.title(f'Rough Heston with {modes[j]} quadrature rule,\n{vol_behaviours[k]} and {N_times[m]} '
                               + f'time steps')
                     finalize_plot()
-                for i in range(len(Ns)):
-                    plt.loglog(N_times, total_errors[i, j, k, :], color=color(i, len(Ns)), label=f'N={Ns[i]}')
-                    plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(i, len(Ns)))
-                    plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(i, len(Ns)))
-                    plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(i, len(Ns)))
-                    plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'x-', color=color(i, len(Ns)))
-                    node_line_plots(col=color(i, len(Ns)))
-                plt.title(f'Rough Heston with {modes[j]} quadrature rule\nand {vol_behaviours[k]}')
-                finalize_plot_2()
     if plot == 'mode' or (isinstance(plot, bool) and plot):
         for i in range(len(Ns)):
             for k in range(len(vol_behaviours)):
@@ -990,15 +1121,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                             plt.plot(k_vec, lower_smiles[i, j, k, m, -1, :], '--', color=color(j, len(modes)))
                     plt.title(f'Rough Heston with {Ns[i]} nodes,\n{vol_behaviours[k]} and {N_times[m]} time steps')
                     finalize_plot()
-                for j in range(len(modes)):
-                    plt.loglog(N_times, total_errors[i, j, k, :], color=color(j, len(modes)), label=modes[j])
-                    plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(j, len(modes)))
-                    plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(j, len(modes)))
-                    plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(j, len(modes)))
-                    plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'x-', color=color(j, len(modes)))
-                    node_line_plots(col=color(j, len(modes)))
-                plt.title(f'Rough Heston with {Ns[i]} nodes\nand {vol_behaviours[k]}')
-                finalize_plot_2()
     if plot == 'vol_behaviour' or (isinstance(plot, bool) and plot):
         for i in range(len(Ns)):
             for j in range(len(modes)):
@@ -1013,16 +1135,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                     plt.title(f'Rough Heston with {Ns[i]} nodes,\n{modes[j]} quadrature rule and {N_times[m]} time '
                               + f'steps')
                     finalize_plot()
-                for k in range(len(vol_behaviours)):
-                    plt.loglog(N_times, total_errors[i, j, k, :], color=color(k, len(vol_behaviours)),
-                               label=vol_behaviours[k])
-                    plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(k, len(vol_behaviours)))
-                    plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(k, len(vol_behaviours)))
-                    plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(k, len(vol_behaviours)))
-                    node_line_plots(col=color(k, len(vol_behaviours)))
-                plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'k-', label='Markovian error')
-                plt.title(f'Rough Heston with {Ns[i]} nodes\nand {modes[j]} quadrature rule')
-                finalize_plot_2()
     if plot == 'N_time' or (isinstance(plot, bool) and plot):
         for i in range(len(Ns)):
             for j in range(len(modes)):
@@ -1037,9 +1149,94 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                     plt.title(f'Rough Heston with {Ns[i]} nodes,\n{modes[j]} quadrature rule and {vol_behaviours[k]}')
                     finalize_plot()
 
+    plot_smile_errors_given_stock_prices(Ns=Ns, N_times=N_times, modes=modes, vol_behaviours=vol_behaviours,
+                                         nodes=nodes, markov_errors=markov_errors, total_errors=total_errors,
+                                         lower_total_errors=lower_total_errors, upper_total_errors=upper_total_errors,
+                                         discretization_errors=discretization_errors, plot=plot)
+
+    if parallelizable_output:
+        return markov_errors[:, :, None, None], total_errors, lower_total_errors, upper_total_errors, \
+               discretization_errors, lower_discretization_errors, upper_discretization_errors
     return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_errors, total_errors, \
         lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors
+
+
+def compute_smiles_given_stock_prices_parallelized(params, Ns=None, N_times=None, modes=None, vol_behaviours=None,
+                                                   surface=False, plot=True, num_threads=5):
+    """
+    Parallelized version of compute_smiles_given_stock_prices.
+    :param params: Parameters of the rough Heston model
+    :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(18)
+    :param modes: List of modes of the quadrature rule. Default is ['european', 'optimized', 'paper']
+    :param vol_behaviours: Behaviour of the volatility when it hits zero. Default is
+        ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
+    :param plot: Creates plots depending on that parameter
+    :param surface: If True, compares the surfaces. If False, compares the individual smiles for each maturity
+    :param num_threads: Number of parallel processes
+    :return: The Markovian errors, the total errors of the approximated smiles, the lower MC errors, the upper MC
+        errors, the discretization errors of the approximated smiles, the lower MC discretization errors and the upper
+        MC discretization errors
+    """
+    params = rHeston_params_grid(params)
+    if not isinstance(params['T'], np.ndarray):
+        params['T'] = np.array([params['T']])
+    Ns = set_array_default(Ns, np.array([1, 2, 6]))
+    N_times = set_array_default(N_times, 2 ** np.arange(18))
+    modes = set_list_default(modes, ['european', 'optimized', 'paper'])
+    vol_behaviours = set_list_default(vol_behaviours, ['hyperplane reset', 'ninomiya victoir', 'sticky',
+                                                       'hyperplane reflection', 'adaptive'])
+    if surface:
+        H, lambda_, rho, nu, theta, V_0, N, N_time, mode, vol_behaviour = flat_mesh(params['H'], params['lambda'],
+                                                                                    params['rho'], params['nu'],
+                                                                                    params['theta'], params['V_0'], Ns,
+                                                                                    N_times, modes, vol_behaviours)
+        dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
+                         'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
+                        for i in range(len(H))]
+    else:
+        H, lambda_, rho, nu, theta, V_0, T, N, N_time, mode, vol_behaviour = flat_mesh(params['H'], params['lambda'],
+                                                                                       params['rho'], params['nu'],
+                                                                                       params['theta'], params['V_0'],
+                                                                                       params['T'], Ns, N_times, modes,
+                                                                                       vol_behaviours)
+        dictionaries = [{'S': params['S'], 'K': np.exp(np.log(params['K'] * np.sqrt(T[i]))), 'H': H[i], 'T': T[i],
+                         'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
+                         'rel_tol': params['rel_tol']} for i in range(len(H))]
+    with mp.Pool(processes=num_threads) as pool:
+        result = pool.starmap(compute_smiles_given_stock_prices, zip(dictionaries, N, N_time, mode, vol_behaviour,
+                                                                     itertools.repeat(False), itertools.repeat(None),
+                                                                     itertools.repeat(True)))
+    markov_errors = result[:, 0, ...]
+    total_errors = result[:, 1, ...]
+    lower_total_errors = result[:, 2, ...]
+    upper_total_errors = result[:, 3, ...]
+    discretization_errors = result[:, 4, ...]
+    lower_discretization_errors = result[:, 5, ...]
+    upper_discretization_errors = result[:, 6, ...]
+
+    markov_errors_ = np.amax(markov_errors, axis=0)
+    ind_1 = argmax_indices(total_errors, axis=0)
+    total_errors_ = total_errors[ind_1]
+    lower_total_errors_ = lower_total_errors[ind_1]
+    upper_total_errors_ = upper_total_errors[ind_1]
+    ind_2 = argmax_indices(discretization_errors, axis=0)
+    discretization_errors_ = discretization_errors[ind_2]
+    lower_discretization_errors_ = lower_discretization_errors[ind_2]
+    upper_discretization_errors_ = upper_discretization_errors[ind_2]
+
+    nodes = [np.empty((len(modes), N)) for N in Ns]
+    for i in range(len(Ns)):
+        for j in range(len(modes)):
+            nodes_, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
+            nodes[i][j, :] = nodes_
+
+    plot_smile_errors_given_stock_prices(Ns=Ns, N_times=N_times, modes=modes, vol_behaviours=vol_behaviours,
+                                         nodes=nodes, markov_errors=markov_errors_, total_errors=total_errors_,
+                                         lower_total_errors=lower_total_errors_, upper_total_errors=upper_total_errors_,
+                                         discretization_errors=discretization_errors_, plot=plot)
+    return markov_errors, total_errors, lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, upper_discretization_errors
 
 
 def compute_strong_discretization_errors(Ns=None, N_times=None, N_time_ref=131072, modes=None, vol_behaviours=None,
