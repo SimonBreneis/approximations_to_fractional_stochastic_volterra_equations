@@ -40,11 +40,11 @@ def rHeston_params(params):
 
 def rHeston_params_grid(params):
     simple_params = {'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)), 'H': log_linspace(0.05, 0.1, 2),
-                     'T': log_linspace(0.04, 1., 25), 'lambda': log_linspace(0.2, 1., 2),
+                     'T': np.linspace(0.04, 1., 25), 'lambda': log_linspace(0.2, 1., 2),
                      'rho': np.linspace(-0.6, -0.8, 2), 'nu': log_linspace(0.2, 0.6, 2),
                      'theta': log_linspace(0.01, 0.03, 2), 'V_0': log_linspace(0.01, 0.03, 2), 'rel_tol': 1e-05}
     difficult_params = {'S': 1., 'K': np.exp(np.linspace(-1.5, 0.75, 451)), 'H': log_linspace(0.01, 0.2, 15),
-                        'T': log_linspace(0.003, 10., 50), 'lambda': log_linspace(0.05, 5., 15),
+                        'T': np.linspace(0.003, 10., 50), 'lambda': log_linspace(0.05, 5., 15),
                         'rho': np.linspace(-0.3, -0.95, 15), 'nu': log_linspace(0.05, 5., 15),
                         'theta': log_linspace(0.005, 0.3, 15), 'V_0': log_linspace(0.005, 0.3, 15), 'rel_tol': 1e-05}
     if params is None or params == 'simple':
@@ -240,21 +240,22 @@ def get_filename(kind, N=None, mode=None, vol_behaviour=None, N_time=None, param
     V_0 = params['V_0']
     T = params['T']
     K = (np.log(np.amin(params['K'])), np.log(np.amax(params['K'])), len(params['K']))
+    K_string = f'K=({K[0]:.4}, {K[1]:.4}, {K[2]})'
     if isinstance(T, np.ndarray):
         T_string = f'T=({np.amin(T):.4}, {np.amax(T):.4}, {len(T)})'
     else:
         T_string = f'T={T:.4}'
     if truth:
         return f'rHeston {kind}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, ' \
-               f'V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
+               f'V_0={V_0:.3}, {T_string}, {K_string}.npy'
     else:
         if markov:
             return f'rHeston {kind} {N} dim {mode}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, ' \
-                   f'theta={theta:.3}, V_0={V_0:.3}, {T_string}, K=({K[0]}, {K[1]}, {K[2]}).npy'
+                   f'theta={theta:.3}, V_0={V_0:.3}, {T_string}, {K_string}.npy'
         else:
             return f'rHeston {kind} {N} dim {mode} {vol_behaviour} {N_time} time steps, H={H:.3}, ' \
                    f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, {T_string}, ' \
-                   f'K=({K[0]}, {K[1]}, {K[2]}).npy'
+                   f'{K_string}.npy'
 
 
 def log_linear_regression(x, y):
@@ -333,7 +334,7 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
     return result
 
 
-def rHeston_iv_eur_call_parallelized(params, num_threads=5):
+def rHeston_iv_eur_call_parallelized(params, num_threads=5, verbose=0):
     """
     Parallelized version of rHeston_iv_eur_call.
     :param params: Parameters of the rough Heston model
@@ -347,7 +348,8 @@ def rHeston_iv_eur_call_parallelized(params, num_threads=5):
                      'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
                     for i in range(len(H))]
     with mp.Pool(processes=num_threads) as pool:
-        result = pool.starmap(rHeston_iv_eur_call, zip(dictionaries, itertools.repeat(True), itertools.repeat(True)))
+        result = pool.starmap(rHeston_iv_eur_call, zip(dictionaries, itertools.repeat(True), itertools.repeat(True),
+                                                       itertools.repeat(verbose)))
     return result
 
 
@@ -376,7 +378,7 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     return result
 
 
-def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15):
+def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15, verbose=0):
     """
     Parallelized version of rHestonMarkov_iv_eur_call.
     :param params: Parameters of the rough Heston model
@@ -394,7 +396,7 @@ def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15):
     with mp.Pool(processes=num_threads) as pool:
         result = pool.starmap(rHestonMarkov_iv_eur_call, zip(dictionaries, N, mode, itertools.repeat(None),
                                                              itertools.repeat(None), itertools.repeat(True),
-                                                             itertools.repeat(True)))
+                                                             itertools.repeat(True), itertools.repeat(verbose)))
     return result
 
 
@@ -1396,9 +1398,9 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
             return error, approx_smile_, l_, u_, S_
         return error
 
-    nodes = np.linspace(0.01, N, N)
+    nodes = np.exp(np.arange(N))
     res = scipy.optimize.minimize(lambda x: func(x, full_output=False), x0=nodes, bounds=((1e-06, None),) * N,
-                                  method='L-BFGS-B', options={'eps': 1e-04})
+                                  method='Powell')
     nodes = res.x
     weights = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes, output='error')[1]
     if test:

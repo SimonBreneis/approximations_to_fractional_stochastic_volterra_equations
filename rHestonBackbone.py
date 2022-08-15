@@ -27,14 +27,15 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         :param T_: Maturity
         return: The price of the call option
         """
-        N_Riccati = int(400 / np.sqrt(T_))  # Number of time steps used in the solution of the fractional Riccati
+        N_Riccati = int(200 / np.sqrt(T_))  # Number of time steps used in the solution of the fractional Riccati
         # equation
         L = 80 / T_  # The value at which we cut off the Fourier integral, so we do not integrate over the reals, but
         # only over [0, L]
-        N_Fourier = int(7 * L / np.sqrt(T_))  # The number of points used in the trapezoidal rule for the approximation
+        N_Fourier = int(5 * L / np.sqrt(T_))  # The number of points used in the trapezoidal rule for the approximation
         # of the Fourier integral
         R = 2.  # The (dampening) shift that we use for the Fourier inversion
         np.seterr(all='warn')
+        side_computations = True
 
         def compute_iv(N_Riccati_, L_, N_Fourier_):
             return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
@@ -43,39 +44,50 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         tic = time.perf_counter()
         iv = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
         duration = time.perf_counter() - tic
-        iv_approx = compute_iv(N_Riccati_=int(N_Riccati / 1.5), L_=L / 1.2, N_Fourier_=N_Fourier // 2)
+        iv_approx = compute_iv(N_Riccati_=int(N_Riccati / 1.6), L_=L / 1.2, N_Fourier_=N_Fourier // 2)
         error = np.amax(np.abs(iv_approx - iv) / iv)
+        # print(np.abs(iv_approx - iv) / iv)
 
         while np.isnan(error) or error > rel_tol or np.sum(np.isnan(iv)) > 0:
-            iv_approx = compute_iv(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
-            error_Riccati = np.amax(np.abs(iv_approx - iv) / iv)
-            if not np.isnan(error_Riccati) and error_Riccati < rel_tol / 10 and np.sum(np.isnan(iv_approx)) == 0:
-                N_Riccati = N_Riccati // 2
+            if side_computations:
+                iv_approx = compute_iv(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
+                error_Riccati = np.amax(np.abs(iv_approx - iv) / iv)
+                if not np.isnan(error_Riccati) and error_Riccati < rel_tol / 10 and np.sum(np.isnan(iv_approx)) == 0:
+                    N_Riccati = N_Riccati // 2
 
-            iv_approx = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier // 3)
-            error_Fourier = np.amax(np.abs(iv_approx - iv) / iv)
-            if not np.isnan(error_Fourier) and error_Fourier < rel_tol / 10 and np.sum(np.isnan(iv_approx)) == 0:
-                N_Fourier = N_Fourier // 3
+                iv_approx = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier // 3)
+                error_Fourier = np.amax(np.abs(iv_approx - iv) / iv)
+                if not np.isnan(error_Fourier) and error_Fourier < rel_tol / 10 and np.sum(np.isnan(iv_approx)) == 0:
+                    N_Fourier = N_Fourier // 3
 
-            iv_approx = iv
+                iv_approx = iv
+            else:
+                error_Fourier, error_Riccati = np.nan, np.nan
+
             L = L * 1.25
             N_Fourier = N_Fourier * 2
-            N_Riccati = int(N_Riccati * 1.5)
+            N_Riccati = int(N_Riccati * 1.6)
             if verbose >= 1:
                 print(error, error_Fourier, error_Riccati, L, N_Fourier, N_Riccati, duration,
                       time.strftime("%H:%M:%S", time.localtime()))
+
+            side_computations = True
             tic = time.perf_counter()
             with np.errstate(all='raise'):
                 try:
                     iv = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
                 except:
+                    '''
                     L = L / 1.35
                     N_Fourier = int(N_Fourier / 1.5)
                     N_Riccati = int(N_Riccati / 1.2)
+                    '''
+                    side_computations = False
                     if error_Fourier < rel_tol and error_Riccati < rel_tol:
                         return iv
             duration = time.perf_counter() - tic
             error = np.amax(np.abs(iv_approx - iv) / iv)
+            # print(np.abs(iv_approx - iv) / iv)
             if verbose >= 1:
                 print(error)
 

@@ -368,7 +368,15 @@ def error_optimal_weights(H, T, nodes, output='error'):
         A = (1 - exp_node_matrix) / node_matrix[None, :, :]
         b = -2 * gamma_ints / nodes[None, :] ** (H + 0.5)
         c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
-        v = np.linalg.solve(A, b)
+        try:
+            v = np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            v = np.empty((len(T), len(nodes)))
+            for i in range(len(T)):
+                try:
+                    v[i, :] = np.linalg.solve(A[i, ...], b[i, ...])
+                except np.linalg.LinAlgError:
+                    v[i, :] = np.linalg.lstsq(A[i, ...], b[i, ...], rcond=None)[0]
         err = c - 0.25 * np.sum(b * v, axis=1)
         opt_weights = -0.5 * v
         if len(opt_weights.shape) > 1:
@@ -398,7 +406,17 @@ def error_optimal_weights(H, T, nodes, output='error'):
         A_hess = 2 * (1 - (1 + nmT + nmT ** 2 / 2) * exp_node_matrix[None, :, :]) / node_matrix[None, :, :] ** 3
         b_hess = -2 * (-(nT ** (H + 1.5) + (H + 1.5) * nT ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
                     H + 1.5) * gamma_ints) / nodes[None, :] ** (H + 2.5)
-        U = np.linalg.solve(A, diagonalize(b_grad))
+        try:
+            U = np.linalg.solve(A, diagonalize(b_grad))
+        except np.linalg.LinAlgError:
+            diag_b = diagonalize(b_grad)
+            U = np.empty((len(T), len(nodes), len(nodes)))
+            for i in range(len(T)):
+                for j in range(len(nodes)):
+                    try:
+                        U[i, j, :] = np.linalg.solve(A[i, ...], diag_b[i, j, :])
+                    except np.linalg.LinAlgError:
+                        U[i, j, :] = np.linalg.lstsq(A[i, ...], diag_b[i, j, :])[0]
         Y = diagonalize(mvp(A_grad, v)) + A_grad * v[:, None, :]
         YTU = trans(Y) @ U
         hess = 0.5 * (YTU - trans(np.linalg.solve(A, Y)) @ Y + diagonalize(v * mvp(A_hess, v))
@@ -417,7 +435,10 @@ def error_optimal_weights(H, T, nodes, output='error'):
     A = (1 - exp_node_matrix) / node_matrix
     b = -2 * gamma_ints / nodes ** (H + 0.5)
     c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
-    v = np.linalg.solve(A, b)
+    try:
+        v = np.linalg.solve(A, b)
+    except np.linalg.LinAlgError:
+        v = np.linalg.lstsq(A, b, rcond=None)[0]
     err = c - 0.25 * np.dot(b, v)
     opt_weights = -0.5 * v
     if output == 'error' or output == 'err':
@@ -432,7 +453,10 @@ def error_optimal_weights(H, T, nodes, output='error'):
     A_hess = 2 * (1 - (1 + nmT + nmT ** 2 / 2) * exp_node_matrix) / node_matrix ** 3
     b_hess = -2 * (-(nT ** (H + 1.5) + (H + 1.5) * nT ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
             H + 1.5) * gamma_ints) / nodes ** (H + 2.5)
-    U = np.linalg.solve(A, np.diag(b_grad))
+    try:
+        U = np.linalg.solve(A, np.diag(b_grad))
+    except np.linalg.LinAlgError:
+        U = np.linalg.lstsq(A, b, rcond=None)[0]
     Y = np.diag(A_grad @ v) + A_grad * v[None, :]
     YTU = Y.T @ U
     hess = 0.5 * (YTU - np.linalg.solve(A, Y).T @ Y + np.diag(v * (A_hess @ v)) + v[None, :] * v[:, None] * A_hess
