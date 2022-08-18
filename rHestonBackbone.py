@@ -27,12 +27,12 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         :param T_: Maturity
         return: The price of the call option
         """
-        N_Riccati = int(200 / np.sqrt(T_))  # Number of time steps used in the solution of the fractional Riccati
+        N_Riccati = int(300 / np.sqrt(T_))  # Number of time steps used in the solution of the fractional Riccati
         # equation
-        L = 80 / T_ * 1.5  # The value at which we cut off the Fourier integral, so we do not integrate over the reals, but
-        # only over [0, L]
-        N_Fourier = int(5 * L / np.sqrt(T_))  # The number of points used in the trapezoidal rule for the approximation
-        # of the Fourier integral
+        L = 120 / np.sqrt(T_)  # The value at which we cut off the Fourier integral, so we do not integrate over the
+        # reals, but only over [0, L]
+        N_Fourier = int(7.5 * L / np.sqrt(T_))  # The number of points used in the trapezoidal rule for the
+        # approximation of the Fourier integral
         R = 2.  # The (dampening) shift that we use for the Fourier inversion
         np.seterr(all='warn')
         side_computations = True

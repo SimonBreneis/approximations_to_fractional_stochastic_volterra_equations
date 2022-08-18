@@ -367,6 +367,8 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     :param verbose: Determines how many intermediate results are printed to the console
     :return: The smile
     """
+    # if params['V_0'] == 0.01 and params['theta'] == 0.01:
+    # return np.empty((len(params['T']), len(params['K'])))
     filename = get_filename(kind='Markov', params=params, truth=False, markov=True, N=N, mode=mode)
     print(filename)
     if load and exists(filename):

@@ -1,123 +1,124 @@
-import mpmath as mp
 import numpy as np
-import scipy
-from scipy import special
+from scipy.special import gamma
 import ComputationalFinance as cf
 import RoughKernel as rk
+import psutil
 
 
-def sqrt_cov_matrix_mpmath(dt, nodes):
+def preprocess_rule(nodes, weights):
     """
-    Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
-    Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
-    More precisely, computes the Cholesky decomposition of the covariance matrix of the following Gaussian vector:
-    (int_0^dt exp(-x_1(dt-s)) dW_s, ..., int_0^dt exp(-x_k(dt-s)) dW_s, W_dt),
-    where k = m*n is the number of nodes, and these nodes are determined by the m-point quadrature rule approximation
-    of the rough kernel on n subintervals. Note that no weights of the quadrature rule are used. Returns a numpy array,
-    but the computation is done using the mpmath library.
-    :param dt: Time step size
-    :param nodes: The nodes of the quadrature rule approximation
-    :return: The Cholesky decomposition of the above covariance matrix
+    Ensures that the nodes and weights are in a standard format. This means that the nodes are ordered in increasing
+    order, the smallest node is zero, and there is only one zero node.
+    :param nodes: The nodes
+    :param weights: The weights
+    :return: The standardized nodes and weights
     """
-    k = len(nodes)
-    mp.mp.dps = int(np.amax(np.array([20., k ** 2, mp.mp.dps])))
-    cov_matrix = mp.matrix(k + 1, k + 1)
-    for i in range(k):
-        for j in range(k):
-            cov_matrix[i, j] = (1 - mp.exp(-dt * (nodes[i] + nodes[j]))) / (nodes[i] + nodes[j])
-    for i in range(k):
-        entry = (1 - mp.exp(-dt * nodes[i])) / nodes[i]
-        cov_matrix[k, i] = entry
-        cov_matrix[i, k] = entry
-    cov_matrix[k, k] = dt
-    return mp.cholesky(cov_matrix)
+    nodes, weights = rk.sort(nodes, weights)
+    if nodes[0] > 1e-04:
+        nodes_ = np.zeros(len(nodes) + 1)
+        nodes_[1:] = nodes
+        weights_ = np.zeros(len(weights) + 1)
+        weights_[1:] = weights
+        nodes, weights = nodes_, weights_
+    n_zero_nodes = np.sum(nodes < 1e-04)
+    nodes[:n_zero_nodes] = 0.
+    if n_zero_nodes > 1:
+        nodes_ = np.zeros(len(nodes) - n_zero_nodes + 1)
+        nodes_[1:] = nodes[n_zero_nodes:]
+        weights_ = np.zeros(len(nodes) - n_zero_nodes + 1)
+        weights_[0] = np.sum(weights[:n_zero_nodes])
+        weights_[1:] = weights[n_zero_nodes:]
+        nodes, weights = nodes_, weights_
+    return nodes, weights
 
 
-def sqrt_cov_matrix(dt, nodes):
+def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.):
     """
-    Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
-    Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
-    More precisely, computes the Cholesky decomposition of the covariance matrix of the following Gaussian vector:
-    (int_0^dt exp(-x_1(dt-s)) dW_s, ..., int_0^dt exp(-x_k(dt-s)) dW_s, W_dt),
-    where k = m*n is the number of nodes, and these nodes are determined by the m-point quadrature rule approximation
-    of the rough kernel on n subintervals. Note that no weights of the quadrature rule are used. Returns a numpy array,
-    but the computation is done using the mpmath library.
-    :param dt: Time step size
-    :param nodes: The nodes of the quadrature rule approximation
-    :return: The Cholesky decomposition of the above covariance matrix
-    """
-    cov_root_mp = sqrt_cov_matrix_mpmath(dt, nodes)
-    return rk.mp_to_np(cov_root_mp)
-
-
-def variance_integral(nodes, weights, t):
-    """
-    Computes an integral that appears in the rBergomi approximation that is inspired by Alfonsi and Kebaier. Computes
-    the integral int_0^t ( sum_i w_i exp(-x_i (t-s)) )^2 ds. Takes a vector in t. May take as an input mpmath elements,
-    but returns a numpy array.
-    :param nodes: The nodes of the quadrature rule
-    :param weights: The weights of the quadrature rule
-    :param t: The current time
-    :return: The vector of integrals
-    """
-    w_0 = weights[-1]
-    nodes = nodes[:-1]
-    weights = weights[:-1]
-    weight_matrix = mp.matrix([[weight_i * weight_j for weight_j in weights] for weight_i in weights])
-    node_matrix = mp.matrix([[node_i + node_j for node_j in nodes] for node_i in nodes])
-    result = np.empty(shape=(len(t),))
-    for t_ in range(len(t)):
-        expression = mp.matrix([[weight_matrix[i, j] / node_matrix[i, j] * (
-                1 - mp.exp(-node_matrix[i, j] * mp.mpf(t[t_]))) for j in range(len(nodes))] for i in
-                                range(len(nodes))])
-        expression_np = np.array([[expression[i, j] for j in range(len(nodes))] for i in range(len(nodes))])
-        result[t_] = np.sum(expression_np.flatten())
-        result[t_] = result[t_] + w_0**2 * t[t_]
-        result[t_] = result[t_] + 2 * w_0 * np.sum(np.array([weights[i]/nodes[i] * (1-mp.exp(-nodes[i]*t[t_])) for i in range(len(nodes))]))
-    return result
-
-
-def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1., rounds=1):
-    """
-    Computes M final stock prices of an approximation of the rough Bergomi model (approximation inspired by Alfonsi and
-    Kebaier, with discretization points taken from Harms).
+    Computes M final stock prices of the Markovian approximation of the rough Bergomi model.
     :param H: Hurst parameter
     :param T: Final time
     :param N_time: Number of time discretization steps
-    :param eta:
+    :param eta: Volatility of volatility
     :param V_0: Initial variance
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the variance process and the stock price
     :param nodes: The nodes of the approximation
     :param weights: The weights of the approximation
     :param M: Number of final stock prices
-    :param rounds: Actually computes M*rounds samples, but only M at a time to avoid excessive memory usage.
     :return: An array containing the final stock prices
     """
+
+    def sqrt_cov_matrix():
+        """
+        Computes the Cholesky decomposition of the covariance matrix of one step in the scheme that was inspired by
+        Alfonsi and Kebaier, "Approximation of stochastic Volterra equations with kernels of completely monotone type".
+        More precisely, computes the Cholesky decomposition of the covariance matrix of the following Gaussian vector:
+        (W_dt, int_0^dt exp(-x_1(dt-s)) dW_s, ..., int_0^dt exp(-x_N(dt-s)) dW_s). Note that no weights of the
+        quadrature rule are used.
+        :return: The Cholesky decomposition of the above covariance matrix
+        """
+        nodes_ = nodes[1:]
+        cov_matrix = np.empty((N, N))
+        node_matrix = nodes_[:, None] + nodes_[None, :]
+        cov_matrix[1:, 1:] = (1 - np.exp(-dt * node_matrix)) / node_matrix
+        entry = (1 - np.exp(-dt * nodes_)) / nodes_
+        cov_matrix[0, 1:] = entry
+        cov_matrix[1:, 0] = entry
+        cov_matrix[0, 0] = dt
+        return np.linalg.cholesky(cov_matrix)
+
+    def variance_integral():
+        """
+        Computes an integral that appears in the rBergomi approximation that is inspired by Alfonsi and Kebaier.
+        Computes the integral int_0^t ( sum_i w_i exp(-x_i (t-s)) )^2 ds.
+        :return: The vector of integrals
+        """
+        times = np.arange(N_time) * dt
+        w_0 = weights[0]
+        nodes_ = nodes[1:]
+        weights_ = weights[1:]
+        weight_matrix = weights_[None, :] * weights_[:, None]
+        node_matrix = nodes_[None, :] + nodes_[:, None]
+        expression = (weight_matrix / node_matrix)[None, ...] \
+            * (1 - np.exp(-node_matrix[None, ...] * times[:, None, None]))
+        result = np.sum(expression, axis=(1, 2))
+        result = result + w_0 ** 2 * times
+        result = result + 2 * w_0 * np.sum((weights_ / nodes_)[None, :]
+                                           * (1 - np.exp(-nodes_[None, :] * times[:, None])), axis=-1)
+        return result
+
     dt = T / N_time
-    sqrt_cov = sqrt_cov_matrix(dt, nodes[:-1])
-    weights = rk.mp_to_np(weights)
-    exp_vector = np.exp(-dt * rk.mp_to_np(nodes))
-    eta_transformed = eta * np.sqrt(2 * H) * scipy.special.gamma(
-        H + 0.5)  # the sqrt is in the model, the Gamma takes care of the c_H in the weights of the quadrature rule
-    variances = eta_transformed ** 2 / 2 * variance_integral(nodes, weights, np.arange(N_time) * dt)
-    S = np.empty(shape=(M * rounds))
+    N = len(nodes)
+    sqrt_cov = sqrt_cov_matrix()
+    active_nodes = nodes
+    active_weights = weights
+    if weights[0] == 0:  # this is faster if the zero-node is not used in the volatility process
+        active_nodes = nodes[1:]
+        active_weights = weights[1:]
+    active_N = len(active_nodes)
+    exp_vector = np.exp(-dt * active_nodes)
+    eta_transformed = eta * np.sqrt(2 * H) * gamma(H + 0.5)
+    variances = eta_transformed ** 2 / 2 * variance_integral()
+
+    available_memory = psutil.virtual_memory().available
+    necessary_memory = 10 * M * N * N_time * np.array([0.]).nbytes
+    rounds = int(np.ceil(necessary_memory / available_memory))
+    M_ = int(np.ceil(M / rounds))
+    print(available_memory, necessary_memory, rounds, M_)
+    S = np.empty(shape=(M_ * rounds))
     for rd in range(rounds):
-        W_1_diff = np.array([sqrt_cov.dot(np.random.normal(0., 1., size=(len(nodes), N_time))) for _ in range(M)])
-        # W_1_diff = np.transpose(sqrt_cov.dot(np.random.normal(0, 1, size=(M, len(nodes), N_time))), [1, 0, 2])
-        # is slower
-        W_1_fBm = np.zeros(shape=(M, len(nodes), N_time))
+        W_1_diff = np.einsum('ij,kjl->kil', sqrt_cov, np.random.normal(0, 1, size=(M_, N, N_time)))
+        W_1_fBm = np.zeros(shape=(M_, active_N, N_time))
         for i in range(N_time-1):
-            W_1_fBm[:, :, i+1] = exp_vector * W_1_fBm[:, :, i] + W_1_diff[:, :, i]
-        W_1_fBm = eta_transformed * np.dot(weights, W_1_fBm)
-        V = V_0 * np.exp(W_1_fBm - variances)
-        W_2_diff = np.random.normal(0, np.sqrt(1 - rho ** 2) * np.sqrt(dt), size=(M, N_time))
-        S[rd * M:(rd + 1) * M] = np.exp(np.log(S_0) + np.sum(np.sqrt(V) * (rho * W_1_diff[:, -1, :] + W_2_diff) - V / 2 * dt, axis=1))
-    return S
+            W_1_fBm[:, :, i+1] = exp_vector * W_1_fBm[:, :, i] + W_1_diff[:, -active_N:, i]
+        V = V_0 * np.exp(np.dot(eta_transformed * active_weights, W_1_fBm) - variances)
+        S_BM = rho * W_1_diff[:, 0, :] + np.random.normal(0, np.sqrt(1 - rho ** 2) * np.sqrt(dt), size=(M_, N_time))
+        S[rd * M_:(rd + 1) * M_] = S_0 * np.exp(np.sum(np.sqrt(V) * S_BM - V * (dt / 2), axis=1))
+    return S[:M]
 
 
 def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., N=10, M=1000,
-                       rounds=1, mode="observation"):
+                       mode="observation"):
     """
     Computes the implied volatility of the European call option under the rough Bergomi model, using the approximation
     inspired by Alfonsi and Kebaier.
@@ -131,11 +132,11 @@ def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1.
     :param K: The strike price
     :param N: Total number of points in the quadrature rule, N=n*m
     :param M: Number of samples
-    :param rounds: Actually uses M*rounds samples, but only m at a time to avoid excessive memory usage
     :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
     theorem.
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
     nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0, rounds)
-    return cf.iv_eur_call_MC(samples, K, T, S_0)
+    nodes, weights = preprocess_rule(nodes, weights)
+    samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0)
+    return cf.iv_eur_call_MC(S_0, K, T, samples)

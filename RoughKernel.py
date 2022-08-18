@@ -864,7 +864,8 @@ def european_rule(H, N, T, optimal_weights=False):
 
 def quadrature_rule(H, N, T, mode="optimized"):
     """
-    Returns the nodes and weights of a quadrature rule for the fractional kernel with Hurst parameter H.
+    Returns the nodes and weights of a quadrature rule for the fractional kernel with Hurst parameter H. The nodes are
+    sorted in increasing order.
     :param H: Hurst parameter
     :param N: Total number of nodes
     :param T: Final time
