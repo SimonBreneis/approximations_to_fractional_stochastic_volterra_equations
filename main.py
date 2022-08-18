@@ -4,8 +4,10 @@ import Data
 import rBergomi
 from functions import *
 
-print(rBergomi.implied_volatility())
 
+tic = time.perf_counter()
+print(rBergomi.implied_volatility(M=20000))
+print(time.perf_counter() - tic)
 '''
 params = {'H': 0.05, 'lambda': 0.2, 'rho': -0.6, 'nu': 0.6,
           'theta': 0.01, 'V_0': 0.01, 'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)),

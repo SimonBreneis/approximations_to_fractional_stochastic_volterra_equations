@@ -13,18 +13,15 @@ def sqrt_cov_matrix(H, T, N=1000):
     :return: The Cholesky decomposition of the above covariance matrix
     """
     cov = np.empty(shape=(2 * N, 2 * N))
-
-    cov[0:N, 0:N] = gamma(H + 0.5) / gamma(H + 1.5) * \
-                    np.array([[(np.fmin(i, j) * T / N) ** (0.5 + H) * (np.fmax(i, j) * T / N) ** (H - 0.5) *
-                            hyp2f1(0.5 - H, 1., 1.5 + H, float(np.fmin(i, j)) / np.fmax(i, j))
-                                for i in range(1, N + 1)] for j in range(1, N + 1)])
-    cov[N:(2 * N), N:(2 * N)] = np.array([[np.fmin(i, j) * T / N for i in range(1, N + 1)] for j in range(1, N + 1)])
-    cov[0:N, N:(2 * N)] = 1. / (H + 0.5) * np.array(
-        [[(i * T / N) ** (H + 0.5) - (np.fmax(i - j, 0) * T / N) ** (H + 0.5) for j in range(1, N + 1)] for i in
-         range(1, N + 1)])
-    cov[N:(2 * N), 0:N] = 1. / (H + 0.5) * np.array(
-        [[(i * T / N) ** (H + 0.5) - (np.fmax(i - j, 0) * T / N) ** (H + 0.5) for i in range(1, N + 1)] for j in
-         range(1, N + 1)])
+    times = np.arange(1, N+1) * (T / N)
+    minima = np.fmin(times[:, None], times[None, :])
+    maxima = np.fmax(times[:, None], times[None, :])
+    cov[0:N, 0:N] = gamma(H + 0.5) / gamma(H + 1.5) * minima ** (0.5 + H) * maxima ** (H - 0.5) \
+        * hyp2f1(0.5 - H, 1, 1.5 + H, minima / maxima)
+    cov[N:(2 * N), N:(2 * N)] = minima
+    cov[0:N, N:(2 * N)] = 1 / (H + 0.5) \
+        * (times[:, None] ** (H + 0.5) - np.fmax(times[:, None] - times[None, :], 0) ** (H + 0.5))
+    cov[N:(2 * N), 0:N] = cov[0:N, N:(2 * N)].T
     return np.linalg.cholesky(cov)
 
 
@@ -46,21 +43,16 @@ def generate_samples(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     sqrt_cov = sqrt_cov_matrix(H, T, N)
     S = np.empty(M * rounds)
     for rd in range(rounds):
-        W_vec = sqrt_cov.dot(np.random.normal(0, 1, (2 * N, M)))
-        V = np.empty(shape=(N + 1, M))
+        W_vec = sqrt_cov @ np.random.normal(0, 1, (2 * N, M))
+        V = np.empty(shape=(N, M))  # actual V is of shape (N+1, M), but we do not need the last one for S
         V[0, :] = V_0
-        V[1:, :] = V_0 * np.exp(
-            eta * np.sqrt(2 * H) * W_vec[0:N, :] - eta * eta / 2 * np.array(
-                [[(i * dt) ** (2 * H) for _ in range(0, M)] for i in range(1, N + 1)]))
+        V[1:, :] = V_0 * np.exp(eta * np.sqrt(2 * H) * W_vec[:N - 1, :]
+                                - eta ** 2 / 2 * (np.arange(1, N) * dt)[:, None] ** (2 * H))
         W_diff = np.empty(shape=(N, M))
         W_diff[0, :] = W_vec[N, :]
-        W_diff[1:, :] = W_vec[(N + 1):(2 * N), :] - W_vec[N:(2 * N - 1), :]
-        W_2 = np.random.normal(0, np.sqrt(dt), (N, M))
-        S_ = S_0 * np.ones(shape=(M,))
-        for i in range(N):
-            S_ = S_ * np.exp(
-                np.sqrt(V[i, :]) * (rho * W_diff[i, :] + np.sqrt(1 - rho ** 2) * W_2[i, :]) - V[i, :] * dt / 2)
-        S[rd * M:(rd + 1) * M] = S_
+        W_diff[1:, :] = W_vec[N + 1:, :] - W_vec[N:2 * N - 1, :]
+        S_BM = rho * W_diff + np.sqrt(1 - rho ** 2) * np.random.normal(0, np.sqrt(dt), (N, M))
+        S[rd * M:(rd + 1) * M] = S_0 * np.exp(np.sum(np.sqrt(V) * S_BM - V * dt / 2, axis=0))
     return S
 
 
@@ -81,4 +73,4 @@ def implied_volatility(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
     samples = generate_samples(H, T, N, eta, V_0, S_0, rho, M, rounds)
-    return cf.iv_eur_call_MC(samples, K, T, S_0)
+    return cf.iv_eur_call_MC(S_0, K, T, samples)
