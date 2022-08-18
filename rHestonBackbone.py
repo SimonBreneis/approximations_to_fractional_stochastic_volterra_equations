@@ -29,7 +29,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         """
         N_Riccati = int(200 / np.sqrt(T_))  # Number of time steps used in the solution of the fractional Riccati
         # equation
-        L = 80 / T_  # The value at which we cut off the Fourier integral, so we do not integrate over the reals, but
+        L = 80 / T_ * 1.5  # The value at which we cut off the Fourier integral, so we do not integrate over the reals, but
         # only over [0, L]
         N_Fourier = int(5 * L / np.sqrt(T_))  # The number of points used in the trapezoidal rule for the approximation
         # of the Fourier integral

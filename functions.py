@@ -326,6 +326,7 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
                     if save:
                         np.save(filename, true_smile)
                     return true_smile
+    print('Actually compute it')
     result = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
                                  rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
                                  T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
@@ -367,6 +368,7 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     :return: The smile
     """
     filename = get_filename(kind='Markov', params=params, truth=False, markov=True, N=N, mode=mode)
+    print(filename)
     if load and exists(filename):
         return np.load(filename)
     result = rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
@@ -1428,8 +1430,8 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     Optimizes the nodes such that the error in the MC simulation of the implied volatility smile is as small as
     possible.
     :param params: Parameters of the rough Heston model
-    :param Ns: Numpy array of numbers of dimensions of the Markovian approximation. Default is [1, 2, 6]
-    :param N_times: Numpy array of numbers of time steps. Default is 2 ** np.arange(10)
+    :param Ns: Numpy array of numbers of dimensions of the Markovian approximation. Default is [1, 2, 3]
+    :param N_times: Numpy array of numbers of time steps. Default is 2 ** np.arange(1, 12)
     :param vol_behaviours: List of behaviours of the volatility when it hits zero. Default is
         ['hyperplane reset', 'ninomiya victoir', 'sticky', 'hyperplane reflection', 'adaptive']
     :param true_smile: May specify the smile of the actual rough Heston model. If not, it is computed
@@ -1444,8 +1446,8 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     params = rHeston_params(params)
     if not isinstance(params['T'], np.ndarray):
         params['T'] = np.array([params['T']])
-    Ns = set_array_default(Ns, np.array([1, 2, 6]))
-    N_times = set_array_default(N_times, 2 ** np.arange(10))
+    Ns = set_array_default(Ns, np.array([1, 2, 3]))
+    N_times = set_array_default(N_times, 2 ** np.arange(1, 12))
     vol_behaviours = set_list_default(vol_behaviours, ['hyperplane reset', 'ninomiya victoir', 'sticky',
                                                        'hyperplane reflection', 'adaptive'])
     largest_nodes = np.empty((len(Ns), len(vol_behaviours), len(N_times)))
@@ -1566,3 +1568,81 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     return largest_nodes, true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, total_errors, \
         lower_total_errors, upper_total_errors, markov_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors
+
+
+def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_behaviour='sticky', true_smile=None,
+                                             largest_nodes=None, plot=True, verbose=0):
+    """
+    Plots the errors in the implied volatility smile using simulation for different numbers of time steps and
+    different largest nodes.
+    :param params: Parameters of the rough Heston model
+    :param N: Number of nodes
+    :param N_times: Numpy array of number of time steps in the simulation. Default is 2 ** np.arange(12)
+    :param vol_behaviour: Behaviour of the volatility when it hits 0
+    :param true_smile: Can specify the true smile of the option. If left unspecified, it is computed
+    :param largest_nodes: Numpy array of the largest nodes that should be used. Default is np.linspace(0, 10, 101)
+    :param plot: If True, plots the results
+    :param verbose: Determines how many intermediary results are printed to the console
+    :return: The Markovian smiles, the Markovian errors, the total simulation errors, the lower MC simulation error
+        bounds, the upper MC simulation error bounds, and the discretization errors (discretization + MC)
+    """
+    params = rHeston_params(params)
+    if true_smile is None:
+        true_smile = rHeston_iv_eur_call(params)
+    N_times = set_array_default(N_times, 2 ** np.arange(12))
+    largest_nodes = set_array_default(largest_nodes, np.linspace(0, 10, 101))
+
+    markov_errors = np.empty(len(largest_nodes))
+    total_errors = np.empty((len(N_times), len(largest_nodes)))
+    lower_total_errors = np.empty((len(N_times), len(largest_nodes)))
+    upper_total_errors = np.empty((len(N_times), len(largest_nodes)))
+    discretization_errors = np.empty((len(N_times), len(largest_nodes)))
+    markov_smiles = np.empty((len(largest_nodes), len(params['K'])))
+
+    for i in range(len(N_times)):
+        WB = np.empty((2, 1000000, N_times[i]))
+        for j in range(10):
+            WB[:, 100000 * j:100000 * (j + 1), :] = resize_WB(WB=load_WB(j), N_time=N_times[i])
+        for j in range(len(largest_nodes)):
+            if N == 1:
+                nodes = np.array([largest_nodes[j]])
+            else:
+                nodes = np.linspace(0, largest_nodes[j], N)
+            weights = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes, output='error')[1]
+            if i == 0:
+                if verbose >= 1:
+                    print(f'Simulating Markovian smile with N={N} and largest node={largest_nodes[j]}.')
+                markov_smiles[j, :] = rHestonMarkov_iv_eur_call(params=params, N=N, mode=None, nodes=nodes,
+                                                                weights=weights, load=False, save=False,
+                                                                verbose=verbose-1)
+                markov_errors[j] = np.amax(np.abs(true_smile - markov_smiles[j, :]) / true_smile)
+            if verbose >= 1:
+                print(f'Simulating paths with N={N}, N_times={N_times[i]}, largest node={largest_nodes[j]} '
+                      f'and vol behaviour={vol_behaviour}.')
+            S_ = rHeston_samples(params=params, N=N, N_time=N_times[i], WB=WB, m=1000000, mode=None,
+                                 vol_behaviour=vol_behaviour, nodes=nodes, weights=weights, sample_paths=False,
+                                 return_times=None)
+            approx_smile, l, u = cf.iv_eur_call_MC(S=params['S'], K=params['K'], T=params['T'], samples=S_)
+            total_errors[i, j], lower_total_errors[i, j], upper_total_errors[i, j] = max_errors_MC(truth=true_smile,
+                                                                                                   estimate=
+                                                                                                   approx_smile,
+                                                                                                   lower=l, upper=u)
+            discretization_errors[i, j], _, _ = max_errors_MC(truth=markov_smiles[j, :], estimate=approx_smile,
+                                                              lower=l, upper=u)
+
+    if plot:
+        for i in range(len(N_times)):
+            plt.plot(largest_nodes, total_errors[i, :], color=color(i, len(N_times)), label=f'{N_times[i]} time steps')
+            plt.plot(largest_nodes, lower_total_errors[i, :], '--', color=color(i, len(N_times)))
+            plt.plot(largest_nodes, upper_total_errors[i, :], '--', color=color(i, len(N_times)))
+            plt.plot(largest_nodes, discretization_errors[i, :], ':', color=color(i, len(N_times)))
+        plt.plot(largest_nodes, markov_errors, 'k-', label='Markovian error')
+        plt.xlabel('Largest node')
+        plt.ylabel('Relative error')
+        plt.yscale('log')
+        plt.title(f'Relative error of {vol_behaviour} volatility behaviour depending on\nnumber of time steps and '
+                  f'largest node')
+        plt.legend(loc='best')
+        plt.show()
+
+    return markov_smiles, markov_errors, total_errors, lower_total_errors, upper_total_errors, discretization_errors

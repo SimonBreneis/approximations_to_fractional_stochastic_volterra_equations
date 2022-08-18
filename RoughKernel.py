@@ -341,6 +341,69 @@ def error_optimal_weights(H, T, nodes, output='error'):
     :param T: Final time, may also be a numpy array
     :return: An error estimate
     """
+    if len(nodes) == 1:
+        node = np.fmax(1e-04, nodes[0])
+        gamma_1 = gamma(H + 0.5)
+
+        if isinstance(T, np.ndarray):
+            nT = node * T
+            gamma_ints = gammainc(H + 0.5, nT)
+            exp_node_matrix = np.exp(-np.fmin(2 * nT, 300))
+            exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
+            exp_node_vec = np.exp(-np.fmin(nT, 300))
+            exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
+            A = (1 - exp_node_matrix) / (2 * node)
+            b = -2 * gamma_ints / node ** (H + 0.5)
+            c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
+            v = b / A
+            err = c - 0.25 * b * v
+            opt_weights = -0.5 * v
+            if len(opt_weights.shape) > 1:
+                opt_weights = opt_weights[-1, ...]
+            if output == 'error' or output == 'err':
+                return err, opt_weights
+
+            A_grad = (-1 + (1 + 2 * nT) * exp_node_matrix) / (2 * node) ** 2
+            b_grad = -2 * (nT ** (H + 0.5) * exp_node_vec[None, :] / gamma_1 - (H + 0.5) * gamma_ints) \
+                / node ** (H + 1.5)
+            grad = 0.5 * A_grad * v ** 2 - 0.5 * b_grad * v
+            if output == 'gradient' or output == 'grad':
+                return err, grad, opt_weights
+
+            A_hess = 2 * (1 - (1 + 2 * nT + 2 * nT ** 2) * exp_node_matrix) / (8 * node ** 3)
+            b_hess = -2 * (-(nT ** (H + 1.5) + (H + 1.5) * nT ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
+                    H + 1.5) * gamma_ints) / nodes ** (H + 2.5)
+            U = b_grad / A
+            Y = 2 * A_grad * v
+            hess = 0.5 * (2 * Y * U - Y ** 2 / A + 2 * A_hess * v ** 2 - b_hess * v - b_grad * U)
+            return err, grad, hess, opt_weights
+
+        gamma_ints = gammainc(H + 0.5, node * T)
+        exp_node_matrix = 0 if 2 * node * T > 300 else np.exp(-2 * node * T)
+        exp_node_vec = 0 if node * T > 300 else np.exp(-node * T)
+        A = (1 - exp_node_matrix) / (2 * node)
+        b = -2 * gamma_ints / node ** (H + 0.5)
+        c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
+        v = b / A
+        err = c - 0.25 * b * v
+        opt_weight = np.array([-0.5 * v])
+        if output == 'error' or output == 'err':
+            return err, opt_weight
+
+        A_grad = (-1 + (1 + 2 * node * T) * exp_node_matrix) / (4 * node ** 2)
+        b_grad = -2 * (node * T ** (H + 0.5) * exp_node_vec / gamma_1 - (H + 0.5) * gamma_ints) / node ** (H + 1.5)
+        grad = 0.5 * v * (A_grad * v) - 0.5 * b_grad * v
+        if output == 'gradient' or output == 'grad':
+            return err, grad, opt_weight
+
+        A_hess = 2 * (1 - (1 + 2 * node * T + 2 * (node * T) ** 2) * exp_node_matrix) / (8 * node ** 3)
+        b_hess = -2 * (-((node * T) ** (H + 1.5) + (H + 1.5) * (node * T) ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
+                H + 1.5) * gamma_ints) / node ** (H + 2.5)
+        U = b_grad / A
+        Y = 2 * A_grad * v
+        hess = 0.5 * (2 * Y * U - Y ** 2 / A + 2 * A_hess * v ** 2 - b_hess * v - b_grad * U)
+        return err, grad, hess, opt_weight
+
     def invert_permutation(p):
         s = np.empty_like(p)
         s[p] = np.arange(p.size)
