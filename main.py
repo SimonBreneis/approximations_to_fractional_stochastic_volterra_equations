@@ -6,24 +6,23 @@ import rBergomi
 from functions import *
 import rBergomiMarkov
 
-import psutil
-"""
-print(psutil.virtual_memory().available)
-print(sys.getsizeof(0.), sys.getsizeof(np.array([0.])), np.array([0.]).nbytes, np.linspace(0, 100, 10000).nbytes)
-print(psutil.virtual_memory().available / 8)
-time.sleep(36000)
-"""
 
+'''
 k = np.linspace(-1.0, 0.5, 301)
 M = 100000
 N_time = 2000
 
 tic = time.perf_counter()
-smile, l, u = rBergomi.implied_volatility(K=np.exp(k), M=M, N=N_time)
+smile, l, u = rBergomi.implied_volatility(K=np.exp(k), M=M, N=N_time // 32)
 print(time.perf_counter() - tic)
 plt.plot(k, smile, 'k-')
 plt.plot(k, l, 'k--')
 plt.plot(k, u, 'k--')
+
+tic = time.perf_counter()
+smile, l, u = rBergomi.implied_volatility(K=np.exp(k), M=M, N=N_time // 2)
+plt.plot(k, smile, 'b-')
+plt.show()
 
 tic = time.perf_counter()
 smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='paper', N=3, M=M, N_time=N_time)
@@ -39,7 +38,7 @@ plt.plot(k, smile, 'b-')
 print(time.perf_counter() - tic)
 
 plt.show()
-
+'''
 '''
 params = {'H': 0.05, 'lambda': 0.2, 'rho': -0.6, 'nu': 0.6,
           'theta': 0.01, 'V_0': 0.01, 'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)),
@@ -80,20 +79,14 @@ if __name__ == '__main__':
         # print(params)
         rHestonMarkov_iv_eur_call_parallelized(params=params, Ns=np.arange(1, 11), modes=['paper', 'optimized', 'european'], num_threads=1, verbose=1)
 
-    
-    params = {'H': np.array([0.07]), 'lambda': np.array([0.2, 1.0]), 'rho': np.array([-0.6, -0.8]),
+    '''
+    params = {'H': np.array([0.05]), 'lambda': np.array([0.2, 1.0]), 'rho': np.array([-0.6, -0.8]),
               'nu': np.array([0.2]), 'theta': np.array([0.01, 0.03]), 'V_0': np.array([0.01, 0.03]),
               'T': np.linspace(0.04, 1., 25), 'K': np.exp(np.linspace(-1., 0.5, 301))}
 
     rHestonMarkov_iv_eur_call_parallelized(params=params, Ns=np.arange(1, 11),
                                            modes=['paper', 'optimized', 'european'], num_threads=1, verbose=1)
-    
-    print('Hello')
-    params = {'H': np.array([0.05]), 'lambda': np.array([0.2, 1.0]), 'rho': np.array([-0.6, -0.8]),
-              'nu': np.array([0.2]), 'theta': np.array([0.01, 0.03]), 'V_0': np.array([0.01, 0.03])}
-    rHeston_iv_eur_call_parallelized(params=params, num_threads=1, verbose=1)
-    print('Finished')
-    time.sleep(36000)'''
+
 
 # compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['paper', 'optimized', 'european'], vol_behaviours=['correct ninomiya victoir'], recompute=False)
 # print('Finished')

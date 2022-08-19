@@ -226,7 +226,23 @@ def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
     y[:N] = x[1:] - x[:-1]
     y[1:] += x[1:] - x[:-1]
     y /= 2
-    return np.real(fourier_payoff_call_put(K, x + complex(0, 1) * R) @ (mgf(R - complex(0, 1) * x) * y)) / np.pi
+    mgf_output = np.empty(len(x), dtype=np.cdouble)
+    total_rounds = 1
+    current_round = 0
+    while current_round < total_rounds:
+        n_inputs = int(np.ceil(len(x) / total_rounds))
+        try:
+            mgf_output[current_round * n_inputs:(current_round + 1) * n_inputs] = \
+                mgf(R - complex(0, 1) * x[current_round * n_inputs:(current_round + 1) * n_inputs])
+        except MemoryError:
+            if total_rounds < len(x):
+                total_rounds = total_rounds * 2
+                current_round = current_round * 2 - 1
+            else:
+                raise MemoryError('Not enough memory to carry out Fourier inversion.')
+        current_round = current_round + 1
+
+    return np.real(fourier_payoff_call_put(K, x + complex(0, 1) * R) @ (mgf_output * y)) / np.pi
 
 
 def iv_eur_call_fourier(mgf, S, K, T, r=0., R=2., L=50., N=300):

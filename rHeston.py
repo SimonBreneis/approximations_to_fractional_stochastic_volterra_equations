@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.special import gamma
 import rHestonBackbone as backbone
+import psutil
 
 
 def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
@@ -19,6 +20,13 @@ def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
     :return: The characteristic function
     """
+    available_memory = psutil.virtual_memory().available
+    necessary_memory = 5 * len(a) * N_Riccati * np.array([0.], dtype=np.cdouble).nbytes
+    if necessary_memory > available_memory:
+        raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
+                          f'{len(a)} inputs and {N_Riccati} time steps. Roughly {necessary_memory} bytes needed, while'
+                          f'only {available_memory} bytes are available.')
+
     dt = T / N_Riccati
     a_ = -0.5 * (a + np.complex(0, 1)) * a
     b_ = np.complex(0, 1) * rho * nu * a - lambda_

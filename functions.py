@@ -327,9 +327,16 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
                         np.save(filename, true_smile)
                     return true_smile
     print('Actually compute it')
-    result = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                 rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                 T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
+    try:
+        result = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                     rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                     T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
+    except RuntimeError:
+        print('Did not converge in given time')
+        if isinstance(params['T'], np.ndarray):
+            return np.empty((len(params['T']), len(params['K'])))
+        else:
+            return np.empty(len(params['K']))
     if save:
         np.save(filename, result)
     return result
@@ -340,6 +347,7 @@ def rHeston_iv_eur_call_parallelized(params, num_threads=5, verbose=0):
     Parallelized version of rHeston_iv_eur_call.
     :param params: Parameters of the rough Heston model
     :param num_threads: Number of parallel processes
+    :param verbose: Determines how many intermediate results are printed to the console
     :return: The smiles
     """
     params = rHeston_params_grid(params)
@@ -367,16 +375,21 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     :param verbose: Determines how many intermediate results are printed to the console
     :return: The smile
     """
-    # if params['V_0'] == 0.01 and params['theta'] == 0.01:
-    # return np.empty((len(params['T']), len(params['K'])))
     filename = get_filename(kind='Markov', params=params, truth=False, markov=True, N=N, mode=mode)
     print(filename)
     if load and exists(filename):
         return np.load(filename)
-    result = rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                       rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                       T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
-                                       weights=weights, verbose=verbose)
+    try:
+        result = rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                           rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                           T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
+                                           weights=weights, verbose=verbose)
+    except RuntimeError:
+        print('Did not converge in given time')
+        if isinstance(params['T'], np.ndarray):
+            return np.empty((len(params['T']), len(params['K'])))
+        else:
+            return np.empty(len(params['K']))
     if save:
         np.save(filename, result)
     return result

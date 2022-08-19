@@ -1,6 +1,7 @@
 import numpy as np
 import RoughKernel as rk
 import rHestonBackbone as backbone
+import psutil
 
 
 def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
@@ -49,17 +50,34 @@ def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, no
         return (a * x + b) * x + c
 
     psi_x = np.zeros((len(z), N), dtype=np.cdouble)
-    F_psi = np.zeros((len(z), N_Riccati + 1), dtype=np.cdouble)
-    F_psi[:, 0] = c
     psi = np.zeros(len(z), dtype=np.cdouble)
+    available_memory = psutil.virtual_memory().available
+    necessary_memory = 4 * len(z) * N_Riccati * np.array([0.], dtype=np.cdouble).nbytes
+    if available_memory > necessary_memory:
+        F_psi = np.zeros((len(z), N_Riccati + 1), dtype=np.cdouble)
+        F_psi[:, 0] = c
 
-    for i in range(N_Riccati):
-        psi_P = (psi + F_psi[:, i] * new_div + psi_x @ new_exp) / 2
-        psi_x = np.outer(F(psi_P), div_nodes) + psi_x * exp_nodes[None, :]
-        psi = psi_x @ weights
-        F_psi[:, i + 1] = F(psi)
+        for i in range(N_Riccati):
+            psi_P = (psi + F_psi[:, i] * new_div + psi_x @ new_exp) / 2
+            psi_x = np.outer(F(psi_P), div_nodes) + psi_x * exp_nodes[None, :]
+            psi = psi_x @ weights
+            F_psi[:, i + 1] = F(psi)
 
-    return np.exp(complex(0, 1) * z * np.log(S) + np.trapz(F_psi * g, dx=dt))
+        return np.exp(complex(0, 1) * z * np.log(S) + np.trapz(F_psi * g, dx=dt))
+    else:
+        F_psi = c * np.ones(len(z), dtype=np.cdouble)
+        integral = F_psi * g[0] * dt / 2
+
+        for i in range(N_Riccati):
+            psi_P = (psi + F_psi * new_div + psi_x @ new_exp) / 2
+            psi_x = np.outer(F(psi_P), div_nodes) + psi_x * exp_nodes[None, :]
+            psi = psi_x @ weights
+            F_psi = F(psi)
+            integral += F_psi * g[i + 1] * dt
+
+        integral -= F_psi * g[-1] * dt / 2
+
+        return np.exp(complex(0, 1) * z * np.log(S) + integral)
 
 
 def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,

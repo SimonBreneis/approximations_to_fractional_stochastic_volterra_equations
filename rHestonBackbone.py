@@ -36,6 +36,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         R = 2.  # The (dampening) shift that we use for the Fourier inversion
         np.seterr(all='warn')
         side_computations = True
+        tic = time.perf_counter()
 
         def compute_iv(N_Riccati_, L_, N_Fourier_):
             return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
@@ -49,6 +50,8 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         # print(np.abs(iv_approx - iv) / iv)
 
         while np.isnan(error) or error > rel_tol or np.sum(np.isnan(iv)) > 0:
+            if time.perf_counter() - tic > 3600:
+                raise RuntimeError('Smile was not computed in given time.')
             if side_computations:
                 iv_approx = compute_iv(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
                 error_Riccati = np.amax(np.abs(iv_approx - iv) / iv)
