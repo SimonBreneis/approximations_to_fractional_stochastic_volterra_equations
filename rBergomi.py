@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.special import gamma, hyp2f1
-import ComputationalFinance as cf
 import rBergomiBackbone
 import psutil
 
@@ -11,7 +10,7 @@ def generate_samples(H, T, N, eta, V_0, S_0, rho, M):
     :param H: Hurst parameter
     :param T: Final time
     :param N: Number of time discretization steps
-    :param eta:
+    :param eta: Volatility of volatility
     :param V_0: Initial variance
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the volatility and the stock
@@ -65,13 +64,13 @@ def implied_volatility(H=0.1, T=1., eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K
     from Bayer, Friz, Gatheral.
     :param H: Hurst parameter
     :param T: Final time
-    :param N: Number of time discretization steps
-    :param eta:
+    :param eta: Volatility of volatility
     :param V_0: Initial variance
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the volatility and the stock
     :param K: The strike price
-    :param M: Number of samples
+    :param rel_tol: Relative error tolerance
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
     return rBergomiBackbone.iv_eur_call(sample_generator=lambda T_, N, M: generate_samples(H=H, T=T_, N=N, eta=eta,

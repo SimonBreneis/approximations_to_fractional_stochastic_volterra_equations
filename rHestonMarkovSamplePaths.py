@@ -575,4 +575,4 @@ def call(K, lambda_, rho, nu, theta, V_0, H, N, S_0, T, m=1000, N_time=1000, WB=
     """
     samples_ = sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, m=m, S_0=S_0,
                              N_time=N_time, WB=WB, mode=mode, vol_behaviour=vol_behaviour)
-    return cf.iv_eur_call_MC(S=S_0, K=K, T=T, samples=samples_)
+    return cf.iv_eur_call_MC(S_0=S_0, K=K, T=T, samples=samples_)

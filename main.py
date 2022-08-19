@@ -13,7 +13,7 @@ M = 100000
 N_time = 2000
 
 tic = time.perf_counter()
-smile = rBergomi.implied_volatility(K=np.exp(k), rel_tol=1e-01, T=T, verbose=1)
+smile = rBergomiMarkov.implied_volatility(K=np.exp(k), rel_tol=1e-01, T=T, verbose=1, N=3)
 print(time.perf_counter() - tic)
 plt.plot(k, smile, 'k-')
 plt.show()

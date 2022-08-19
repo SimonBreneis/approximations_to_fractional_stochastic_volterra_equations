@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.special import gamma
-import ComputationalFinance as cf
 import RoughKernel as rk
 import psutil
+import rBergomiBackbone
 
 
 def preprocess_rule(nodes, weights):
@@ -60,8 +60,12 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         nodes_ = nodes[1:]
         cov_matrix = np.empty((N, N))
         node_matrix = nodes_[:, None] + nodes_[None, :]
-        cov_matrix[1:, 1:] = (1 - np.exp(-dt * node_matrix)) / node_matrix
-        entry = (1 - np.exp(-dt * nodes_)) / nodes_
+        exp_matrix = np.exp(-np.fmin(dt * node_matrix, 300))
+        exp_matrix = np.where(exp_matrix < 1e-299, 0, exp_matrix)
+        cov_matrix[1:, 1:] = (1 - exp_matrix) / node_matrix
+        exp_vec = np.exp(-np.fmin(dt * nodes_, 300))
+        exp_vec = np.where(exp_vec < 1e-299, 0, exp_vec)
+        entry = (1 - exp_vec) / nodes_
         cov_matrix[0, 1:] = entry
         cov_matrix[1:, 0] = entry
         cov_matrix[0, 0] = dt
@@ -79,12 +83,14 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         weights_ = weights[1:]
         weight_matrix = weights_[None, :] * weights_[:, None]
         node_matrix = nodes_[None, :] + nodes_[:, None]
-        expression = (weight_matrix / node_matrix)[None, ...] \
-            * (1 - np.exp(-node_matrix[None, ...] * times[:, None, None]))
+        exp_matrix = np.exp(-np.fmin(node_matrix[None, ...] * times[:, None, None], 300))
+        exp_matrix = np.where(exp_matrix < 1e-299, 0, exp_matrix)
+        expression = (weight_matrix / node_matrix)[None, ...] * (1 - exp_matrix)
         result = np.sum(expression, axis=(1, 2))
         result = result + w_0 ** 2 * times
-        result = result + 2 * w_0 * np.sum((weights_ / nodes_)[None, :]
-                                           * (1 - np.exp(-nodes_[None, :] * times[:, None])), axis=-1)
+        exp_vec = np.exp(-np.fmin(nodes_[None, :] * times[:, None], 300))
+        exp_vec = np.where(exp_vec < 1e-299, 0, exp_vec)
+        result = result + 2 * w_0 * np.sum((weights_ / nodes_)[None, :] * (1 - exp_vec), axis=-1)
         return result
 
     dt = T / N_time
@@ -96,15 +102,15 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         active_nodes = nodes[1:]
         active_weights = weights[1:]
     active_N = len(active_nodes)
-    exp_vector = np.exp(-dt * active_nodes)
+    exp_vector = np.exp(-np.fmin(dt * active_nodes, 300))
+    exp_vector = np.where(exp_vector < 1e-299, 0, exp_vector)
     eta_transformed = eta * np.sqrt(2 * H) * gamma(H + 0.5)
     variances = eta_transformed ** 2 / 2 * variance_integral()
 
-    available_memory = psutil.virtual_memory().available
-    necessary_memory = 10 * M * N * N_time * np.array([0.]).nbytes
-    rounds = int(np.ceil(necessary_memory / available_memory))
+    available_memory = np.sqrt(psutil.virtual_memory().available)
+    necessary_memory = 3 * np.sqrt(M) * np.sqrt(N) * np.sqrt(N_time) * np.sqrt(np.array([0.]).nbytes)
+    rounds = int(np.ceil((necessary_memory / available_memory) ** 2))
     M_ = int(np.ceil(M / rounds))
-    print(available_memory, necessary_memory, rounds, M_)
     S = np.empty(shape=(M_ * rounds))
     for rd in range(rounds):
         W_1_diff = np.einsum('ij,kjl->kil', sqrt_cov, np.random.normal(0, 1, size=(M_, N, N_time)))
@@ -117,26 +123,29 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
     return S[:M]
 
 
-def implied_volatility(H=0.1, T=1., N_time=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., N=10, M=1000,
-                       mode="observation"):
+def implied_volatility(H=0.1, T=1., eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., N=10, mode="paper",
+                       rel_tol=1e-03, verbose=0):
     """
     Computes the implied volatility of the European call option under the rough Bergomi model, using the approximation
     inspired by Alfonsi and Kebaier.
     :param H: Hurst parameter
     :param T: Final time
-    :param N_time: Number of time discretization steps
-    :param eta:
+    :param eta: Volatility of volatility
     :param V_0: Initial variance
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the volatility and the stock
     :param K: The strike price
-    :param N: Total number of points in the quadrature rule, N=n*m
-    :param M: Number of samples
-    :param mode: If observation, use the values of the interpolation of the optimum. If theorem, use the values of the
-    theorem.
+    :param N: Dimension of the Markovian approximation
+    :param mode: Kind of Markovian approximation
+    :param rel_tol: Relative error tolerance
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
     nodes, weights = rk.quadrature_rule(H, N, T, mode)
     nodes, weights = preprocess_rule(nodes, weights)
-    samples = generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time, S_0)
-    return cf.iv_eur_call_MC(S_0, K, T, samples)
+    return rBergomiBackbone.iv_eur_call(sample_generator=lambda T_, N_time, M: generate_samples(H=H, T=T_, eta=eta,
+                                                                                                V_0=V_0, rho=rho,
+                                                                                                nodes=nodes,
+                                                                                                weights=weights, M=M,
+                                                                                                N_time=N_time, S_0=S_0),
+                                        S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)

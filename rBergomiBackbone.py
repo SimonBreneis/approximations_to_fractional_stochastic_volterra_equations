@@ -7,15 +7,14 @@ import matplotlib.pyplot as plt
 def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
     """
     Computes the implied volatility of the European call option under the rough Bergomi model.
-    :param H: Hurst parameter
-    :param T: Final time
-    :param N: Number of time discretization steps
-    :param eta:
-    :param V_0: Initial variance
+    :param sample_generator: Function that generates samples of the rough Bergomi model at the final time. Is a
+        function of the maturity, the number of time discretization steps and the number of samples that should be
+        generated
     :param S_0: Initial stock price
-    :param rho: Correlation between the Brownian motions driving the volatility and the stock
+    :param T: Final time
     :param K: The strike price
-    :param M: Number of samples
+    :param rel_tol: Relative error tolerance
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
 
@@ -24,8 +23,8 @@ def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
         Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
         Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
         :param K_: Strike price, assumed to be a numpy array
-        :param char_fun_: Characteristic function of the log-price. Is a function of the argument of the characteristic
-            function and the number of steps used for the Riccati equation
+        :param sample_generator_: Function that generates samples of the rough Bergomi model at the final time. Is a
+            only function of the number of time discretization steps and the number of samples that should be generated
         :param T_: Maturity
         return: The price of the call option
         """
