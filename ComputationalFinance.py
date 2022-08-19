@@ -2,16 +2,16 @@ import numpy as np
 from scipy.stats import norm
 
 
-def maturity_tensor_strike(S, K, T):
+def maturity_tensor_strike(S_0, K, T):
     """
     Given a numpy array of strikes K for maturity T[-1], computes appropriate array of strikes for all other
     maturities in T for the computation of an implied volatility surface.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strikes for maturity T[-1]
     :param T: Array of maturities
     :return: Two 2-dim arrays of maturities and and strikes of the form T=T(T, K) and K=K(T, K)
     """
-    return np.tile(T, (len(K), 1)).T, S * np.exp(np.multiply.outer(np.sqrt(T/T[-1]), np.log(K/S)))
+    return np.tile(T, (len(K), 1)).T, S_0 * np.exp(np.multiply.outer(np.sqrt(T / T[-1]), np.log(K / S_0)))
 
 
 def MC(samples):
@@ -34,10 +34,10 @@ def BS_samples(sigma, T, N):
     return np.exp(np.random.normal(-sigma*sigma/2*T, sigma*np.sqrt(T), N))
 
 
-def BS_nodes(S, K, sigma, T, r=0., regularize=True):
+def BS_nodes(S_0, K, sigma, T, r=0., regularize=True):
     """
     Computes the two nodes of the Black-Scholes model where the CDF is evaluated.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price
     :param sigma: Volatility
     :param r: Drift
@@ -45,40 +45,40 @@ def BS_nodes(S, K, sigma, T, r=0., regularize=True):
     :param regularize: Ensures that the results are in the interval [-30, 30].
     :return: The first node
     """
-    d1 = (np.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
-    d2 = (np.log(S / K) + (r - sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
+    d1 = (np.log(S_0 / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
+    d2 = (np.log(S_0 / K) + (r - sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
     if regularize:
         d1 = np.fmax(np.fmin(d1, 30), -30)
         d2 = np.fmax(np.fmin(d2, 30), -30)
     return d1, d2
 
 
-def BS_price_eur_call(S, K, sigma, T, r=0.):
+def BS_price_eur_call(S_0, K, sigma, T, r=0.):
     """
     Computes the price of a European call option under the Black-Scholes model.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price
     :param sigma: Volatility
     :param r: Drift
     :param T: Final time
     :return: The price of a call option
     """
-    d1, d2 = BS_nodes(S=S, K=K, sigma=sigma, T=T, r=r, regularize=True)
-    return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    d1, d2 = BS_nodes(S_0=S_0, K=K, sigma=sigma, T=T, r=r, regularize=True)
+    return S_0 * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
 
 
-def BS_price_eur_put(S, K, sigma, T, r=0.):
+def BS_price_eur_put(S_0, K, sigma, T, r=0.):
     """
     Computes the price of a European put option under the Black-Scholes model.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price
     :param sigma: Volatility
     :param r: Drift
     :param T: Final time
     :return: The price of a put option
     """
-    d1, d2 = BS_nodes(S=S, K=K, sigma=sigma, T=T, r=r, regularize=True)
-    return - S * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
+    d1, d2 = BS_nodes(S_0=S_0, K=K, sigma=sigma, T=T, r=r, regularize=True)
+    return - S_0 * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
 
 
 def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
@@ -101,30 +101,30 @@ def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
     return np.where(sm < threshold, np.nan, sm)
 
 
-def iv_eur_call(S, K, T, price, r=0.):
+def iv_eur_call(S_0, K, T, price, r=0.):
     """
     Computes the implied volatility of a European call option given its price.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price
     :param r: Drift
     :param T: Final time/maturity
     :param price: (Market) price of the option
     :return: The implied volatility
     """
-    return iv(BS_price_fun=lambda s: BS_price_eur_call(S=S, K=K, sigma=s, r=r, T=T), price=price)
+    return iv(BS_price_fun=lambda s: BS_price_eur_call(S_0=S_0, K=K, sigma=s, r=r, T=T), price=price)
 
 
-def iv_eur_put(S, K, T, price, r=0.):
+def iv_eur_put(S_0, K, T, price, r=0.):
     """
     Computes the implied volatility of a European put option given its price.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price
     :param r: Drift
     :param T: Final time/maturity
     :param price: (Market) price of the option
     :return: The implied volatility
     """
-    return iv(BS_price_fun=lambda s: BS_price_eur_put(S=S, K=K, sigma=s, r=r, T=T), price=price)
+    return iv(BS_price_fun=lambda s: BS_price_eur_put(S_0=S_0, K=K, sigma=s, r=r, T=T), price=price)
 
 
 def payoff_call(S, K):
@@ -163,37 +163,37 @@ def payoff_put(S, K):
     return np.fmax(K[:, :, None] - S[:, None, :], 0)
 
 
-def iv_eur_call_MC(S, K, T, samples):
+def iv_eur_call_MC(S_0, K, T, samples):
     """
     Computes the volatility smile for a European call option given samples of final stock prices.
-    :param samples: The final stock prices
+    :param S_0: The initial stock price
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
-    :param S: The initial stock price
+    :param samples: The final stock prices
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
     price_estimate, price_stat = MC(payoff_call(S=samples, K=K))
-    implied_volatility_estimate = iv_eur_call(S=S, K=K, r=0, T=T, price=price_estimate)
-    implied_volatility_lower = iv_eur_call(S=S, K=K, r=0, T=T, price=price_estimate - price_stat)
-    implied_volatility_upper = iv_eur_call(S=S, K=K, r=0, T=T, price=price_estimate + price_stat)
+    implied_volatility_estimate = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate)
+    implied_volatility_lower = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate - price_stat)
+    implied_volatility_upper = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
-def iv_eur_put_MC(S, K, T, samples):
+def iv_eur_put_MC(S_0, K, T, samples):
     """
     Computes the volatility smile for a European call option given samples of final stock prices.
     :param samples: The final stock prices
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
-    :param S: The initial stock price
+    :param S_0: The initial stock price
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
     price_estimate, price_stat = MC(payoff_put(S=samples, K=K))
-    implied_volatility_estimate = iv_eur_put(S=S, K=K, r=0, T=T, price=price_estimate)
-    implied_volatility_lower = iv_eur_put(S=S, K=K, r=0, T=T, price=price_estimate - price_stat)
-    implied_volatility_upper = iv_eur_put(S=S, K=K, r=0, T=T, price=price_estimate + price_stat)
+    implied_volatility_estimate = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate)
+    implied_volatility_lower = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate - price_stat)
+    implied_volatility_upper = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
@@ -245,11 +245,11 @@ def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
     return np.real(fourier_payoff_call_put(K, x + complex(0, 1) * R) @ (mgf_output * y)) / np.pi
 
 
-def iv_eur_call_fourier(mgf, S, K, T, r=0., R=2., L=50., N=300):
+def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     """
     Computes the implied volatility of an European call option using Fourier inversion.
     :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param T: Maturity
     :param r: Drift
     :param R: The (dampening) shift that we use
@@ -258,4 +258,4 @@ def iv_eur_call_fourier(mgf, S, K, T, r=0., R=2., L=50., N=300):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    return iv_eur_call(S=S, K=K, T=T, price=price_eur_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N), r=r)
+    return iv_eur_call(S_0=S_0, K=K, T=T, price=price_eur_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N), r=r)

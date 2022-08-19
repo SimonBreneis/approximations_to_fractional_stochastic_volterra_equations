@@ -1,14 +1,14 @@
 import numpy as np
 import RoughKernel as rk
-import rHestonBackbone as backbone
+import rHestonBackbone
 import psutil
 
 
-def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
+def characteristic_function(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weights):
     """
     Gives the characteristic function of the log-price in the Markovian approximation of the rough Heston model.
     :param z: Argument of the characteristic function (assumed to be a numpy array)
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
@@ -51,8 +51,8 @@ def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, no
 
     psi_x = np.zeros((len(z), N), dtype=np.cdouble)
     psi = np.zeros(len(z), dtype=np.cdouble)
-    available_memory = psutil.virtual_memory().available
-    necessary_memory = 4 * len(z) * N_Riccati * np.array([0.], dtype=np.cdouble).nbytes
+    available_memory = np.sqrt(psutil.virtual_memory().available)
+    necessary_memory = 2 * np.sqrt(len(z)) * np.sqrt(N_Riccati) * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
     if available_memory > necessary_memory:
         F_psi = np.zeros((len(z), N_Riccati + 1), dtype=np.cdouble)
         F_psi[:, 0] = c
@@ -63,7 +63,7 @@ def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, no
             psi = psi_x @ weights
             F_psi[:, i + 1] = F(psi)
 
-        return np.exp(complex(0, 1) * z * np.log(S) + np.trapz(F_psi * g, dx=dt))
+        return np.exp(complex(0, 1) * z * np.log(S_0) + np.trapz(F_psi * g, dx=dt))
     else:
         F_psi = c * np.ones(len(z), dtype=np.cdouble)
         integral = F_psi * g[0] * dt / 2
@@ -77,16 +77,16 @@ def characteristic_function(z, S, lambda_, rho, nu, theta, V_0, T, N_Riccati, no
 
         integral -= F_psi * g[-1] * dt / 2
 
-        return np.exp(complex(0, 1) * z * np.log(S) + integral)
+        return np.exp(complex(0, 1) * z * np.log(S_0) + integral)
 
 
-def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,
+def iv_eur_call(S_0, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,
                 weights=None, verbose=0):
     """
     Gives the implied volatility of the European call option in the rough Heston model
     as described in El Euch and Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme.
     Uses Fourier inversion.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -107,6 +107,7 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", re
     """
     if nodes is None or weights is None:
         nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    return backbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S, lambda_, rho, nu, theta, V_0,
-                                                                                   T_, N_, nodes, weights),
-                                S=S, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+    return rHestonBackbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S_0, lambda_, rho, nu,
+                                                                                          theta, V_0, T_, N_, nodes,
+                                                                                          weights),
+                                       S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)

@@ -328,7 +328,7 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
                     return true_smile
     print('Actually compute it')
     try:
-        result = rHeston.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+        result = rHeston.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
                                      rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
                                      T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
     except RuntimeError:
@@ -380,7 +380,7 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     if load and exists(filename):
         return np.load(filename)
     try:
-        result = rHestonMarkov.iv_eur_call(S=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+        result = rHestonMarkov.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
                                            rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
                                            T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
                                            weights=weights, verbose=verbose)
@@ -1095,7 +1095,7 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                 for m in range(len(N_times)):
                     final_S = np.load(f'rHeston samples {Ns[i]} dim {modes[j]} {vol_behaviours[k]} {N_times[m]} time '
                                       + f'steps.npy')
-                    vol, low, upp = cf.iv_eur_call_MC(S=params['S'], K=params['K'], T=params['T'], samples=final_S)
+                    vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=final_S)
                     approx_smiles[i, j, k, m, :, :] = vol
                     lower_smiles[i, j, k, m, :, :] = low
                     upper_smiles[i, j, k, m, :, :] = upp
@@ -1408,7 +1408,7 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
         weights_ = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes_, output='error')[1]
         S_ = rHeston_samples(params=params, N=N, N_time=N_time, WB=WB, vol_behaviour=vol_behaviour, nodes=nodes_,
                              weights=weights_, sample_paths=False)
-        approx_smile_, l_, u_ = cf.iv_eur_call_MC(S=params['S'], K=params['K'], T=params['T'], samples=S_)
+        approx_smile_, l_, u_ = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=S_)
         error = np.amax(np.abs(approx_smile_-true_smile)/true_smile)
         print(f'The current error is {100*error:.4}%, where we have the nodes {nodes_}.')
         if full_output:
@@ -1637,7 +1637,7 @@ def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_beha
             S_ = rHeston_samples(params=params, N=N, N_time=N_times[i], WB=WB, m=1000000, mode=None,
                                  vol_behaviour=vol_behaviour, nodes=nodes, weights=weights, sample_paths=False,
                                  return_times=None)
-            approx_smile, l, u = cf.iv_eur_call_MC(S=params['S'], K=params['K'], T=params['T'], samples=S_)
+            approx_smile, l, u = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=S_)
             total_errors[i, j], lower_total_errors[i, j], upper_total_errors[i, j] = max_errors_MC(truth=true_smile,
                                                                                                    estimate=
                                                                                                    approx_smile,

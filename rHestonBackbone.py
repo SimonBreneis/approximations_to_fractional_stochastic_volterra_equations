@@ -3,11 +3,11 @@ import numpy as np
 import ComputationalFinance as cf
 
 
-def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
+def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array (1d or 2d)
     :param T: Numpy array of maturities
     :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
@@ -40,7 +40,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
 
         def compute_iv(N_Riccati_, L_, N_Fourier_):
             return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                          S=S, K=K_, T=T_, r=0., R=R, L=L_, N=N_Fourier_)
+                                          S_0=S_0, K=K_, T=T_, r=0., R=R, L=L_, N=N_Fourier_)
 
         tic = time.perf_counter()
         iv = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
@@ -101,7 +101,7 @@ def iv_eur_call(S, K, T, char_fun, rel_tol=1e-03, verbose=0):
         T = np.array([T])
         T_is_float = True
     if len(K.shape) == 1:
-        _, K = cf.maturity_tensor_strike(S=S, K=K, T=T)
+        _, K = cf.maturity_tensor_strike(S_0=S_0, K=K, T=T)
 
     iv_surface = np.empty_like(K)
     for i in range(len(T)):

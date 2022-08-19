@@ -1,15 +1,15 @@
 import numpy as np
 from scipy.special import gamma
-import rHestonBackbone as backbone
+import rHestonBackbone
 import psutil
 
 
-def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
+def characteristic_function(a, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
     """
     Gives the characteristic function of the log-price in the rough Heston model as described in El Euch and Rosenbaum,
     The characteristic function of rough Heston models. Uses the Adams scheme.
     :param a: Argument of the characteristic function (assumed to be a numpy array)
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -20,12 +20,13 @@ def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
     :return: The characteristic function
     """
-    available_memory = psutil.virtual_memory().available
-    necessary_memory = 5 * len(a) * N_Riccati * np.array([0.], dtype=np.cdouble).nbytes
+    available_memory = np.sqrt(psutil.virtual_memory().available)
+    necessary_memory = np.sqrt(5) * np.sqrt(len(a)) * np.sqrt(N_Riccati) \
+        * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
-                          f'{len(a)} inputs and {N_Riccati} time steps. Roughly {necessary_memory} bytes needed, while'
-                          f'only {available_memory} bytes are available.')
+                          f'{len(a)} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
+                          f'while only {available_memory}**2 bytes are available.')
 
     dt = T / N_Riccati
     a_ = -0.5 * (a + np.complex(0, 1)) * a
@@ -51,14 +52,14 @@ def characteristic_function(a, S, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=
 
     integral = np.trapz(h, dx=dt)
     fractional_integral = -np.trapz(h, x=np.linspace(T, 0, N_Riccati+1) ** (0.5 - H) / gamma(1.5-H), axis=1)
-    return np.exp(complex(0, 1) * a * np.log(S) + theta * integral + V_0 * fractional_integral)
+    return np.exp(complex(0, 1) * a * np.log(S_0) + theta * integral + V_0 * fractional_integral)
 
 
-def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbose=0):
+def iv_eur_call(S_0, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbose=0):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
-    :param S: Initial stock price
+    :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -71,6 +72,6 @@ def iv_eur_call(S, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbose
     :param verbose: Determines how many intermediate results are printed to the console
     return: The price of the call option
     """
-    return backbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S, H, lambda_, rho, nu, theta,
-                                                                                   V_0, T_, N_),
-                                S=S, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+    return rHestonBackbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S_0, H, lambda_, rho, nu,
+                                                                                          theta, V_0, T_, N_),
+                                       S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)

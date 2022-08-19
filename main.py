@@ -7,21 +7,15 @@ from functions import *
 import rBergomiMarkov
 
 
-'''
-k = np.linspace(-1.0, 0.5, 301)
+T = 1.
+k = np.linspace(-0.5, 0.5, 301) * np.sqrt(T)
 M = 100000
 N_time = 2000
 
 tic = time.perf_counter()
-smile, l, u = rBergomi.implied_volatility(K=np.exp(k), M=M, N=N_time // 32)
+smile = rBergomi.implied_volatility(K=np.exp(k), rel_tol=1e-01, T=T, verbose=1)
 print(time.perf_counter() - tic)
 plt.plot(k, smile, 'k-')
-plt.plot(k, l, 'k--')
-plt.plot(k, u, 'k--')
-
-tic = time.perf_counter()
-smile, l, u = rBergomi.implied_volatility(K=np.exp(k), M=M, N=N_time // 2)
-plt.plot(k, smile, 'b-')
 plt.show()
 
 tic = time.perf_counter()
@@ -38,7 +32,7 @@ plt.plot(k, smile, 'b-')
 print(time.perf_counter() - tic)
 
 plt.show()
-'''
+
 '''
 params = {'H': 0.05, 'lambda': 0.2, 'rho': -0.6, 'nu': 0.6,
           'theta': 0.01, 'V_0': 0.01, 'S': 1., 'K': np.exp(np.linspace(-1, 0.5, 301)),

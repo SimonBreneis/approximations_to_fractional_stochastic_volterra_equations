@@ -1,10 +1,11 @@
 import numpy as np
 from scipy.special import gamma, hyp2f1
 import ComputationalFinance as cf
+import rBergomiBackbone
 import psutil
 
 
-def generate_samples(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, M=1000):
+def generate_samples(H, T, N, eta, V_0, S_0, rho, M):
     """
     Computes m final stock prices of the rough Bergomi model, using the approximation from Bayer, Friz, Gatheral.
     :param H: Hurst parameter
@@ -39,11 +40,10 @@ def generate_samples(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     dt = T / N
     sqrt_cov = sqrt_cov_matrix()
 
-    available_memory = psutil.virtual_memory().available
-    necessary_memory = 20 * M * N * np.array([0.]).nbytes
-    rounds = int(np.ceil(necessary_memory / available_memory))
+    available_memory = np.sqrt(psutil.virtual_memory().available)  # sqrt to avoid overflows
+    necessary_memory = np.sqrt(20) * np.sqrt(M) * np.sqrt(N) * np.sqrt(np.array([0.]).nbytes)
+    rounds = int(np.ceil((necessary_memory / available_memory)**2))
     M_ = int(np.ceil(M / rounds))
-    print(available_memory, necessary_memory, rounds, M_)
     S = np.empty(shape=(M_ * rounds))
     for rd in range(rounds):
         W_vec = sqrt_cov @ np.random.normal(0, 1, (2 * N, M_))
@@ -59,7 +59,7 @@ def generate_samples(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-
     return S[:M]
 
 
-def implied_volatility(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., M=1000):
+def implied_volatility(H=0.1, T=1., eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., rel_tol=1e-03, verbose=0):
     """
     Computes the implied volatility of the European call option under the rough Bergomi model, using the approximation
     from Bayer, Friz, Gatheral.
@@ -74,5 +74,7 @@ def implied_volatility(H=0.1, T=1., N=1000, eta=1.9, V_0=0.235 ** 2, S_0=1., rho
     :param M: Number of samples
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
-    samples = generate_samples(H, T, N, eta, V_0, S_0, rho, M)
-    return cf.iv_eur_call_MC(S_0, K, T, samples)
+    return rBergomiBackbone.iv_eur_call(sample_generator=lambda T_, N, M: generate_samples(H=H, T=T_, N=N, eta=eta,
+                                                                                           V_0=V_0, S_0=S_0, rho=rho,
+                                                                                           M=M),
+                                        S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
