@@ -32,6 +32,26 @@ def mp_to_np(x):
     return y.reshape(shape)
 
 
+def exp_underflow(x):
+    """
+    Computes exp(-x) while avoiding underflow errors.
+    :param x: Float of numpy array
+    :return: exp(-x)
+    """
+    if isinstance(x, np.ndarray):
+        if x.dtype == np.int:
+            x = x.astype(np.float)
+        eps = np.finfo(x.dtype).tiny
+    else:
+        if isinstance(x, int):
+            x = float(x)
+        eps = np.finfo(x.__class__).tiny
+    log_eps = -np.log(eps) / 2
+    result = np.exp(-np.fmin(x, log_eps))
+    result = np.where(x > log_eps, 0, result)
+    return result
+
+
 def fractional_kernel(H, t):
     """
     The fractional kernel.
@@ -287,15 +307,13 @@ def error(H, nodes, weights, T, output='error'):
     if isinstance(T, np.ndarray):
         gamma_ints = gammainc(H + 0.5, np.outer(T, nodes))
         nmT = np.einsum('i,jk->ijk', T, node_matrix)
-        exp_node_matrix = np.exp(-np.fmin(nmT, 300))
-        exp_node_matrix = np.where(nmT > 300, 0, exp_node_matrix)
+        exp_node_matrix = exp_underflow(nmT)
         sum_1 = np.sum((weight_matrix / node_matrix)[None, :, :] * (1 - exp_node_matrix), axis=(1, 2))
         sum_2 = 2 * np.sum((weights / nodes ** (H + 0.5))[None, :] * gamma_ints, axis=1)
     else:
         gamma_ints = gammainc(H + 0.5, nodes * T)
         nmT = node_matrix * T
-        exp_node_matrix = np.exp(-np.fmin(nmT, 300))
-        exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
+        exp_node_matrix = exp_underflow(nmT)
         sum_1 = np.sum(weight_matrix / node_matrix * (1 - exp_node_matrix))
         sum_2 = 2 * np.sum(weights / nodes ** (H + 0.5) * gamma_ints)
     err = summand + sum_1 - sum_2
@@ -305,8 +323,7 @@ def error(H, nodes, weights, T, output='error'):
     N = len(nodes)
     if isinstance(T, np.ndarray):
         grad = np.empty((len(T), 2 * N))
-        exp_node_vec = np.exp(-np.fmin(np.outer(T, nodes), 300)) / nodes[None, :]
-        exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
+        exp_node_vec = exp_underflow(np.outer(T, nodes)) / nodes[None, :]
         first_summands = (weight_matrix / (node_matrix * node_matrix))[None, :] * (1 - (1 + nmT) * exp_node_matrix)
         second_summands = weights[None, :] * ((T ** (H + 1 / 2) / gamma(H + 1 / 2))[:, None] * exp_node_vec - (
                 ((H + 1 / 2) * nodes ** (-H - 3 / 2))[None, :] * gamma_ints))
@@ -348,10 +365,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
         if isinstance(T, np.ndarray):
             nT = node * T
             gamma_ints = gammainc(H + 0.5, nT)
-            exp_node_matrix = np.exp(-np.fmin(2 * nT, 300))
-            exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
-            exp_node_vec = np.exp(-np.fmin(nT, 300))
-            exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
+            exp_node_matrix = exp_underflow(2 * nT)
+            exp_node_vec = exp_underflow(nT)
             A = (1 - exp_node_matrix) / (2 * node)
             b = -2 * gamma_ints / node ** (H + 0.5)
             c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
@@ -379,8 +394,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
             return err, grad, hess, opt_weights
 
         gamma_ints = gammainc(H + 0.5, node * T)
-        exp_node_matrix = 0 if 2 * node * T > 300 else np.exp(-2 * node * T)
-        exp_node_vec = 0 if node * T > 300 else np.exp(-node * T)
+        exp_node_matrix = exp_underflow(2 * node * T)
+        exp_node_vec = exp_underflow(node * T)
         A = (1 - exp_node_matrix) / (2 * node)
         b = -2 * gamma_ints / node ** (H + 0.5)
         c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
@@ -391,8 +406,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
             return err, opt_weight
 
         A_grad = (-1 + (1 + 2 * node * T) * exp_node_matrix) / (4 * node ** 2)
-        b_grad = -2 * (node * T ** (H + 0.5) * exp_node_vec / gamma_1 - (H + 0.5) * gamma_ints) / node ** (H + 1.5)
-        grad = 0.5 * v * (A_grad * v) - 0.5 * b_grad * v
+        b_grad = -2 * ((node * T) ** (H + 0.5) * exp_node_vec / gamma_1 - (H + 0.5) * gamma_ints) / node ** (H + 1.5)
+        grad = 0.5 * (A_grad * v - b_grad) * v
         if output == 'gradient' or output == 'grad':
             return err, grad, opt_weight
 
@@ -424,10 +439,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
         nT = np.outer(T, nodes)
         nmT = np.einsum('i,jk->ijk', T, node_matrix)
         gamma_ints = gammainc(H + 0.5, nT)
-        exp_node_matrix = np.exp(-np.fmin(nmT, 300))
-        exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
-        exp_node_vec = np.exp(-np.fmin(nT, 300))
-        exp_node_vec = np.where(exp_node_vec < np.exp(-299), 0, exp_node_vec)
+        exp_node_matrix = exp_underflow(nmT)
+        exp_node_vec = exp_underflow(nT)
         A = (1 - exp_node_matrix) / node_matrix[None, :, :]
         b = -2 * gamma_ints / nodes[None, :] ** (H + 0.5)
         c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
@@ -490,11 +503,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
     nT = nodes * T
     nmT = node_matrix * T
     gamma_ints = gammainc(H + 0.5, nT)
-    exp_node_matrix = np.exp(-np.fmin(nmT, 300))
-    exp_node_matrix = np.where(exp_node_matrix < np.exp(-299), 0, exp_node_matrix)
-    exp_node_vec = np.zeros(len(nodes))
-    indices = nT < 300
-    exp_node_vec[indices] = np.exp(- nT[indices])
+    exp_node_matrix = exp_underflow(nmT)
+    exp_node_vec = exp_underflow(nT)
     A = (1 - exp_node_matrix) / node_matrix
     b = -2 * gamma_ints / nodes ** (H + 0.5)
     c = T ** (2 * H) / (2 * H * gamma_1 ** 2)

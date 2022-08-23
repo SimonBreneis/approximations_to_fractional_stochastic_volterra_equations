@@ -1403,6 +1403,7 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
         WB = np.empty((2, 1000000, N_time))
         for i in range(10):
             WB[:, 100000 * i:100000 * (i + 1), :] = resize_WB(WB=load_WB(i), N_time=N_time)
+    WB = WB * np.sqrt(params['T'])
 
     def func(nodes_, full_output=False):
         weights_ = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes_, output='error')[1]
@@ -1423,6 +1424,7 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
     if test:
         for i in range(5):
             WB[:, 100000*i:100000*(i+1), :] = resize_WB(WB=load_WB(i+5), N_time=N_time)
+        WB = WB * np.sqrt(params['T'])
     total_error, approx_smile, lower_smile, upper_smile, S = func(nodes, full_output=True)
     total_error, lower_error, upper_error = max_errors_MC(truth=true_smile, estimate=approx_smile, lower=lower_smile,
                                                           upper=upper_smile)

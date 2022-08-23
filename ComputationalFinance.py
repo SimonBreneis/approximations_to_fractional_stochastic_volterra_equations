@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import norm
+from scipy import integrate
 
 
 def maturity_tensor_strike(S_0, K, T):
@@ -241,7 +242,6 @@ def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
             else:
                 raise MemoryError('Not enough memory to carry out Fourier inversion.')
         current_round = current_round + 1
-
     return np.real(fourier_payoff_call_put(K, x + complex(0, 1) * R) @ (mgf_output * y)) / np.pi
 
 

@@ -60,12 +60,8 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         nodes_ = nodes[1:]
         cov_matrix = np.empty((N, N))
         node_matrix = nodes_[:, None] + nodes_[None, :]
-        exp_matrix = np.exp(-np.fmin(dt * node_matrix, 300))
-        exp_matrix = np.where(exp_matrix < 1e-299, 0, exp_matrix)
-        cov_matrix[1:, 1:] = (1 - exp_matrix) / node_matrix
-        exp_vec = np.exp(-np.fmin(dt * nodes_, 300))
-        exp_vec = np.where(exp_vec < 1e-299, 0, exp_vec)
-        entry = (1 - exp_vec) / nodes_
+        cov_matrix[1:, 1:] = (1 - rk.exp_underflow(dt * node_matrix)) / node_matrix
+        entry = (1 - rk.exp_underflow(dt * nodes_)) / nodes_
         cov_matrix[0, 1:] = entry
         cov_matrix[1:, 0] = entry
         cov_matrix[0, 0] = dt
@@ -83,14 +79,12 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         weights_ = weights[1:]
         weight_matrix = weights_[None, :] * weights_[:, None]
         node_matrix = nodes_[None, :] + nodes_[:, None]
-        exp_matrix = np.exp(-np.fmin(node_matrix[None, ...] * times[:, None, None], 300))
-        exp_matrix = np.where(exp_matrix < 1e-299, 0, exp_matrix)
-        expression = (weight_matrix / node_matrix)[None, ...] * (1 - exp_matrix)
+        expression = (weight_matrix / node_matrix)[None, ...] \
+            * (1 - rk.exp_underflow(node_matrix[None, ...] * times[:, None, None]))
         result = np.sum(expression, axis=(1, 2))
         result = result + w_0 ** 2 * times
-        exp_vec = np.exp(-np.fmin(nodes_[None, :] * times[:, None], 300))
-        exp_vec = np.where(exp_vec < 1e-299, 0, exp_vec)
-        result = result + 2 * w_0 * np.sum((weights_ / nodes_)[None, :] * (1 - exp_vec), axis=-1)
+        result = result + 2 * w_0 * np.sum((weights_ / nodes_)[None, :]
+                                           * (1 - rk.exp_underflow(nodes_[None, :] * times[:, None])), axis=-1)
         return result
 
     dt = T / N_time
@@ -102,8 +96,7 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         active_nodes = nodes[1:]
         active_weights = weights[1:]
     active_N = len(active_nodes)
-    exp_vector = np.exp(-np.fmin(dt * active_nodes, 300))
-    exp_vector = np.where(exp_vector < 1e-299, 0, exp_vector)
+    exp_vector = rk.exp_underflow(dt * active_nodes)
     eta_transformed = eta * np.sqrt(2 * H) * gamma(H + 0.5)
     variances = eta_transformed ** 2 / 2 * variance_integral()
 
