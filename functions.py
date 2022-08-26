@@ -1376,7 +1376,7 @@ def compute_strong_discretization_errors(Ns=None, N_times=None, N_time_ref=13107
 
 
 def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_behaviour='hyperplane reset',
-                                                 true_smile=None, test=True):
+                                                 true_smile=None, test=True, m=None):
     """
     Optimizes the nodes such that the error in the MC simulation of the implied volatility smile is as small as
     possible.
@@ -1386,7 +1386,8 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
     :param vol_behaviour: Behaviour of the volatility when it hits zero
     :param true_smile: May specify the smile of the actual rough Heston model. If not, it is computed
     :param test: If True, uses 500000 samples for the optimization and then 500000 samples for testing to get the error.
-        If False, uses 1000000 samples for the optimization and the same samples for testing to get the error.
+        If False, uses 1000000 samples for the optimization and the same samples for testing to get the error
+    :param m: Number of samples for the MC simulation. If None, always uses the same 500,000 or 1,000,000 samples
     :return: The optimal nodes and weights, the true smile, the Markovian true smile, the approximated smile, the
         lower MC smile, the upper MC smile, the total error, the lower MC total error, the upper MC total error,
         the Markovian error, the discretization error, the lower MC discretization error, the upper MC
@@ -1395,15 +1396,18 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
     params = rHeston_params(params)
     if true_smile is None:
         true_smile = rHeston_iv_eur_call(params)
-    if test:
-        WB = np.empty((2, 500000, N_time))
-        for i in range(5):
-            WB[:, 100000*i:100000*(i+1), :] = resize_WB(WB=load_WB(i), N_time=N_time)
+    if m is None:
+        if test:
+            WB = np.empty((2, 500000, N_time))
+            for i in range(5):
+                WB[:, 100000*i:100000*(i+1), :] = resize_WB(WB=load_WB(i), N_time=N_time)
+        else:
+            WB = np.empty((2, 1000000, N_time))
+            for i in range(10):
+                WB[:, 100000 * i:100000 * (i + 1), :] = resize_WB(WB=load_WB(i), N_time=N_time)
+        WB = WB * np.sqrt(params['T'])
     else:
-        WB = np.empty((2, 1000000, N_time))
-        for i in range(10):
-            WB[:, 100000 * i:100000 * (i + 1), :] = resize_WB(WB=load_WB(i), N_time=N_time)
-    WB = WB * np.sqrt(params['T'])
+        WB = np.random.normal(0, np.sqrt(params['T'] / N_time), (2, m, N_time))
 
     def func(nodes_, full_output=False):
         weights_ = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes_, output='error')[1]
@@ -1417,14 +1421,17 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
         return error
 
     nodes = np.exp(np.arange(N))
-    res = scipy.optimize.minimize(lambda x: func(x, full_output=False), x0=nodes, bounds=((1e-06, None),) * N,
-                                  method='Powell')
+    res = scipy.optimize.minimize(lambda x: func(x, full_output=False), x0=nodes, bounds=((1e-06, None),) * N, tol=0.005,
+                                  method='Powell', options={'xtol': 0.001, 'ftol': 0.001})
     nodes = res.x
     weights = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes, output='error')[1]
     if test:
-        for i in range(5):
-            WB[:, 100000*i:100000*(i+1), :] = resize_WB(WB=load_WB(i+5), N_time=N_time)
-        WB = WB * np.sqrt(params['T'])
+        if m is None:
+            for i in range(5):
+                WB[:, 100000*i:100000*(i+1), :] = resize_WB(WB=load_WB(i+5), N_time=N_time)
+            WB = WB * np.sqrt(params['T'])
+        else:
+            WB = np.random.normal(0, np.sqrt(params['T'] / N_time), (2, m, N_time))
     total_error, approx_smile, lower_smile, upper_smile, S = func(nodes, full_output=True)
     total_error, lower_error, upper_error = max_errors_MC(truth=true_smile, estimate=approx_smile, lower=lower_smile,
                                                           upper=upper_smile)
@@ -1442,7 +1449,7 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
 
 
 def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, N_times=None, vol_behaviours=None,
-                                                               true_smile=None, plot='N_time', recompute=False):
+                                                               true_smile=None, plot='N_time', recompute=False, m=None):
     """
     Optimizes the nodes such that the error in the MC simulation of the implied volatility smile is as small as
     possible.
@@ -1455,6 +1462,7 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
     :param plot: Creates plots depending on that parameter
     :param recompute: If False, checks first whether the file in which the results will be saved already exist. If so,
         does not recompute the stock prices
+    :param m: Number of MC samples used. If None, uses the same 500,000 or 1,000,000 samples every time
     :return: The largest nodes, the true smile, the Markovian true smiles, the approximated smiles, the
         lower MC smiles, the upper MC smiles, the total errors, the lower MC total errors, the upper MC total errors,
         the Markovian errors, the discretization errors, the lower MC discretization errors, and the upper MC
@@ -1499,7 +1507,7 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
                         lower_discretization_errors[i, j, k], upper_discretization_errors[i, j, k], S = \
                         optimize_kernel_approximation_for_simulation(params=params, N=Ns[i], N_time=N_times[k],
                                                                      vol_behaviour=vol_behaviours[j],
-                                                                     true_smile=true_smile, test=True)
+                                                                     true_smile=true_smile, test=True, m=m)
                     np.save(filename, S)
                     filename = get_filename(N=Ns[i], mode='fitted', vol_behaviour=vol_behaviours[j], N_time=N_times[k],
                                             kind='nodes')
@@ -1620,6 +1628,7 @@ def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_beha
         WB = np.empty((2, 1000000, N_times[i]))
         for j in range(10):
             WB[:, 100000 * j:100000 * (j + 1), :] = resize_WB(WB=load_WB(j), N_time=N_times[i])
+        WB = np.sqrt(params['T']) * WB
         for j in range(len(largest_nodes)):
             if N == 1:
                 nodes = np.array([largest_nodes[j]])

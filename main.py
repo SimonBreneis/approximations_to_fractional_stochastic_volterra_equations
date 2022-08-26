@@ -5,95 +5,78 @@ import Data
 import rBergomi
 from functions import *
 import rBergomiMarkov
-import ComputationalFinance as cf
-import scipy
-from scipy import integrate
 
-
-'''
-def BS_char_fun(u):
-    return np.exp(complex(0, 1) * u * (- 0.5 * 0.2**2 * 1) - 0.5 * 0.2 ** 2 * 1 * u ** 2)
-
-
-def BS_mgf(u):
-    return BS_char_fun(-complex(0, 1) * u)
-
-
-N_vec = np.array([50, 100, 200, 400])
-L = np.array([50., 65., 82., 100.])
-
-for i in range(len(N_vec)):
-    approx = cf.iv_eur_call_fourier(mgf=BS_mgf, S_0=1., K=np.exp(np.linspace(-1., 0.75, 451)), T=1., L=L[i], N=N_vec[i])
-    print(np.amax(np.abs(approx - 0.2) / 0.2))
-time.sleep(36000)
-
-params = rHeston_params('simple')
-true_smile = rHeston_iv_eur_call(params=params, load=False, verbose=1)
-approx_smiles = np.empty((6, len(true_smile)))
-for i in range(6):
-    print(f'Computing N={i+1}')
-    approx_smiles[i, :] = rHestonMarkov_iv_eur_call(params=params, N=i+1, mode='european', load=False, verbose=1)
-rel_errors = np.abs(true_smile[None, :] - approx_smiles) / true_smile[None, :]
-for i in range(6):
-    plt.plot(np.log(params['K']), rel_errors[i, :], color=color(i, 6), label=f'N={i+1}')
-plt.plot(np.log(params['K']), 2e-05 * np.ones(len(params['K'])), 'k--', label='Discretization error')
-plt.legend(loc='upper left')
-plt.xlabel('Log-moneyness')
-plt.ylabel('Relative error')
-plt.yscale('log')
-plt.title('Relative error in rough Heston implied volatility\nof Markovian approximations depending on dimension')
-plt.show()
-
-rHeston_iv_eur_call(params=rHeston_params('simple'), load=False, verbose=1)
-time.sleep(36000)
-
-rk.exp_underflow(np.array([0]))
-rk.exp_underflow(np.array([0.]))
-rk.exp_underflow(np.array([0.], dtype=np.float32))
-rk.exp_underflow(np.array([0.], dtype=np.cdouble))
-rk.exp_underflow(0)
-rk.exp_underflow(0.)
-rk.exp_underflow(0. * complex(0, 1))
-rk.exp_underflow(np.array([1000]))
-rk.exp_underflow(np.array([1000.]))
-rk.exp_underflow(np.array([1000.], dtype=np.float32))
-rk.exp_underflow(np.array([1000.], dtype=np.cdouble))
-rk.exp_underflow(1000)
-rk.exp_underflow(1000.)
-rk.exp_underflow(1000. * complex(1, 0))
-rk.exp_underflow(np.array([300]))
-rk.exp_underflow(np.array([300.]))
-rk.exp_underflow(np.array([300.], dtype=np.float32))
-rk.exp_underflow(np.array([300.], dtype=np.cdouble))
-rk.exp_underflow(300)
-rk.exp_underflow(300.)
-rk.exp_underflow(300. * complex(1, 0))
 
 T = 1.
-k = np.linspace(-0.5, 0.5, 301) * np.sqrt(T)
-M = 100000
-N_time = 2000
-
+k = np.linspace(-0.4, 0.4, 301) * np.sqrt(T)
+'''
 tic = time.perf_counter()
-smile = rBergomiMarkov.implied_volatility(K=np.exp(k), rel_tol=1e-01, T=T, verbose=1, N=3)
+smile, lower, upper = rBergomi.implied_volatility(K=np.exp(k), rel_tol=9e-02, T=T, verbose=1)
+total = np.empty((3, len(smile)))
+total[0, :] = smile
+total[1, :] = lower
+total[2, :] = upper
+# np.save('rBergomi actual.npy', total)
 print(time.perf_counter() - tic)
+# print((smile, lower, upper))
 plt.plot(k, smile, 'k-')
+plt.plot(k, lower, 'k--')
+plt.plot(k, upper, 'k--')
+# plt.show()
+'''
+total = np.load('rBergomi actual.npy')
+'''
+plt.plot(k, total[0, :], 'k-')
+plt.plot(k, total[1, :], 'k--')
+plt.plot(k, total[2, :], 'k--')
+'''
+functions.rHeston_iv_eur_call(params=functions.rHeston_params('simple'))
+functions.rHestonMarkov_iv_eur_call(params=functions.rHeston_params('simple'), N=2, mode='european')
+k = np.linspace(-0.4, 0.4, 301)
+rBergomi.implied_volatility(rel_tol=1e-02, K=np.exp(k))
+rBergomiMarkov.implied_volatility(rel_tol=1e-02, K=np.exp(k), N=2, mode='optimized')
+disc = 0.7e-02 + 1.5 * (total[2, :] - total[1, :]) / total[1, :]
+plt.plot(k, disc, 'k--', label='Discretization + MC error')
+for i in np.array([0, 1, 2, 3, 4, 5]):
+    approx = np.load(f'rBergomi actual N={i+1}.npy')
+    # plt.plot(k, approx[0, :], '-', color=color(i, 6))
+    err = np.abs(total[0, :] - approx[0, :]) / total[0, :]
+    plt.plot(k, err, '-', color=color(i, 6), label=f'N={i+1}')
+plt.yscale('log')
+plt.title('Relative error in rough Bergomi implied volatility\nof Markovian approximations depending on dimension')
+plt.xlabel('Log-moneyness')
+plt.ylabel('Relative error')
+plt.legend(loc='best')
 plt.show()
-
+for N in np.array([2]):
+    print(N)
+    tic = time.perf_counter()
+    smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='optimized', N=N, T=T, rel_tol=2e-02, verbose=1)
+    # plt.plot(k, smile, '-', color=color(N, 4))
+    total = np.empty((3, len(smile)))
+    total[0, :] = smile
+    total[1, :] = l
+    total[2, :] = u
+    np.save(f'rBergomi actual N={N}.npy', total)
+    print(time.perf_counter() - tic)
+    # print((smile, lower, upper))
+# plt.show()
+print('Finished')
+time.sleep(360000)
+'''
 tic = time.perf_counter()
-smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='paper', N=3, M=M, N_time=N_time)
-plt.plot(k, smile, 'r-')
+smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='optimized', N=3, T=T, rel_tol=1e-02, verbose=1)
+# plt.plot(k, smile, 'g-')
 print(time.perf_counter() - tic)
+print((smile, lower, upper))
 tic = time.perf_counter()
-smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='optimized', N=3, M=M, N_time=N_time)
-plt.plot(k, smile, 'g-')
+smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='european', N=3, T=T, rel_tol=1e-02, verbose=1)
+# plt.plot(k, smile, 'b-')
 print(time.perf_counter() - tic)
-tic = time.perf_counter()
-smile, l, u = rBergomiMarkov.implied_volatility(K=np.exp(k), mode='european', N=3, M=M, N_time=N_time)
-plt.plot(k, smile, 'b-')
-print(time.perf_counter() - tic)
-
-plt.show()
+print((smile, lower, upper))
+print('Finished')
+time.sleep(36000)
+# plt.show()
 '''
 '''
 params = {'H': 0.05, 'lambda': 0.2, 'rho': -0.6, 'nu': 0.6,
@@ -126,7 +109,7 @@ if __name__ == '__main__':
     # 'V_0': log_linspace(0.01, 0.03, 2)
     # 'lambda': np.array([0.2, 1.0])
     # 'rho': np.array([-0.6, -0.8]),
-
+    '''
     params = {'H': np.array([0.15]), 'lambda': np.array([0.2, 1.0]), 'rho': np.array([-0.6, -0.8]),
               'nu': np.array([0.8]), 'theta': np.array([0.01, 0.03]), 'V_0': np.array([0.01, 0.03])}
     for i in range(25):
@@ -134,7 +117,7 @@ if __name__ == '__main__':
         params['K'] = np.exp(np.linspace(-1., 0.5, 301) * np.sqrt(params['T']))
         # print(params)
         rHestonMarkov_iv_eur_call_parallelized(params=params, Ns=np.arange(1, 11), modes=['paper', 'optimized', 'european'], num_threads=1, verbose=1)
-
+    '''
 
     '''
     params = {'H': np.array([0.1]), 'lambda': np.array([0.2, 1.0]), 'rho': np.array([-0.6, -0.8]),
@@ -152,13 +135,13 @@ if __name__ == '__main__':
 # time.sleep(360000)
 
 
-k = np.sqrt(0.04) * np.linspace(-1.5, 0.75, 451)[220:-70]
-true_smile = Data.true_iv_surface_eur_call[0, 220:-70]
-params = {'K': np.exp(k), 'T': 0.04}
+k = np.sqrt(1) * np.linspace(-1.5, 0.75, 451)[220:-70]
+params = {'K': np.exp(k), 'T': 1.}
 params = rHeston_params(params)
+true_smile = Data.true_iv_surface_eur_call[-1, 220:-70]
 print(k, len(k))
-# simulation_errors_depending_on_node_size(params=params, verbose=1, true_smile=true_smile, N_times=2**np.arange(2, 5), largest_nodes=np.linspace(0, 10, 21)/0.04, vol_behaviour='correct ninomiya victoir')
-optimize_kernel_approximation_for_simulation_vector_inputs(N_times=2 ** np.arange(4, 5), params=params, true_smile=true_smile, plot=True, recompute=True, vol_behaviours=['sticky'])
+# simulation_errors_depending_on_node_size(params=params, verbose=1, true_smile=true_smile, N_times=2**np.arange(4, 10), largest_nodes=np.linspace(0, 10, 101)/0.04, vol_behaviour='sticky')
+optimize_kernel_approximation_for_simulation_vector_inputs(Ns=np.array([1]), N_times=2 ** np.arange(6, 9), params=params, true_smile=true_smile, plot=True, recompute=True, vol_behaviours=['hyperplane reset'], m=10000000)
 
 # compute_strong_discretization_errors(Ns=np.array([2]), N_times=2 ** np.arange(14), N_time_ref=2 ** 14, vol_behaviours=['hyperplane reset', 'ninomiya victoir', 'sticky'], plot=True)
 # compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(16), modes=None, vol_behaviours=['hyperplane reset', 'ninomiya victoir', 'sticky'], plot=True, true_smile=true_smile)

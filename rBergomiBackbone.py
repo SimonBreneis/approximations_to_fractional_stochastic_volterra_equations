@@ -64,11 +64,13 @@ def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
             if verbose >= 1:
                 print(total_error, discr_error, mc_error, mc_error_approx, N, M, duration,
                       time.strftime("%H:%M:%S", time.localtime()))
+            '''
             plt.plot(np.log(K_), iv, 'k-')
             plt.plot(np.log(K_), l, 'k--')
             plt.plot(np.log(K_), u, 'k--')
             plt.plot(np.log(K_), iv_approx, 'b-')
             plt.show()
+            '''
             iv_approx, l_approx, u_approx, mc_error_approx = iv, l, u, mc_error
 
             tic = time.perf_counter()
@@ -83,7 +85,7 @@ def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
             print(total_error, discr_error, mc_error, mc_error_approx, N, M, duration,
                   time.strftime("%H:%M:%S", time.localtime()))
 
-        return iv
+        return iv, l, u
 
     T_is_float = False
     if not isinstance(T, np.ndarray):
@@ -93,11 +95,13 @@ def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
         _, K = cf.maturity_tensor_strike(S_0=S_0, K=K, T=T)
 
     iv_surface = np.empty_like(K)
+    lower_surface = np.empty_like(K)
+    upper_surface = np.empty_like(K)
     for i in range(len(T)):
         if verbose >= 1:
             print(f'Now simulating maturity {i+1} of {len(T)}')
-        iv_surface[i, :] = single_smile(K_=K[i, :], T_=T[i],
-                                        sample_generator_=lambda N, M: sample_generator(T[i], N, M))
+        iv_surface[i, :], lower_surface[i, :], upper_surface[i, :] = \
+            single_smile(K_=K[i, :], T_=T[i], sample_generator_=lambda N, M: sample_generator(T[i], N, M))
     if T_is_float:
-        iv_surface = iv_surface[0, :]
-    return iv_surface
+        iv_surface, lower_surface, upper_surface = iv_surface[0, :], lower_surface[0, :], upper_surface[0, :]
+    return iv_surface, lower_surface, upper_surface

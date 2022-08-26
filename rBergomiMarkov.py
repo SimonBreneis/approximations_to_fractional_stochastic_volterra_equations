@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from scipy.special import gamma
 import RoughKernel as rk
@@ -65,7 +67,19 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         cov_matrix[0, 1:] = entry
         cov_matrix[1:, 0] = entry
         cov_matrix[0, 0] = dt
-        return np.linalg.cholesky(cov_matrix)
+        computed_chol = False
+        chol = None
+        while not computed_chol:
+            try:
+                chol = np.linalg.cholesky(cov_matrix)
+                computed_chol = True
+            except np.linalg.LinAlgError:
+                dampening_factor = 0.999
+                for i in range(1, N):
+                    cov_matrix[:i, i] = cov_matrix[:i, i] * dampening_factor ** ((i + 1) / N)
+                    cov_matrix[i, :i] = cov_matrix[i, :i] * dampening_factor ** ((i + 1) / N)
+                computed_chol = False
+        return chol
 
     def variance_integral():
         """
@@ -96,6 +110,7 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         active_nodes = nodes[1:]
         active_weights = weights[1:]
     active_N = len(active_nodes)
+    # exp_vector = rk.exp_underflow(np.linspace(0, T - dt, N_time)[None, ::-1] * active_nodes[:, None])
     exp_vector = rk.exp_underflow(dt * active_nodes)
     eta_transformed = eta * np.sqrt(2 * H) * gamma(H + 0.5)
     variances = eta_transformed ** 2 / 2 * variance_integral()
@@ -112,6 +127,13 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
             W_1_fBm[:, :, i+1] = exp_vector * W_1_fBm[:, :, i] + W_1_diff[:, -active_N:, i]
         V = V_0 * np.exp(np.dot(eta_transformed * active_weights, W_1_fBm) - variances)
         S_BM = rho * W_1_diff[:, 0, :] + np.random.normal(0, np.sqrt(1 - rho ** 2) * np.sqrt(dt), size=(M_, N_time))
+        '''
+        W_1_diff = np.concatenate((np.zeros((M_, active_N, 1)), W_1_diff[:, -active_N:, :-1]), axis=-1)
+        # print(exp_vector, eta_transformed, active_weights)
+        W_1_fBm = np.sum((exp_vector[None, ...] * W_1_diff).cumsum(axis=-1)
+                         / (exp_vector / (eta_transformed * active_weights)[:, None])[None, :, :], axis=-2)
+        V = V_0 * np.exp(W_1_fBm - variances)
+        '''
         S[rd * M_:(rd + 1) * M_] = S_0 * np.exp(np.sum(np.sqrt(V) * S_BM - V * (dt / 2), axis=1))
     return S[:M]
 
