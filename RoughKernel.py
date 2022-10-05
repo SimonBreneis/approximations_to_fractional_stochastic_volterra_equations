@@ -872,6 +872,14 @@ def european_rule(H, N, T, optimal_weights=False):
     return nodes_6, weights_6
 
 
+def AbiJaberElEuch_quadrature_rule(H, N, T):
+    pi_n = N ** (-0.2) / T * (np.sqrt(10) * (1 - 2 * H) / (5 - 2 * H)) ** 0.4
+    eta = pi_n * np.arange(N + 1)
+    c_vec = (eta[1:] ** (0.5 - H) - eta[:-1] ** (0.5 - H)) / (gamma(H + 0.5) * gamma(1.5 - H))
+    gamma_vec = (eta[1:] ** (1.5 - H) - eta[:-1] ** (1.5 - H)) / ((1.5 - H) * gamma(H + 0.5) + gamma(0.5 - H)) / c_vec
+    return gamma_vec, c_vec
+
+
 def quadrature_rule(H, N, T, mode="optimized"):
     """
     Returns the nodes and weights of a quadrature rule for the fractional kernel with Hurst parameter H. The nodes are
@@ -896,4 +904,6 @@ def quadrature_rule(H, N, T, mode="optimized"):
         return Gaussian_rule(H=H, N=N, T=T, mode=mode, optimal_weights=True)
     if mode == "observation old" or mode == "paper":
         return Gaussian_rule(H=H, N=N, T=T, mode="observation", optimal_weights=False)
+    if mode == "abi jaber":
+        return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
     return Gaussian_rule(H=H, N=N, T=T, mode="theorem", optimal_weights=False)
