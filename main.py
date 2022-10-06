@@ -10,6 +10,27 @@ import Data
 import rBergomi
 from functions import *
 import rBergomiMarkov
+import rHestonMomentMatching
+
+
+nodes, weights = rk.quadrature_rule(H=0.1, N=3, T=1., mode='european')
+print(nodes, weights)
+V_0 = 0.02
+V_0_vec = V_0 / (len(weights) * weights)
+nu = 0.3
+lambda_ = 0.3
+theta = 0.02 * lambda_
+V = V_0_vec * np.array([0.5, 1, 3])
+dt = 0.1
+mean_func = rHestonMomentMatching.mean_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, V_0=V_0_vec, dt=dt)
+tic = time.perf_counter()
+cov_func = rHestonMomentMatching.cov_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0_vec, dt=dt)
+print(f'Benchmark: {time.perf_counter() - tic}')
+print(V_0_vec, weights @ V_0_vec)
+print(V, weights @ V)
+print(mean_func(V), weights @ mean_func(V))
+print(cov_func(V))
+time.sleep(360000)
 
 
 def illustrate_Markovian_approximation(H=0.3, N_small=2, N_large=4, T=1., n=10000):
