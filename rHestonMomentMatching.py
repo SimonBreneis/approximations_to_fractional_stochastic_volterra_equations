@@ -235,8 +235,7 @@ def first_five_moments_V(nodes, weights, lambda_, theta, nu, V_0, dt, rtol=1e-07
         f_112 = f_11[:, :, None, None] * f_2[None, None, :, :] + f_11[:, None, :, None] * f_2[None, :, None, :] \
             + f_11[:, None, None, :] * f_2[None, :, :, None] + f_11[None, :, :, None] * f_2[:, None, None, :] \
             + f_11[None, :, None, :] * f_2[:, None, :, None] + f_11[None, None, :, :] * f_2[:, :, None, None]
-        f_1111 = f_111[:, :, :, None] * f_1[None, None, None, :] + f_111[:, :, None, :] * f_1[None, None, None, :] \
-            + f_111[:, None, :, :] * f_1[None, :, None, None] + f_111[None, :, :, :] * f_1[:, None, None, None]
+        f_1111 = f_111[:, :, :, None] * f_1[None, None, None, :]
         f_23 = f_2[:, :, None, None, None] * f_3[None, None, :, :, :] \
             + f_2[:, None, :, None, None] * f_3[None, :, None, :, :] \
             + f_2[:, None, None, :, None] * f_3[None, :, :, None, :] \
@@ -277,11 +276,7 @@ def first_five_moments_V(nodes, weights, lambda_, theta, nu, V_0, dt, rtol=1e-07
             + f_111[None, :, :, None, :] * f_2[:, None, None, :, None] \
             + f_111[None, :, None, :, :] * f_2[:, None, :, None, None] \
             + f_111[None, None, :, :, :] * f_2[:, :, None, None, None]
-        f_11111 = f_1[:, None, None, None, None] * f_1111[None, :, :, :, :] \
-            + f_1[None, :, None, None, None] * f_1111[:, None, :, :, :] \
-            + f_1[None, None, :, None, None] * f_1111[:, :, None, :, :] \
-            + f_1[None, None, None, :, None] * f_1111[:, :, :, None, :] \
-            + f_1[None, None, None, None, :] * f_1111[:, :, :, :, None]
+        f_11111 = f_1[:, None, None, None, None] * f_1111[None, :, :, :, :]
 
         g_1 = f_1
         g_2 = f_2 + f_11
