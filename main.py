@@ -12,7 +12,24 @@ from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
 
+'''
+def ada_trap(f):
+    rtol = 1e-08
+    n = 4
+    integral = np.trapz(f(np.linspace(0, 1, n + 1)), dx=1 / n)
+    error = 10 * rtol
+    while error > rtol:
+        n = 2 * n
+        integral_old = integral
+        integral = np.trapz(f(np.linspace(0, 1, n + 1)), dx=1 / n)
+        error = np.abs((integral_old - integral) / integral)
+        print(error)
+    return integral
 
+ada_trap(np.exp)
+print('Finished')
+time.sleep(36000)
+'''
 nodes, weights = rk.quadrature_rule(H=0.1, N=3, T=1., mode='european')
 print(nodes, weights)
 V_0 = 0.02
@@ -21,7 +38,16 @@ nu = 0.3
 lambda_ = 0.3
 theta = 0.02 * lambda_
 V = V_0_vec * np.array([0.5, 1, 3])
-dt = 0.1
+dt = 0.05
+tic = time.perf_counter()
+moments = rHestonMomentMatching.first_five_moments_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0_vec, dt=dt)
+toc = time.perf_counter()
+print(toc - tic)
+tic = time.perf_counter()
+moms = moments(V)
+print(time.perf_counter() - tic)
+print(moms[0], moms[1] - moms[0][:, None] * moms[0][None, :], moms[2][0, 1, 2], moms[3][0, 0, 1, 2], moms[4][0, 0, 1, 1, 2])
+time.sleep(360000)
 mean_func = rHestonMomentMatching.mean_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, V_0=V_0_vec, dt=dt)
 tic = time.perf_counter()
 cov_func = rHestonMomentMatching.cov_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0_vec, dt=dt)
