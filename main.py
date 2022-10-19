@@ -382,7 +382,6 @@ if __name__ == '__main__':
 
 if __name__ == '__main__':
     profile("compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=64, modes=['european'], vol_behaviours=['mackevicius'], recompute=True, m=1000000)")
-
 print('Finished')
 time.sleep(360000)
 

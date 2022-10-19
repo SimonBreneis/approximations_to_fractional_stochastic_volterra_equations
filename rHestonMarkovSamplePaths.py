@@ -654,13 +654,13 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
     A = -(np.diag(nodes) + lambda_ * weights[None, :]) * dt / 2
     exp_A = scipy.linalg.expm(A)
     b = (nodes * V_orig + theta) * dt / 2
-    ODE_b = np.linalg.solve(A, (exp_A - np.eye(N)) @ b)
+    ODE_b = np.linalg.solve(A, (exp_A - np.eye(N)) @ b)[:, None]
     z = weight_sum ** 2 * nu ** 2 * dt
     rho_bar_sq = 1 - rho ** 2
     rho_bar = np.sqrt(rho_bar_sq)
 
     def ODE_step_V(V):
-        return exp_A @ V + ODE_b[:, None]
+        return exp_A @ V + ODE_b
 
     B = (6 + np.sqrt(3)) / 4
     A = B - 0.75
@@ -669,27 +669,11 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
         x = weights @ V
         rv = np.random.uniform(0, 1, len(x))
         temp = np.sqrt((3 * z) * x + (B * z) ** 2)
-        '''
-        m_1 = x
-        m_2 = x * (x + z)
-        m_3 = x * (x * (x + 3 * z) + 1.5 * z ** 2)
-        x_1 = x + B * z - temp
-        x_3 = x + B * z + temp
-        x_2 = x + (B - 0.75) * z
-        '''
         p_1 = (z / 2) * x * ((A * B - A - B + 1.5) * z + (np.sqrt(3) - 1) / 4 * temp + x) / (
                     (x + B * z - temp) * temp * (temp - (B - A) * z))
         p_2 = x / (1.5 * x + A * (B - A / 2) * z)
-        '''
-        p_11 = (m_1 * x_2 * x_3 - m_2 * (x_2 + x_3) + m_3) / (x_1 * (x_3 - x_1) * (x_2 - x_1))
-        p_22 = (m_2 * (x_1 + x_3) - m_1 * x_1 * x_3 - m_3) / (x_2 * (x_3 - x_2) * (x_2 - x_1))
-        print(p_1[0], p_11[0], p_2[0], p_22[0])
-        '''
-        # p_3 = (m_1 * x_1 * x_2 - m_2 * (x_1 + x_2) + m_3) / (x_3 * (x_2 - x_3) * (x_1 - x_3))
-        # print(p_1[0], p_11[0], p_2[0], p_22[0])
         test_1 = rv < p_1
         test_2 = p_1 + p_2 <= rv
-        # x_step = test_1 * (B * z - temp) + np.logical_and(np.logical_not(test_1), np.logical_not(test_2)) * (A * z) + test_2 * (B * z + temp)
         x_step = A * z * np.ones(len(temp))
         x_step[test_1] = B * z - temp[test_1]
         x_step[test_2] = B * z + temp[test_2]
@@ -700,22 +684,22 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
 
     def SDE_step_B(S, V):
         x = weights @ V
-        return S + np.sqrt(x) * rho_bar * np.random.normal(0, np.sqrt(dt), len(x)) - 0.5 * x * rho_bar_sq * dt, V
+        return S + np.sqrt(x) * rho_bar * np.random.normal(0, np.sqrt(dt), len(x)) - (0.5 * rho_bar_sq * dt) * x, V
 
     drift_SDE_step_W = - (nodes[0] * V_orig[0] + theta) * dt
-    fact_1 = lambda_ - 0.5 * rho * nu
+    fact_1 = dt / 2 * (lambda_ - 0.5 * rho * nu)
 
     def SDE_step_W(S, V):
         V_new = step_V(V)
-        dY = (V + V_new) * (dt / 2)
-        S_new = S + rho / nu * (drift_SDE_step_W + nodes[0] * dY[0, :] + fact_1 * (weights @ dY)
+        dY = V + V_new
+        S_new = S + rho / nu * (drift_SDE_step_W + (dt / 2 * nodes[0]) * dY[0, :] + fact_1 * (weights @ dY)
                                 + (V_new[0, :] - V[0, :]))
         return S_new, V_new
 
     def step_SV(S, V):
-        rv = np.random.binomial(1, 0.5, len(S))
-        ind_1 = np.where(rv == 0)[0]
-        ind_2 = np.where(rv == 1)[0]
+        rv = np.random.uniform(0, 1, len(S))  # surprisingly faster than np.random.binomial(1, 0.5, len(S))
+        ind_1 = rv < 0.5
+        ind_2 = rv >= 0.5
         S[ind_1], V[:, ind_1] = SDE_step_B(*SDE_step_W(S[ind_1], V[:, ind_1]))
         S[ind_2], V[:, ind_2] = SDE_step_W(*SDE_step_B(S[ind_2], V[:, ind_2]))
         return S, V
