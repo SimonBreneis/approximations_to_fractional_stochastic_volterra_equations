@@ -380,19 +380,34 @@ if __name__ == '__main__':
     rHeston_iv_eur_call_parallelized(params=params, num_threads=1, verbose=1)
     '''
 
-print('Finished')
+if __name__ == '__main__':
+    profile("compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=64, modes=['european'], vol_behaviours=['mackevicius'], recompute=True, m=1000000)")
 
-compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european'], vol_behaviours=['mackevicius'], recompute=False, m=20000000)
+print('Finished')
+time.sleep(360000)
+
+print('Finished')
+for N_times in 2 ** np.arange(10):
+    tic = time.perf_counter()
+    compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=N_times, modes=['european'], vol_behaviours=['sticky'], recompute=True, m=1000000)
+    print(time.perf_counter() - tic)
+
+    tic = time.perf_counter()
+    compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=N_times, modes=['european'], vol_behaviours=['mackevicius'], recompute=True, m=1000000)
+    print(time.perf_counter() - tic)
+
+print('Finished')
+time.sleep(360000)
 # print('Finished')
 # time.sleep(360000)
 # print('Finished')
 # time.sleep(360000)
 
 # print(rk.quadrature_rule(0.1, 2, 1))
-k = np.sqrt(1) * np.linspace(-1.5, 0.75, 451)[280:-140:10]# [220:-70:6]
+k = np.sqrt(1) * np.linspace(-1.5, 0.75, 451)[220:-70:5]# [280:-140:10]# [220:-70:6]
 params = {'K': np.exp(k), 'T': 1.}
 params = rHeston_params(params)
-true_smile = Data.true_iv_surface_eur_call[-1, 280:-140:10]
+true_smile = Data.true_iv_surface_eur_call[-1, 220:-70:5]
 print(k, len(k))
 
 # simulation_errors_depending_on_node_size(params=params, verbose=1, true_smile=true_smile, N_times=2**np.arange(4, 10), largest_nodes=np.linspace(0, 10, 101)/0.04, vol_behaviour='sticky')

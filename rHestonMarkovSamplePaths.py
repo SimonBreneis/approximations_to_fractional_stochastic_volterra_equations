@@ -662,25 +662,38 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
     def ODE_step_V(V):
         return exp_A @ V + ODE_b[:, None]
 
+    B = (6 + np.sqrt(3)) / 4
+    A = B - 0.75
+
     def SDE_step_V(V):
         x = weights @ V
         rv = np.random.uniform(0, 1, len(x))
+        temp = np.sqrt((3 * z) * x + (B * z) ** 2)
+        '''
         m_1 = x
         m_2 = x * (x + z)
         m_3 = x * (x * (x + 3 * z) + 1.5 * z ** 2)
-        B = (6 + np.sqrt(3)) / 4
-        temp = np.sqrt((3 * x + B ** 2 * z) * z)
         x_1 = x + B * z - temp
         x_3 = x + B * z + temp
         x_2 = x + (B - 0.75) * z
-        p_1 = (m_1 * x_2 * x_3 - m_2 * (x_2 + x_3) + m_3) / (x_1 * (x_3 - x_1) * (x_2 - x_1))
-        p_2 = (m_1 * x_1 * x_3 - m_2 * (x_1 + x_3) + m_3) / (x_2 * (x_3 - x_2) * (x_1 - x_2))
+        '''
+        p_1 = (z / 2) * x * ((A * B - A - B + 1.5) * z + (np.sqrt(3) - 1) / 4 * temp + x) / (
+                    (x + B * z - temp) * temp * (temp - (B - A) * z))
+        p_2 = x / (1.5 * x + A * (B - A / 2) * z)
+        '''
+        p_11 = (m_1 * x_2 * x_3 - m_2 * (x_2 + x_3) + m_3) / (x_1 * (x_3 - x_1) * (x_2 - x_1))
+        p_22 = (m_2 * (x_1 + x_3) - m_1 * x_1 * x_3 - m_3) / (x_2 * (x_3 - x_2) * (x_2 - x_1))
+        print(p_1[0], p_11[0], p_2[0], p_22[0])
+        '''
         # p_3 = (m_1 * x_1 * x_2 - m_2 * (x_1 + x_2) + m_3) / (x_3 * (x_2 - x_3) * (x_1 - x_3))
+        # print(p_1[0], p_11[0], p_2[0], p_22[0])
         test_1 = rv < p_1
         test_2 = p_1 + p_2 <= rv
-        x_after = test_1 * x_1 + np.logical_and(np.logical_not(test_1), np.logical_not(test_2)) * x_2 + test_2 * x_3
-        y = (x_after - x) / weight_sum
-        return V + y[None, :]
+        # x_step = test_1 * (B * z - temp) + np.logical_and(np.logical_not(test_1), np.logical_not(test_2)) * (A * z) + test_2 * (B * z + temp)
+        x_step = A * z * np.ones(len(temp))
+        x_step[test_1] = B * z - temp[test_1]
+        x_step[test_2] = B * z + temp[test_2]
+        return V + (x_step / weight_sum)[None, :]
 
     def step_V(V):
         return ODE_step_V(SDE_step_V(ODE_step_V(V)))

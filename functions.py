@@ -13,6 +13,21 @@ import multiprocessing as mp
 import itertools
 
 
+def profile(statement):
+    """
+    Profiles statement. Only call in main file under if __name__ == '__main__': clause.
+    :param statement: The statement (function call) that should be profiled. Is a string
+    :return: Nothing, but prints the results
+    """
+    import cProfile
+    import pstats
+    cProfile.run(statement, "{}.profile".format(__file__))
+    stats = pstats.Stats("{}.profile".format(__file__))
+    stats.strip_dirs()
+    stats.sort_stats("cumtime").print_stats(100)
+    stats.sort_stats("tottime").print_stats(100)
+
+
 def log_linspace(a, b, n):
     return np.exp(np.linspace(np.log(a), np.log(b), n))
 
@@ -888,7 +903,7 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                     if not recompute and exists(filename):
                         pass
                     else:
-                        if vol_behaviour == 'mackevicius':
+                        if vol_behaviour == 'mackevicius' or 'sticky':
                             samples_per_round = int(np.ceil(100000 * 2048 / N_time))
                             n_rounds = int(np.ceil(m / samples_per_round))
                             if not sample_paths:
@@ -947,8 +962,8 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                         np.save(filename, S)
                                         np.save(filename, V)
                                         np.save(filename, V_comp)
-                        if not sample_paths:
-                            np.save(filename, final_S)
+                        '''if not sample_paths:
+                            np.save(filename, final_S)'''
 
 
 def compute_final_rHeston_stock_prices_parallelized(params, Ns=None, N_times=None, modes=None, vol_behaviours=None,
@@ -1134,9 +1149,12 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                     discretization_errors[i, j, k, m], lower_discretization_errors[i, j, k, m], \
                         upper_discretization_errors[i, j, k, m] = \
                         max_errors_MC(truth=markov_smiles[i, j, :, :], estimate=vol, lower=low, upper=upp)
+                    MC_error = np.fmax(discretization_errors[i, j, k, m] - lower_discretization_errors[i, j, k, m],
+                                       upper_discretization_errors[i, j, k, m] - discretization_errors[i, j, k, m])
                     print(f'N={Ns[i]}, {modes[j]}, {vol_behaviours[k]}, N_time={N_times[m]}: total error='
-                          + f'{100*total_errors[i, j, k, m]:.4}%, discretization error='
-                          + f'{100*discretization_errors[i, j, k, m]:.4}%')
+                          f'{100*total_errors[i, j, k, m]:.4}%, discretization error='
+                          f'{100*discretization_errors[i, j, k, m]:.4}%, MC error={100*MC_error:.4}%,'
+                          f'excess error={100*lower_discretization_errors[i, j, k, m]:.4}%')
 
     k_vec = np.log(params['K'])
 
