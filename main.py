@@ -12,23 +12,7 @@ from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
 
-'''
-def ada_trap(f):
-    rtol = 1e-08
-    n = 4
-    integral = np.trapz(f(np.linspace(0, 1, n + 1)), dx=1 / n)
-    error = 10 * rtol
-    while error > rtol:
-        n = 2 * n
-        integral_old = integral
-        integral = np.trapz(f(np.linspace(0, 1, n + 1)), dx=1 / n)
-        error = np.abs((integral_old - integral) / integral)
-        print(error)
-    return integral
 
-ada_trap(np.exp)
-print('Finished')
-time.sleep(36000)
 '''
 nodes, weights = rk.quadrature_rule(H=0.1, N=3, T=1., mode='european')
 print(nodes, weights)
@@ -40,13 +24,23 @@ theta = 0.02 * lambda_
 V = V_0_vec * np.array([0.5, 1, 3])
 dt = 0.05
 tic = time.perf_counter()
-moments = rHestonMomentMatching.first_five_moments_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0_vec, dt=dt)
+moments_full, moments_1d = rHestonMomentMatching.first_five_moments_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0_vec, dt=dt)
 toc = time.perf_counter()
 print(toc - tic)
 tic = time.perf_counter()
-moms = moments(V)
+moms = moments_full(V)
+print(time.perf_counter() - tic)
+tic = time.perf_counter()
+moms_simple = moments_1d(V)
 print(time.perf_counter() - tic)
 print(moms[0], moms[1] - moms[0][:, None] * moms[0][None, :], moms[2][0, 1, 2], moms[3][0, 0, 1, 2], moms[4][0, 0, 1, 1, 2])
+print(moms_simple)
+
+moms_resc = np.array([moms_simple[0], moms_simple[1] ** 0.5, moms_simple[2] ** (1/3), moms_simple[3] ** (1/4), moms_simple[4] ** (1/5)])
+A = np.array([moms_resc ** i for i in range(1, 6)])
+b = np.array(moms_simple)
+print(A, b, np.linalg.solve(A, b))
+
 time.sleep(360000)
 mean_func = rHestonMomentMatching.mean_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, V_0=V_0_vec, dt=dt)
 tic = time.perf_counter()
@@ -57,7 +51,7 @@ print(V, weights @ V)
 print(mean_func(V), weights @ mean_func(V))
 print(cov_func(V))
 time.sleep(360000)
-
+'''
 
 def illustrate_Markovian_approximation(H=0.3, N_small=2, N_large=4, T=1., n=10000):
     nodes, weights = rk.quadrature_rule(H=H, N=N_small, T=T, mode='optimized')
@@ -388,24 +382,25 @@ if __name__ == '__main__':
 
 print('Finished')
 
-# compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['paper', 'optimized', 'european'], vol_behaviours=['correct ninomiya victoir'], recompute=False)
+compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european'], vol_behaviours=['mackevicius'], recompute=False, m=20000000)
 # print('Finished')
 # time.sleep(360000)
 # print('Finished')
 # time.sleep(360000)
 
-print(rk.quadrature_rule(0.1, 2, 1))
-k = np.sqrt(1) * np.linspace(-1.5, 0.75, 451)[220:-70]
+# print(rk.quadrature_rule(0.1, 2, 1))
+k = np.sqrt(1) * np.linspace(-1.5, 0.75, 451)[280:-140:10]# [220:-70:6]
 params = {'K': np.exp(k), 'T': 1.}
 params = rHeston_params(params)
-true_smile = Data.true_iv_surface_eur_call[-1, 220:-70]
+true_smile = Data.true_iv_surface_eur_call[-1, 280:-140:10]
 print(k, len(k))
+
 # simulation_errors_depending_on_node_size(params=params, verbose=1, true_smile=true_smile, N_times=2**np.arange(4, 10), largest_nodes=np.linspace(0, 10, 101)/0.04, vol_behaviour='sticky')
 # optimize_kernel_approximation_for_simulation_vector_inputs(Ns=np.array([1]), N_times=2 ** np.arange(6, 9), params=params, true_smile=true_smile, plot=True, recompute=True, vol_behaviours=['hyperplane reset'], m=10000000)
 
 # compute_strong_discretization_errors(Ns=np.array([2]), N_times=2 ** np.arange(14), N_time_ref=2 ** 14, vol_behaviours=['hyperplane reset', 'ninomiya victoir', 'sticky'], plot=True)
 # compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(16), modes=None, vol_behaviours=['hyperplane reset', 'ninomiya victoir', 'sticky'], plot=True, true_smile=true_smile)
-compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(16), modes=None, vol_behaviours=['sticky'], plot=True, true_smile=true_smile)
+compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european'], vol_behaviours=['sticky', 'mackevicius'], plot=True, true_smile=true_smile)
 # compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european'], vol_behaviours=['ninomiya victoir', 'correct ninomiya victoir', 'sticky'], plot='vol_behaviour', true_smile=true_smile)
 # compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european', 'fitted'], vol_behaviours=['hyperplane reset'], plot='mode', true_smile=true_smile)
 print('Finished')

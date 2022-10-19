@@ -53,6 +53,10 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
         sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
     :return: Numpy array of the final stock prices
     """
+    if vol_behaviour == 'mackevicius':
+        return sample_values_mackevicius(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, S_0=S_0, N=N,
+                                         m=m, N_time=N_time, mode=mode, nodes=nodes, weights=weights,
+                                         sample_paths=sample_paths, return_times=return_times)
     if return_times is not None:
         sample_paths = True
         return_times = np.fmax(return_times, 0)
@@ -235,6 +239,78 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                                                                     dB[~indices, i])
                 # log_S, V_comp = solve_stochastic_ODE(log_S, V_comp, dW[:, i], S_BM[:, i])
                 log_S, V_comp = solve_drift_ODE(log_S, V_comp)
+            S = np.exp(log_S)
+
+    elif vol_behaviour == 'mackevicius':
+        weight_sum = np.sum(weights)
+        A = -(np.diag(nodes) + lambda_ * weights[None, :]) * dt / 2
+        expA = scipy.linalg.expm(A)
+        b = (nodes * V_orig + theta) * dt / 2
+        ODE_b = np.linalg.solve(A, (expA - np.eye(N)) @ b)
+        z = weight_sum ** 2 * nu ** 2 * dt
+
+        def ODE_step_V(V):
+            return expA @ V + ODE_b[:, None]
+
+        def SDE_step_V(V):
+            x = weights @ V
+            rv = np.random.uniform(0, 1, len(x))
+            m_1 = x
+            m_2 = x * (x + z)
+            m_3 = x * (x * (x + 3 * z) + 1.5 * z ** 2)
+            B = (6 + np.sqrt(3)) / 4
+            temp = np.sqrt((3 * x + B ** 2 * z) * z)
+            x_1 = x + B * z - temp
+            x_3 = x + B * z + temp
+            x_2 = x + (B - 0.75) * z
+            p_1 = (m_1 * x_2 * x_3 - m_2 * (x_2 + x_3) + m_3) / (x_1 * (x_3 - x_1) * (x_2 - x_1))
+            p_2 = (m_1 * x_1 * x_3 - m_2 * (x_1 + x_3) + m_3) / (x_2 * (x_3 - x_2) * (x_1 - x_2))
+            # p_3 = (m_1 * x_1 * x_2 - m_2 * (x_1 + x_2) + m_3) / (x_3 * (x_2 - x_3) * (x_1 - x_3))
+            test_1 = rv < p_1
+            test_2 = p_1 + p_2 <= rv
+            x_after = test_1 * x_1 + np.logical_and(np.logical_not(test_1), np.logical_not(test_2)) * x_2 + test_2 * x_3
+            y = (x_after - x) / weight_sum
+            return V + y[None, :]
+
+        def step_V(V):
+            return ODE_step_V(SDE_step_V(ODE_step_V(V)))
+
+        def SDE_step_B(S, V):
+            x = weights @ V
+            return S + np.sqrt(x) * np.sqrt(1 - rho ** 2) * np.random.normal(0, np.sqrt(dt), len(x)) - 0.5 * x * (1 - rho ** 2) * dt, V
+
+        drift_SDE_step_W = - (nodes[0] * V_orig[0] + theta) * dt
+
+        def SDE_step_W(S, V):
+            V_new = step_V(V)
+            dY = (V + V_new) * (dt / 2)
+            S_new = S + rho / nu * (drift_SDE_step_W + nodes[0] * dY[0, :] + (lambda_ - 0.5 * rho * nu) * (weights @ dY)
+                                    + (V_new[0, :] - V[0, :]))
+            return S_new, V_new
+
+        def step_SV(S, V):
+            rv = np.random.binomial(1, 0.5, len(S))
+            ind_1 = np.where(rv == 0)[0]
+            ind_2 = np.where(rv == 1)[0]
+            S[ind_1], V[:, ind_1] = SDE_step_B(*SDE_step_W(S[ind_1], V[:, ind_1]))
+            S[ind_2], V[:, ind_2] = SDE_step_W(*SDE_step_B(S[ind_2], V[:, ind_2]))
+            return S, V
+
+        V_comp = V_comp.T
+        if sample_paths:
+            log_S = np.empty((m, N_time + 1))
+            V_comp_1 = np.empty((N, m, N_time + 1))
+            V_comp_1[:, :, 0] = V_comp
+            V_comp = V_comp_1
+            log_S[0] = np.log(S_0)
+            for i in range(N_time):
+                log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
+            V = np.fmax(weights @ V_comp, 0)
+            S = np.exp(log_S)
+        else:
+            log_S = np.ones(m) * np.log(S_0)
+            for i in range(N_time):
+                log_S, V_comp = step_SV(log_S, V_comp)
             S = np.exp(log_S)
 
     else:  # Some implicit Euler scheme
@@ -518,6 +594,134 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                                                                                 V_comp_=V_comp[:, :, i], dW_=dW[:, i])
             for i in range(N_time):
                 S, V_comp, V = split_whatever(S_=S, V_=V, S_BM_=S_BM[:, i], V_comp_=V_comp, dW_=dW[:, i])
+
+    if sample_paths:
+        if return_times is not None:
+            times = np.linspace(0, T, N_time+1)
+            S = scipy.interpolate.interp1d(x=times, y=S)(return_times)
+            V = scipy.interpolate.interp1d(x=times, y=V)(return_times)
+            V_comp = scipy.interpolate.interp1d(x=times, y=V_comp)(return_times)
+        return S, np.sqrt(V), V_comp
+    return S
+
+
+def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, mode="best",
+                              nodes=None, weights=None, sample_paths=False, return_times=None):
+    """
+    Simulates sample paths under the Markovian approximation of the rough Heston model, using a combination of
+    Mackevicius and Alfonsi.
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_time: Number of time steps
+    :param N: Total number of points in the quadrature rule
+    :param S_0: Initial stock price
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param sample_paths: If True, returns the entire sample paths, not just the final values. Also returns the sample
+        paths of the square root of the volatility and the components of the volatility
+    :param return_times: May specify an array of times at which the sample path values should be returned. If None and
+        sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
+    :return: Numpy array of the final stock prices
+    """
+    if return_times is not None:
+        sample_paths = True
+        return_times = np.fmax(return_times, 0)
+        T = np.amax(return_times)
+    dt = T / N_time
+    if nodes is None or weights is None:
+        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+    N = len(nodes)
+    if N == 1:
+        nodes = np.array([nodes[0], 1])
+        weights = np.array([weights[0], 0])
+        N = 2
+
+    V_comp = np.zeros((N, m))
+    V_comp[0, :] = V_0 / weights[0]
+    V = V_0
+    V_orig = V_comp[:, 0]
+
+    weight_sum = np.sum(weights)
+    A = -(np.diag(nodes) + lambda_ * weights[None, :]) * dt / 2
+    exp_A = scipy.linalg.expm(A)
+    b = (nodes * V_orig + theta) * dt / 2
+    ODE_b = np.linalg.solve(A, (exp_A - np.eye(N)) @ b)
+    z = weight_sum ** 2 * nu ** 2 * dt
+    rho_bar_sq = 1 - rho ** 2
+    rho_bar = np.sqrt(rho_bar_sq)
+
+    def ODE_step_V(V):
+        return exp_A @ V + ODE_b[:, None]
+
+    def SDE_step_V(V):
+        x = weights @ V
+        rv = np.random.uniform(0, 1, len(x))
+        m_1 = x
+        m_2 = x * (x + z)
+        m_3 = x * (x * (x + 3 * z) + 1.5 * z ** 2)
+        B = (6 + np.sqrt(3)) / 4
+        temp = np.sqrt((3 * x + B ** 2 * z) * z)
+        x_1 = x + B * z - temp
+        x_3 = x + B * z + temp
+        x_2 = x + (B - 0.75) * z
+        p_1 = (m_1 * x_2 * x_3 - m_2 * (x_2 + x_3) + m_3) / (x_1 * (x_3 - x_1) * (x_2 - x_1))
+        p_2 = (m_1 * x_1 * x_3 - m_2 * (x_1 + x_3) + m_3) / (x_2 * (x_3 - x_2) * (x_1 - x_2))
+        # p_3 = (m_1 * x_1 * x_2 - m_2 * (x_1 + x_2) + m_3) / (x_3 * (x_2 - x_3) * (x_1 - x_3))
+        test_1 = rv < p_1
+        test_2 = p_1 + p_2 <= rv
+        x_after = test_1 * x_1 + np.logical_and(np.logical_not(test_1), np.logical_not(test_2)) * x_2 + test_2 * x_3
+        y = (x_after - x) / weight_sum
+        return V + y[None, :]
+
+    def step_V(V):
+        return ODE_step_V(SDE_step_V(ODE_step_V(V)))
+
+    def SDE_step_B(S, V):
+        x = weights @ V
+        return S + np.sqrt(x) * rho_bar * np.random.normal(0, np.sqrt(dt), len(x)) - 0.5 * x * rho_bar_sq * dt, V
+
+    drift_SDE_step_W = - (nodes[0] * V_orig[0] + theta) * dt
+    fact_1 = lambda_ - 0.5 * rho * nu
+
+    def SDE_step_W(S, V):
+        V_new = step_V(V)
+        dY = (V + V_new) * (dt / 2)
+        S_new = S + rho / nu * (drift_SDE_step_W + nodes[0] * dY[0, :] + fact_1 * (weights @ dY)
+                                + (V_new[0, :] - V[0, :]))
+        return S_new, V_new
+
+    def step_SV(S, V):
+        rv = np.random.binomial(1, 0.5, len(S))
+        ind_1 = np.where(rv == 0)[0]
+        ind_2 = np.where(rv == 1)[0]
+        S[ind_1], V[:, ind_1] = SDE_step_B(*SDE_step_W(S[ind_1], V[:, ind_1]))
+        S[ind_2], V[:, ind_2] = SDE_step_W(*SDE_step_B(S[ind_2], V[:, ind_2]))
+        return S, V
+
+    if sample_paths:
+        log_S = np.empty((m, N_time + 1))
+        V_comp_1 = np.empty((N, m, N_time + 1))
+        V_comp_1[:, :, 0] = V_comp
+        V_comp = V_comp_1
+        log_S[0] = np.log(S_0)
+        for i in range(N_time):
+            log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
+        V = np.fmax(weights @ V_comp, 0)
+        S = np.exp(log_S)
+    else:
+        log_S = np.ones(m) * np.log(S_0)
+        for i in range(N_time):
+            log_S, V_comp = step_SV(log_S, V_comp)
+        S = np.exp(log_S)
 
     if sample_paths:
         if return_times is not None:

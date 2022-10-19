@@ -853,7 +853,7 @@ def plot_rHeston_sample_path(params, N=2, N_time=1024, mode='european', vol_beha
 
 
 def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None, vol_behaviours=None,
-                                       recompute=False, sample_paths=False, return_times=None):
+                                       recompute=False, sample_paths=False, return_times=None, m=1000000):
     """
     Computes the final stock prices of 1000000 sample paths of the Markovian approximation of the rough Heston model.
     :param params: Parameters of the rough Heston model
@@ -868,6 +868,7 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
         paths of the square root of the volatility and the components of the volatility
     :param return_times: May specify an array of times at which the sample path values should be returned. If None and
         sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
+    :param m: Number of samples - only relevant for vol_behaviour = mackevicius
     :return: None, the stock prices are saved in a file
     """
     params = rHeston_params(params)
@@ -887,36 +888,65 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                     if not recompute and exists(filename):
                         pass
                     else:
-                        n_rounds = int(np.ceil(N_time / 2048))
-                        samples_per_round = int(np.ceil(100000 / n_rounds))
-                        if not sample_paths:
-                            final_S = np.empty(1000000)
-                        else:
-                            final_S = np.empty(1)
-                        nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
-                        for i in range(10):
-                            WB_1 = load_WB(i) * np.sqrt(params['T'])
-                            for j in range(n_rounds):
-                                print(f'{i} of 10, {j} of {n_rounds}')
-                                if j == n_rounds - 1:
-                                    WB = WB_1[:, samples_per_round*j:, :]
+                        if vol_behaviour == 'mackevicius':
+                            samples_per_round = int(np.ceil(100000 * 2048 / N_time))
+                            n_rounds = int(np.ceil(m / samples_per_round))
+                            if not sample_paths:
+                                final_S = np.empty(m)
+                            else:
+                                final_S = np.empty(1)
+                            nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
+                            for i in range(n_rounds):
+                                print(f'{i} of {n_rounds}')
+                                if i == n_rounds - 1:
+                                    n_samples = m - (n_rounds - 1) * samples_per_round
                                 else:
-                                    WB = WB_1[:, samples_per_round*j:samples_per_round*(j+1), :]
-                                WB = resize_WB(WB, N_time)
+                                    n_samples = samples_per_round
                                 if not sample_paths:
-                                    final_S[
-                                        i * 100000 + j * samples_per_round:i * 100000 + (j + 1) * samples_per_round] = \
-                                        rHeston_samples(params=params, N=N, N_time=N_time, WB=WB, m=WB.shape[1],
+                                    final_S[i * samples_per_round:(i + 1) * samples_per_round] = \
+                                        rHeston_samples(params=params, N=N, N_time=N_time, WB=None, m=n_samples,
                                                         mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
                                                         weights=weights)
                                 if sample_paths:
-                                    S, V, V_comp = rHeston_samples(params=params, N=N, m=WB.shape[1], N_time=N_time,
-                                                                   WB=WB, mode=mode, vol_behaviour=vol_behaviour,
+                                    S, V, V_comp = rHeston_samples(params=params, N=N, m=n_samples, N_time=N_time,
+                                                                   WB=None, mode=mode, vol_behaviour=vol_behaviour,
                                                                    nodes=nodes, weights=weights,
-                                                                   sample_paths=sample_paths, return_times=return_times)
+                                                                   sample_paths=sample_paths,
+                                                                   return_times=return_times)
                                     np.save(filename, S)
                                     np.save(filename, V)
                                     np.save(filename, V_comp)
+                        else:
+                            n_rounds = int(np.ceil(N_time / 2048))
+                            samples_per_round = int(np.ceil(100000 / n_rounds))
+                            if not sample_paths:
+                                final_S = np.empty(1000000)
+                            else:
+                                final_S = np.empty(1)
+                            nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
+                            for i in range(10):
+                                WB_1 = load_WB(i) * np.sqrt(params['T'])
+                                for j in range(n_rounds):
+                                    print(f'{i} of 10, {j} of {n_rounds}')
+                                    if j == n_rounds - 1:
+                                        WB = WB_1[:, samples_per_round*j:, :]
+                                    else:
+                                        WB = WB_1[:, samples_per_round*j:samples_per_round*(j+1), :]
+                                    WB = resize_WB(WB, N_time)
+                                    if not sample_paths:
+                                        final_S[
+                                            i * 100000 + j * samples_per_round:i * 100000 + (j + 1) * samples_per_round] = \
+                                            rHeston_samples(params=params, N=N, N_time=N_time, WB=WB, m=WB.shape[1],
+                                                            mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
+                                                            weights=weights)
+                                    if sample_paths:
+                                        S, V, V_comp = rHeston_samples(params=params, N=N, m=WB.shape[1], N_time=N_time,
+                                                                       WB=WB, mode=mode, vol_behaviour=vol_behaviour,
+                                                                       nodes=nodes, weights=weights,
+                                                                       sample_paths=sample_paths, return_times=return_times)
+                                        np.save(filename, S)
+                                        np.save(filename, V)
+                                        np.save(filename, V_comp)
                         if not sample_paths:
                             np.save(filename, final_S)
 

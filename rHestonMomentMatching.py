@@ -215,7 +215,17 @@ def first_five_moments_V(nodes, weights, lambda_, theta, nu, V_0, dt, rtol=1e-07
     C_41 = C_41.transpose([1, 2, 3, 4, 0])
     C_51 = C_51.transpose([1, 2, 3, 4, 5, 0])
 
-    def moments(V):
+    C_11_1d = weights @ C_11
+    C_21_1d = weights @ (weights @ C_21)
+    C_22_1d = weights @ (weights @ C_22)
+    C_31_1d = weights @ (weights @ (weights @ C_31))
+    C_32_1d = weights @ (weights @ (weights @ C_32))
+    C_41_1d = weights @ (weights @ (weights @ (weights @ C_41)))
+    C_42_1d = weights @ (weights @ (weights @ (weights @ C_42)))
+    C_51_1d = weights @ (weights @ (weights @ (weights @ (weights @ C_51))))
+    C_52_1d = weights @ (weights @ (weights @ (weights @ (weights @ C_52))))
+
+    def moments_full(V):
         V_total = np.dot(weights, V)
         b = (theta - lambda_ * V_total) - nodes * (V - V_0)
         f_1 = V + C_11 @ b
@@ -261,4 +271,32 @@ def first_five_moments_V(nodes, weights, lambda_, theta, nu, V_0, dt, rtol=1e-07
 
         return g_1, g_2, g_3, g_4, g_5
 
-    return moments
+    def moments_1d(V):
+        V_total = np.dot(weights, V)
+        b = (theta - lambda_ * V_total) - nodes * (V - V_0)
+        f_1 = V_total + np.dot(C_11_1d, b)
+        f_2 = np.dot(C_21_1d, b) + V_total * C_22_1d
+        f_3 = np.dot(C_31_1d, b) + V_total * C_32_1d
+        f_4 = np.dot(C_41_1d, b) + V_total * C_42_1d
+        f_5 = np.dot(C_51_1d, b) + V_total * C_52_1d
+
+        f_11 = f_1 ** 2
+        f_12 = 3 * f_1 * f_2
+        f_111 = f_11 * f_1
+        f_13 = 4 * f_1 * f_3
+        f_22_4 = 3 * f_2 ** 2 + f_4
+        f_112 = 6 * f_11 * f_2
+        f_1111 = f_111 * f_1
+        f_23 = 10 * f_2 * f_3
+        temp = f_22_4 + f_13 / 2 + f_112 / 3 + f_1111 / 5
+        f_11111_1112_122_113_14 = 5 * f_1 * temp
+
+        g_1 = f_1
+        g_2 = f_2 + f_11
+        g_3 = f_3 + f_12 + f_111
+        g_4 = f_13 + f_22_4 + f_112 + f_1111
+        g_5 = f_5 + f_23 + f_11111_1112_122_113_14
+
+        return g_1, g_2, g_3, g_4, g_5
+
+    return moments_full, moments_1d
