@@ -164,7 +164,7 @@ def payoff_put(S, K):
     return np.fmax(K[:, :, None] - S[:, None, :], 0)
 
 
-def iv_eur_call_MC(S_0, K, T, samples, antithetic=False, control_variate=None):
+def iv_eur_call_MC(S_0, K, T, samples, antithetic=False):
     """
     Computes the volatility smile for a European call option given samples of final stock prices.
     :param S_0: The initial stock price
@@ -172,45 +172,23 @@ def iv_eur_call_MC(S_0, K, T, samples, antithetic=False, control_variate=None):
     :param T: The final time
     :param samples: The final stock prices. Either an array of stock prices, or a list of two arrays. If it is a list,
         it is assumed that these two arrays correspond to antithetic variates
+    :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
-    if control_variate is not None:
-        vol_control = control_variate[0]
-        T_control = control_variate[1]
-        m = len(samples) // 2
-        payoffs = payoff_call(S=samples, K=K)
-        real_payoffs = payoffs[:, :m]
-        control_payoffs = payoffs[:, m:]
-        if antithetic:
-            m = m // 2
-            real_payoffs = 0.5 * (real_payoffs[:, :m] + real_payoffs[:, m:])
-            real_payoffs = np.sort(real_payoffs)
-            control_payoffs = 0.5 * (control_payoffs[:, :m] + control_payoffs[:, m:])
-            control_payoffs = np.sort(control_payoffs)
-        E_real = MC(real_payoffs)[0]
-        E_control, E_control_std = MC(control_payoffs)
-        E_control_squared, E_control_squared_std = MC(control_payoffs ** 2)
-        E_real_control = MC(real_payoffs * control_payoffs)[0]
-        certainty = E_control_squared_std + 2 * np.abs(E_control) * E_control_std + E_control_std ** 2
-        lambda_star = (E_real_control - E_real * E_control) / np.fmax((E_control_squared - E_control ** 2), certainty)
-        print(certainty, lambda_star, E_control_squared - E_control ** 2)
-        price_estimate, price_stat = MC(real_payoffs - lambda_star[:, None] * control_payoffs)
-        price_estimate = price_estimate + lambda_star * BS_price_eur_call(S_0=S_0, K=K, sigma=vol_control, T=T_control)
+    if antithetic:
+        payoffs = 0.5 * (payoff_call(S=samples[:len(samples) // 2], K=K)
+                         + payoff_call(S=samples[len(samples) // 2:], K=K))
     else:
-        if antithetic:
-            payoffs = 0.5 * (payoff_call(S=samples[:len(samples) // 2], K=K)
-                             + payoff_call(S=samples[len(samples) // 2:], K=K))
-        else:
-            payoffs = payoff_call(S=samples, K=K)
-        price_estimate, price_stat = MC(payoffs)
+        payoffs = payoff_call(S=samples, K=K)
+    price_estimate, price_stat = MC(payoffs)
     implied_volatility_estimate = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate)
     implied_volatility_lower = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate - price_stat)
     implied_volatility_upper = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
-def iv_eur_put_MC(S_0, K, T, samples):
+def iv_eur_put_MC(S_0, K, T, samples, antithetic=False):
     """
     Computes the volatility smile for a European call option given samples of final stock prices.
     :param samples: The final stock prices. Either an array of stock prices, or a list of two arrays. If it is a list,
@@ -218,11 +196,13 @@ def iv_eur_put_MC(S_0, K, T, samples):
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param S_0: The initial stock price
+    :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
-    if isinstance(samples, list):
-        payoffs = 0.5 * (payoff_put(S=samples[0], K=K) + payoff_put(S=samples[1], K=K))
+    if antithetic:
+        payoffs = 0.5 * (payoff_put(S=samples[:len(samples) // 2], K=K)
+                         + payoff_put(S=samples[len(samples) // 2:], K=K))
     else:
         payoffs = payoff_put(S=samples, K=K)
     price_estimate, price_stat = MC(payoffs)

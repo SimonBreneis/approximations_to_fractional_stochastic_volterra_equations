@@ -1180,8 +1180,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                     discretization_errors[i, j, k, m], lower_discretization_errors[i, j, k, m], \
                         upper_discretization_errors[i, j, k, m], MC_errors[i, j, k, m] = \
                         max_errors_MC(truth=markov_smiles[i, j, :, :], estimate=vol, lower=low, upper=upp)
-                    MC_error = np.fmax(discretization_errors[i, j, k, m] - lower_discretization_errors[i, j, k, m],
-                                       upper_discretization_errors[i, j, k, m] - discretization_errors[i, j, k, m])
                     print(f'N={Ns[i]}, {modes[j]}, {vol_behaviours[k]}, N_time={N_times[m]}: total error='
                           f'{100*total_errors[i, j, k, m]:.4}%, discretization error='
                           f'{100*discretization_errors[i, j, k, m]:.4}%, MC error={100*MC_errors[i, j, k, m]:.4}%, '
