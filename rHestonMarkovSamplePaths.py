@@ -3,6 +3,7 @@ import scipy.interpolate
 import ComputationalFinance as cf
 import RoughKernel as rk
 import rHestonSplitKernel as sk
+import scipy.stats
 
 
 def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, WB=None, mode="best",
@@ -53,10 +54,15 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
         sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
     :return: Numpy array of the final stock prices
     """
-    if vol_behaviour == 'mackevicius':
+    if vol_behaviour[:11] == 'mackevicius':
         return sample_values_mackevicius(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, S_0=S_0, N=N,
                                          m=m, N_time=N_time, mode=mode, nodes=nodes, weights=weights,
-                                         sample_paths=sample_paths, return_times=return_times)
+                                         sample_paths=sample_paths, return_times=return_times,
+                                         vol_behaviour=vol_behaviour)
+    if vol_behaviour == 'sticky' and WB is None:
+        return sample_values_sticky(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, S_0=S_0, N=N,
+                                    m=m, N_time=N_time, mode=mode, nodes=nodes, weights=weights,
+                                    sample_paths=sample_paths, return_times=return_times)
     if return_times is not None:
         sample_paths = True
         return_times = np.fmax(return_times, 0)
@@ -605,11 +611,11 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
     return S
 
 
-def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, mode="best",
-                              nodes=None, weights=None, sample_paths=False, return_times=None):
+def sample_values_sticky(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, mode="best",
+                         nodes=None, weights=None, sample_paths=False, return_times=None):
     """
-    Simulates sample paths under the Markovian approximation of the rough Heston model, using a combination of
-    Mackevicius and Alfonsi.
+    Simulates sample paths under the Markovian approximation of the rough Heston model using sticky volatility
+    behaviour.
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -645,6 +651,107 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
         weights = np.array([weights[0], 0])
         N = 2
 
+    V_comp = np.zeros((m, N))
+    V_comp[:, 0] = V_0 / weights[0]
+    V = V_0
+    V_orig = V_comp[0, :]
+    sq_V = np.sqrt(V_0)
+
+    A = np.eye(N) + np.diag(nodes) * dt + lambda_ * weights[None, :] * dt
+    A_inv_T = np.linalg.inv(A).T
+
+    b_comp = theta * dt + (nodes * V_orig)[None, :] * dt
+
+    if sample_paths:
+        S = np.zeros((m, N_time + 1))
+        V = np.zeros((m, N_time + 1))
+        S[:, 0] = S_0
+        V[:, 0] = V_0
+        V_comp = np.zeros(shape=(m, N, N_time + 1))
+        V_comp[:, 0, 0] = V_0 / weights[0]
+    else:
+        S = S_0
+
+    def S_euler_step(S_, sq_V_, S_BM_):
+        return S_ + sq_V_ * S_ * S_BM_
+
+    def V_comp_euler_step(V_comp_, sq_V_, dW_):
+        return (V_comp_ + nu * (sq_V_ * dW_)[:, None] + b_comp) @ A_inv_T
+
+    def sticky(S_, sq_V_, V_comp_):
+        BM_increments = np.random.normal(0, np.sqrt(dt), (2, m))
+        S_ = S_euler_step(S_, sq_V_, rho * BM_increments[0, :] + np.sqrt(1 - rho ** 2) * BM_increments[1, :])
+        V_comp_ = V_comp_euler_step(V_comp_, sq_V_, BM_increments[0, :])
+        sq_V_ = np.sqrt(np.fmax(V_comp_ @ weights, 0))
+        return S_, V_comp_, sq_V_
+
+    if sample_paths:
+        V[:, 0] = np.sqrt(V[:, 0])
+        for i in range(N_time):
+            S[:, i + 1], V_comp[:, :, i + 1], V[:, i + 1] = sticky(S_=S[:, i], sq_V_=V[:, i], V_comp_=V_comp[:, :, i])
+        V = V ** 2
+    else:
+        for i in range(N_time):
+            print(f'Step {i} of {N_time}')
+            S, V_comp, sq_V = sticky(S_=S, sq_V_=sq_V, V_comp_=V_comp)
+
+    if sample_paths:
+        if return_times is not None:
+            times = np.linspace(0, T, N_time + 1)
+            S = scipy.interpolate.interp1d(x=times, y=S)(return_times)
+            V = scipy.interpolate.interp1d(x=times, y=V)(return_times)
+            V_comp = scipy.interpolate.interp1d(x=times, y=V_comp)(return_times)
+        return S, np.sqrt(V), V_comp
+    return S
+
+
+def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, mode="best",
+                              nodes=None, weights=None, sample_paths=False, return_times=None, vol_behaviour=None):
+    """
+    Simulates sample paths under the Markovian approximation of the rough Heston model, using a combination of
+    Mackevicius and Alfonsi.
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time/Time of maturity
+    :param N_time: Number of time steps
+    :param N: Total number of points in the quadrature rule
+    :param S_0: Initial stock price
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param sample_paths: If True, returns the entire sample paths, not just the final values. Also returns the sample
+        paths of the square root of the volatility and the components of the volatility
+    :param return_times: May specify an array of times at which the sample path values should be returned. If None and
+        sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
+    :param vol_behaviour: Is of the form 'mackevicius x y z', where x is either random (for randomly deciding which part
+        of the SDE splitting to solve first) or sequential (for splitting non-randomly), where y is either antithetic
+        (for using antithetic random variables in MC) or standard (for not using antithetic random variables in MC)
+    :return: Numpy array of the final stock prices
+    """
+    random_splitting = 'random' in vol_behaviour
+    antithetic = 'antithetic' in vol_behaviour
+    control_variate = 'control variate' in vol_behaviour
+    print(random_splitting, antithetic, control_variate)
+    if return_times is not None:
+        sample_paths = True
+        return_times = np.fmax(return_times, 0)
+        T = np.amax(return_times)
+    dt = T / N_time
+    if nodes is None or weights is None:
+        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+    N = len(nodes)
+    if N == 1:
+        nodes = np.array([nodes[0], 1])
+        weights = np.array([weights[0], 0])
+        N = 2
+
     V_comp = np.zeros((N, m))
     V_comp[0, :] = V_0 / weights[0]
     V = V_0
@@ -664,27 +771,100 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
 
     B = (6 + np.sqrt(3)) / 4
     A = B - 0.75
-
-    def SDE_step_V(V):
-        x = weights @ V
-        rv = np.random.uniform(0, 1, len(x))
-        temp = np.sqrt((3 * z) * x + (B * z) ** 2)
-        p_1 = (z / 2) * x * ((A * B - A - B + 1.5) * z + (np.sqrt(3) - 1) / 4 * temp + x) / (
+    # S_BM = 0
+    if 'third level' in vol_behaviour:
+        def SDE_step_V(V):
+            x = weights @ V
+            if antithetic:
+                rv = np.empty(len(x))
+                rv[:len(x) // 2] = np.random.uniform(0, 1, len(x) // 2)
+                if len(x) % 2 == 0:
+                    rv[len(x) // 2:] = 1 - rv[:len(x) // 2]
+                else:
+                    rv[len(x) // 2:-1] = 1 - rv[:len(x) // 2]
+                    rv[-1] = np.random.uniform(0, 1, 1)
+            else:
+                rv = np.random.uniform(0, 1, len(x))
+            x_sq = x ** 2
+            sq_6 = np.sqrt(6)  # for brevity
+            sq_1 = np.sqrt(4 * (3 - sq_6) * z * x + 3 * z ** 2)
+            sq_2 = np.sqrt(4 * (3 + sq_6) * z * x + 3 * (5 + 2 * sq_6) * z ** 2)
+            p_1 = x * (24 * x_sq + 2 * (3 * (9 + sq_6) * z + (6 + sq_6) * sq_1) * x
+                       + 3 * z * ((13 + 4 * sq_6) * z + (5 + 2 * sq_6) * sq_1)) \
+                / (sq_1 * (8 * sq_6 * x_sq - 6 * ((3 - 5 * sq_6) * z + sq_6 * sq_1) * x
+                           + 3 * z * ((3 + 4 * sq_6) * z - (1 + 2 * sq_6) * sq_1)))
+            p_2 = x * (24 * x_sq + 6 * (7 + 3 * sq_6) * z * x + 2 * (6 - sq_6) * x * sq_2
+                       + 12 * z * ((4 + sq_6) * z + sq_2)) \
+                / (sq_2 * (-8 * sq_6 * x_sq - 6 * (11 + 5 * sq_6) * z * x - (81 + 33 * sq_6) * z ** 2
+                           + 6 * sq_6 * x * sq_2 + 3 * (5 + 2 * sq_6) * z * sq_2))
+            p_3 = x * (-24 * x_sq - 6 * (9 + sq_6) * z * x - 3 * (13 + 4 * sq_6) * z ** 2 + 2 * (6 + sq_6) * x * sq_1
+                       + 3 * (5 + 2 * sq_6) * z * sq_1) \
+                / (sq_1 * (8 * sq_6 * x_sq + 6 * x * ((-3 + 5 * sq_6) * z + sq_6 * sq_1)
+                           + 3 * z * ((3 + 4 * sq_6) * z + (1 + 2 * sq_6) * sq_1)))
+            print(p_1, p_2, p_3)
+            p_12 = p_1 + p_2
+            test_1 = rv < p_1
+            test_2 = np.logical_and(np.logical_not(test_1), rv < p_12)
+            test_3 = p_12 + p_3 <= rv
+            x_step = 1.5 * z + 0.5 * sq_1
+            x_step[test_1] = 1.5 * z - 0.5 * sq_1[test_1]
+            x_step[test_2] = (1.5 + 0.5 * sq_6) * z - 0.5 * sq_2[test_2]
+            x_step[test_3] = (1.5 + 0.5 * sq_6) * z + 0.5 * sq_2[test_3]
+            '''
+            if control_variate:
+                nonlocal S_BM
+                S_BM = S_BM + (np.sqrt(dt) * rho) * scipy.stats.norm.ppf(rv)  # + x_step / (nu * weight_sum / rho * np.sqrt(np.fmax(V_0, 1e-04)))'''
+            return V + (x_step / weight_sum)[None, :]
+    else:
+        def SDE_step_V(V):
+            x = weights @ V
+            if antithetic:
+                rv = np.empty(len(x))
+                rv[:len(x) // 2] = np.random.uniform(0, 1, len(x) // 2)
+                if len(x) % 2 == 0:
+                    rv[len(x) // 2:] = 1 - rv[:len(x) // 2]
+                else:
+                    rv[len(x) // 2:-1] = 1 - rv[:len(x) // 2]
+                    rv[-1] = np.random.uniform(0, 1, 1)
+            else:
+                rv = np.random.uniform(0, 1, len(x))
+            temp = np.sqrt((3 * z) * x + (B * z) ** 2)
+            p_1 = (z / 2) * x * ((A * B - A - B + 1.5) * z + (np.sqrt(3) - 1) / 4 * temp + x) / (
                     (x + B * z - temp) * temp * (temp - (B - A) * z))
-        p_2 = x / (1.5 * x + A * (B - A / 2) * z)
-        test_1 = rv < p_1
-        test_2 = p_1 + p_2 <= rv
-        x_step = A * z * np.ones(len(temp))
-        x_step[test_1] = B * z - temp[test_1]
-        x_step[test_2] = B * z + temp[test_2]
-        return V + (x_step / weight_sum)[None, :]
+            p_2 = x / (1.5 * x + A * (B - A / 2) * z)
+            test_1 = rv < p_1
+            test_2 = p_1 + p_2 <= rv
+            x_step = A * z * np.ones(len(temp))
+            x_step[test_1] = B * z - temp[test_1]
+            x_step[test_2] = B * z + temp[test_2]
+            '''
+            if control_variate:
+                nonlocal S_BM
+                S_BM = S_BM + (np.sqrt(dt) * rho) * scipy.stats.norm.ppf(rv)  # + x_step / (nu * weight_sum / rho * np.sqrt(np.fmax(V_0, 1e-04)))'''
+            return V + (x_step / weight_sum)[None, :]
 
     def step_V(V):
         return ODE_step_V(SDE_step_V(ODE_step_V(V)))
 
+    SDE_step_B_dt = dt if random_splitting else dt / 2
+
     def SDE_step_B(S, V):
+        if antithetic:
+            rv = np.empty(len(S))
+            rv[:len(S) // 2] = np.random.normal(0, np.sqrt(SDE_step_B_dt), len(S) // 2)
+            if len(S) % 2 == 0:
+                rv[len(S) // 2:] = - rv[:len(S) // 2]
+            else:
+                rv[len(S) // 2:-1] = -rv[:len(S) // 2]
+                rv[-1] = np.random.normal(0, np.sqrt(SDE_step_B_dt), 1)
+        else:
+            rv = np.random.normal(0, np.sqrt(SDE_step_B_dt), len(S))
+        '''
+        if control_variate:
+            nonlocal S_BM
+            S_BM = S_BM + rho_bar * rv'''
         x = weights @ V
-        return S + np.sqrt(x) * rho_bar * np.random.normal(0, np.sqrt(dt), len(x)) - (0.5 * rho_bar_sq * dt) * x, V
+        return S + np.sqrt(x) * rho_bar * rv - (0.5 * rho_bar_sq * SDE_step_B_dt) * x, V
 
     drift_SDE_step_W = - (nodes[0] * V_orig[0] + theta) * dt
     fact_1 = dt / 2 * (lambda_ - 0.5 * rho * nu)
@@ -696,13 +876,17 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
                                 + (V_new[0, :] - V[0, :]))
         return S_new, V_new
 
-    def step_SV(S, V):
-        rv = np.random.uniform(0, 1, len(S))  # surprisingly faster than np.random.binomial(1, 0.5, len(S))
-        ind_1 = rv < 0.5
-        ind_2 = rv >= 0.5
-        S[ind_1], V[:, ind_1] = SDE_step_B(*SDE_step_W(S[ind_1], V[:, ind_1]))
-        S[ind_2], V[:, ind_2] = SDE_step_W(*SDE_step_B(S[ind_2], V[:, ind_2]))
-        return S, V
+    if random_splitting:
+        def step_SV(S, V):
+            rv = np.random.uniform(0, 1, len(S))  # surprisingly faster than np.random.binomial(1, 0.5, len(S))
+            ind_1 = rv < 0.5
+            ind_2 = rv >= 0.5
+            S[ind_1], V[:, ind_1] = SDE_step_B(*SDE_step_W(S[ind_1], V[:, ind_1]))
+            S[ind_2], V[:, ind_2] = SDE_step_W(*SDE_step_B(S[ind_2], V[:, ind_2]))
+            return S, V
+    else:
+        def step_SV(S, V):
+            return SDE_step_B(*SDE_step_W(*SDE_step_B(S, V)))
 
     if sample_paths:
         log_S = np.empty((m, N_time + 1))
@@ -717,8 +901,43 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
     else:
         log_S = np.ones(m) * np.log(S_0)
         for i in range(N_time):
+            print(f'Step {i} of {N_time}')
             log_S, V_comp = step_SV(log_S, V_comp)
-        S = np.exp(log_S)
+
+        if control_variate and not antithetic:
+            log_S = np.sort(log_S)
+            sigma = np.sqrt((np.average(log_S ** 2) - np.average(log_S) ** 2) / T)
+            BS_log_S = sigma * np.sqrt(T) * np.random.normal(0, 1, len(log_S)) - 0.5 * sigma ** 2 * T
+            BS_log_S = np.sort(BS_log_S)
+            S = np.empty(2 * len(log_S) + 2)
+            S[:len(log_S)] = np.exp(log_S)
+            S[len(log_S):2 * len(log_S)] = np.exp(BS_log_S)
+            S[-2] = sigma
+            S[-1] = T
+        elif control_variate and antithetic:
+            log_S_1 = log_S[:len(log_S) // 2]
+            log_S_2 = log_S[len(log_S) // 2:]
+            part_1 = np.argsort(log_S_1)
+            sigma = np.sqrt((np.average(log_S ** 2) - np.average(log_S) ** 2) / T)
+            normal_rv = np.sort(sigma * np.sqrt(T) * np.random.normal(0, 1, len(log_S) // 2))
+            S = np.empty(2 * len(log_S) + 2)
+            S[:len(log_S) // 2] = np.exp(log_S_1[part_1])
+            S[len(log_S) // 2:len(log_S)] = np.exp(log_S_2[part_1])
+            S[len(log_S):3 * len(log_S) // 2] = np.exp(normal_rv - 0.5 * sigma ** 2 * T)
+            S[3 * len(log_S) // 2:2 * len(log_S)] = np.exp(- normal_rv - 0.5 * sigma ** 2 * T)
+            S[-2] = sigma
+            S[-1] = T
+            '''
+        if control_variate:
+            S = np.empty(2 * m + 2)
+            S[:m] = np.exp(log_S)
+            vol = ((V_0 - theta / lambda_) * (1 - np.exp(-lambda_ * T)) + theta * T) / (lambda_ * T)
+            S[m:2 * m] = np.exp(np.sqrt(vol) * S_BM - 0.5 * vol * T)
+            S[2 * m] = np.sqrt(vol)
+            S[2 * m + 1] = T
+            '''
+        else:
+            S = np.exp(log_S)
 
     if sample_paths:
         if return_times is not None:

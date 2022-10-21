@@ -439,7 +439,8 @@ def max_errors_MC(truth, estimate, lower, upper):
     :param estimate: The approximated values (involving among other things MC simulation)
     :param lower: The lower MC confidence bound for the approximated values
     :param upper: The upper MC confidence bound for the approximated values
-    :return: The maximal relative error of estimate, as well as corresponding MC lower and upper confidence bounds
+    :return: The maximal relative error of estimate, as well as corresponding MC lower and upper confidence bounds and
+    a bound on the MC error
     """
     t, e, l, u = truth.flatten(), estimate.flatten(), lower.flatten(), upper.flatten()
     e_err, l_err, u_err = np.abs(e-t)/t, np.abs(l-t)/t, np.abs(u-t)/t
@@ -447,7 +448,8 @@ def max_errors_MC(truth, estimate, lower, upper):
     l_err_vec = np.zeros(len(t))
     l_err_vec[positive_err_ind] = np.fmin(l_err, u_err)[positive_err_ind]
     u_err_vec = np.fmax(l_err, u_err)
-    return np.amax(e_err), np.amax(l_err_vec), np.amax(u_err_vec)
+    MC_err = np.fmax(u - e, e - l) / np.abs(e)
+    return np.amax(e_err), np.amax(l_err_vec), np.amax(u_err_vec), np.amax(MC_err)
 
 
 def geometric_average(x):
@@ -903,11 +905,14 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                     if not recompute and exists(filename):
                         pass
                     else:
-                        if vol_behaviour == 'mackevicius' or 'sticky':
-                            samples_per_round = int(np.ceil(100000 * 2048 / N_time))
+                        if 'mackevicius' in vol_behaviour or vol_behaviour == 'sticky' and not sample_paths:
+                            samples_per_round = int(np.fmin(100000000, m))
                             n_rounds = int(np.ceil(m / samples_per_round))
+                            cv = 'control variate' in vol_behaviour
+                            antithetic = 'antithetic' in vol_behaviour
+                            sigma_est = 0
                             if not sample_paths:
-                                final_S = np.empty(m)
+                                final_S = np.empty(2 * m + 2 if cv else m)
                             else:
                                 final_S = np.empty(1)
                             nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
@@ -918,10 +923,23 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                 else:
                                     n_samples = samples_per_round
                                 if not sample_paths:
-                                    final_S[i * samples_per_round:(i + 1) * samples_per_round] = \
-                                        rHeston_samples(params=params, N=N, N_time=N_time, WB=None, m=n_samples,
-                                                        mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
-                                                        weights=weights)
+                                    res = rHeston_samples(params=params, N=N, N_time=N_time, WB=None, m=n_samples,
+                                                          mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
+                                                          weights=weights)
+                                    if antithetic and cv:
+                                        temp = i * samples_per_round // 2
+                                        final_S[temp:temp + n_samples // 2] = res[:n_samples // 2]
+                                        final_S[m // 2 + temp:m // 2 + temp + n_samples // 2] = res[n_samples // 2:n_samples]
+                                        final_S[m + temp:m + temp + n_samples // 2] = res[n_samples:3 * n_samples // 2]
+                                        final_S[3 * m // 2 + temp:3 * m // 2 + temp + n_samples // 2] = res[3 * n_samples // 2:2 * n_samples]
+                                    elif antithetic or cv:
+                                        final_S[i * samples_per_round:i * samples_per_round + n_samples] = res[:n_samples]
+                                        final_S[m + i * samples_per_round:m + i * samples_per_round + n_samples] = res[n_samples:2 * n_samples]
+                                    else:
+                                        final_S[i * samples_per_round:(i + 1) * samples_per_round] = res
+                                    if cv:
+                                        sigma_est = np.sqrt(i / (i + 1) * sigma_est ** 2 + res[-2] ** 2 / (i + 1))
+
                                 if sample_paths:
                                     S, V, V_comp = rHeston_samples(params=params, N=N, m=n_samples, N_time=N_time,
                                                                    WB=None, mode=mode, vol_behaviour=vol_behaviour,
@@ -931,6 +949,9 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                     np.save(filename, S)
                                     np.save(filename, V)
                                     np.save(filename, V_comp)
+                            if cv:
+                                final_S[-2] = sigma_est
+                                final_S[-1] = params['T']
                         else:
                             n_rounds = int(np.ceil(N_time / 2048))
                             samples_per_round = int(np.ceil(100000 / n_rounds))
@@ -962,8 +983,8 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                         np.save(filename, S)
                                         np.save(filename, V)
                                         np.save(filename, V_comp)
-                        '''if not sample_paths:
-                            np.save(filename, final_S)'''
+                        if not sample_paths:
+                            np.save(filename, final_S)
 
 
 def compute_final_rHeston_stock_prices_parallelized(params, Ns=None, N_times=None, modes=None, vol_behaviours=None,
@@ -1118,6 +1139,7 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
     lower_discretization_errors = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times)))
     upper_total_errors = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times)))
     upper_discretization_errors = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times)))
+    MC_errors = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times)))
     markov_errors = np.empty((len(Ns), len(modes)))
     markov_smiles = np.empty((len(Ns), len(modes), len(params['T']), len(params['K'])))
     approx_smiles = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times), len(params['T']),
@@ -1140,20 +1162,29 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                 for m in range(len(N_times)):
                     final_S = np.load(f'rHeston samples {Ns[i]} dim {modes[j]} {vol_behaviours[k]} {N_times[m]} time '
                                       + f'steps.npy')
-                    vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=final_S)
+                    if 'control variate' in vol_behaviours[k]:
+                        T = final_S[-1]
+                        vol = final_S[-2]
+                        control_variate = [vol, T]
+                        final_S = final_S[:-2]
+                    else:
+                        control_variate = None
+                    vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=final_S,
+                                                      antithetic='antithetic' in vol_behaviours[k],
+                                                      control_variate=control_variate)
                     approx_smiles[i, j, k, m, :, :] = vol
                     lower_smiles[i, j, k, m, :, :] = low
                     upper_smiles[i, j, k, m, :, :] = upp
-                    total_errors[i, j, k, m], lower_total_errors[i, j, k, m], upper_total_errors[i, j, k, m] = \
-                        max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
+                    total_errors[i, j, k, m], lower_total_errors[i, j, k, m], upper_total_errors[i, j, k, m], \
+                        MC_errors[i, j, k, m] = max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
                     discretization_errors[i, j, k, m], lower_discretization_errors[i, j, k, m], \
-                        upper_discretization_errors[i, j, k, m] = \
+                        upper_discretization_errors[i, j, k, m], MC_errors[i, j, k, m] = \
                         max_errors_MC(truth=markov_smiles[i, j, :, :], estimate=vol, lower=low, upper=upp)
                     MC_error = np.fmax(discretization_errors[i, j, k, m] - lower_discretization_errors[i, j, k, m],
                                        upper_discretization_errors[i, j, k, m] - discretization_errors[i, j, k, m])
                     print(f'N={Ns[i]}, {modes[j]}, {vol_behaviours[k]}, N_time={N_times[m]}: total error='
                           f'{100*total_errors[i, j, k, m]:.4}%, discretization error='
-                          f'{100*discretization_errors[i, j, k, m]:.4}%, MC error={100*MC_error:.4}%,'
+                          f'{100*discretization_errors[i, j, k, m]:.4}%, MC error={100*MC_errors[i, j, k, m]:.4}%, '
                           f'excess error={100*lower_discretization_errors[i, j, k, m]:.4}%')
 
     k_vec = np.log(params['K'])
@@ -1481,12 +1512,14 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
         else:
             WB = np.random.normal(0, np.sqrt(params['T'] / N_time), (2, m, N_time))
     total_error, approx_smile, lower_smile, upper_smile, S = func(nodes, full_output=True)
-    total_error, lower_error, upper_error = max_errors_MC(truth=true_smile, estimate=approx_smile, lower=lower_smile,
-                                                          upper=upper_smile)
+    total_error, lower_error, upper_error, MC_error = max_errors_MC(truth=true_smile, estimate=approx_smile,
+                                                                    lower=lower_smile, upper=upper_smile)
 
     markov_smile = rHestonMarkov_iv_eur_call(params=params, nodes=nodes, weights=weights)
-    discretization_error, lower_disc_error, upper_disc_error = max_errors_MC(truth=markov_smile, estimate=approx_smile,
-                                                                             lower=lower_smile, upper=upper_smile)
+    discretization_error, lower_disc_error, upper_disc_error, MC_error_2 = max_errors_MC(truth=markov_smile,
+                                                                                         estimate=approx_smile,
+                                                                                         lower=lower_smile,
+                                                                                         upper=upper_smile)
     markov_error = np.amax(np.abs(markov_smile - true_smile)/true_smile)
 
     print(f'Total error = {100*total_error:.4}%, Markovian error = {100*markov_error:.4}%, discretization error = '
@@ -1697,12 +1730,10 @@ def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_beha
                                  vol_behaviour=vol_behaviour, nodes=nodes, weights=weights, sample_paths=False,
                                  return_times=None)
             approx_smile, l, u = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=S_)
-            total_errors[i, j], lower_total_errors[i, j], upper_total_errors[i, j] = max_errors_MC(truth=true_smile,
-                                                                                                   estimate=
-                                                                                                   approx_smile,
-                                                                                                   lower=l, upper=u)
-            discretization_errors[i, j], _, _ = max_errors_MC(truth=markov_smiles[j, :], estimate=approx_smile,
-                                                              lower=l, upper=u)
+            total_errors[i, j], lower_total_errors[i, j], upper_total_errors[i, j], MC_error \
+                = max_errors_MC(truth=true_smile, estimate=approx_smile, lower=l, upper=u)
+            discretization_errors[i, j], _, _, _ = max_errors_MC(truth=markov_smiles[j, :], estimate=approx_smile,
+                                                                 lower=l, upper=u)
 
     if plot:
         for i in range(len(N_times)):
