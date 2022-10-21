@@ -908,11 +908,9 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                         if 'mackevicius' in vol_behaviour or vol_behaviour == 'sticky' and not sample_paths:
                             samples_per_round = int(np.fmin(100000000, m))
                             n_rounds = int(np.ceil(m / samples_per_round))
-                            cv = 'control variate' in vol_behaviour
                             antithetic = 'antithetic' in vol_behaviour
-                            sigma_est = 0
                             if not sample_paths:
-                                final_S = np.empty(2 * m + 2 if cv else m)
+                                final_S = np.empty(m)
                             else:
                                 final_S = np.empty(1)
                             nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
@@ -926,19 +924,11 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                     res = rHeston_samples(params=params, N=N, N_time=N_time, WB=None, m=n_samples,
                                                           mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
                                                           weights=weights)
-                                    if antithetic and cv:
-                                        temp = i * samples_per_round // 2
-                                        final_S[temp:temp + n_samples // 2] = res[:n_samples // 2]
-                                        final_S[m // 2 + temp:m // 2 + temp + n_samples // 2] = res[n_samples // 2:n_samples]
-                                        final_S[m + temp:m + temp + n_samples // 2] = res[n_samples:3 * n_samples // 2]
-                                        final_S[3 * m // 2 + temp:3 * m // 2 + temp + n_samples // 2] = res[3 * n_samples // 2:2 * n_samples]
-                                    elif antithetic or cv:
+                                    if antithetic:
                                         final_S[i * samples_per_round:i * samples_per_round + n_samples] = res[:n_samples]
                                         final_S[m + i * samples_per_round:m + i * samples_per_round + n_samples] = res[n_samples:2 * n_samples]
                                     else:
                                         final_S[i * samples_per_round:(i + 1) * samples_per_round] = res
-                                    if cv:
-                                        sigma_est = np.sqrt(i / (i + 1) * sigma_est ** 2 + res[-2] ** 2 / (i + 1))
 
                                 if sample_paths:
                                     S, V, V_comp = rHeston_samples(params=params, N=N, m=n_samples, N_time=N_time,
@@ -949,9 +939,6 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                     np.save(filename, S)
                                     np.save(filename, V)
                                     np.save(filename, V_comp)
-                            if cv:
-                                final_S[-2] = sigma_est
-                                final_S[-1] = params['T']
                         else:
                             n_rounds = int(np.ceil(N_time / 2048))
                             samples_per_round = int(np.ceil(100000 / n_rounds))
@@ -1162,16 +1149,8 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                 for m in range(len(N_times)):
                     final_S = np.load(f'rHeston samples {Ns[i]} dim {modes[j]} {vol_behaviours[k]} {N_times[m]} time '
                                       + f'steps.npy')
-                    if 'control variate' in vol_behaviours[k]:
-                        T = final_S[-1]
-                        vol = final_S[-2]
-                        control_variate = [vol, T]
-                        final_S = final_S[:-2]
-                    else:
-                        control_variate = None
                     vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=final_S,
-                                                      antithetic='antithetic' in vol_behaviours[k],
-                                                      control_variate=control_variate)
+                                                      antithetic='antithetic' in vol_behaviours[k])
                     approx_smiles[i, j, k, m, :, :] = vol
                     lower_smiles[i, j, k, m, :, :] = low
                     upper_smiles[i, j, k, m, :, :] = upp
@@ -1332,7 +1311,8 @@ def compute_smiles_given_stock_prices_parallelized(params, Ns=None, N_times=None
                                          nodes=nodes, markov_errors=markov_errors_, total_errors=total_errors_,
                                          lower_total_errors=lower_total_errors_, upper_total_errors=upper_total_errors_,
                                          discretization_errors=discretization_errors_, plot=plot)
-    return markov_errors, total_errors, lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, upper_discretization_errors
+    return markov_errors, total_errors, lower_total_errors, upper_total_errors, discretization_errors, \
+        lower_discretization_errors, upper_discretization_errors
 
 
 def compute_strong_discretization_errors(Ns=None, N_times=None, N_time_ref=131072, modes=None, vol_behaviours=None,
@@ -1498,8 +1478,8 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
         return error
 
     nodes = np.exp(np.arange(N))
-    res = scipy.optimize.minimize(lambda x: func(x, full_output=False), x0=nodes, bounds=((1e-06, None),) * N, tol=0.005,
-                                  method='Powell', options={'xtol': 0.001, 'ftol': 0.001})
+    res = scipy.optimize.minimize(lambda x: func(x, full_output=False), x0=nodes, bounds=((1e-06, None),) * N,
+                                  tol=0.005, method='Powell', options={'xtol': 0.001, 'ftol': 0.001})
     nodes = res.x
     weights = rk.error_optimal_weights(H=params['H'], T=params['T'], nodes=nodes, output='error')[1]
     if test:
