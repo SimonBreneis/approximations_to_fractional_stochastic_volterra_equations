@@ -504,7 +504,6 @@ def error_optimal_weights(H, T, nodes, output='error'):
     nmT = node_matrix * T
     gamma_ints = gammainc(H + 0.5, nT)
     exp_node_matrix = exp_underflow(nmT)
-    exp_node_vec = exp_underflow(nT)
     A = (1 - exp_node_matrix) / node_matrix
     b = -2 * gamma_ints / nodes ** (H + 0.5)
     c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
@@ -517,6 +516,7 @@ def error_optimal_weights(H, T, nodes, output='error'):
     if output == 'error' or output == 'err':
         return err, opt_weights
 
+    exp_node_vec = exp_underflow(nT)
     A_grad = (-1 + (1 + nmT) * exp_node_matrix) / node_matrix ** 2
     b_grad = -2 * (nT ** (H + 0.5) * exp_node_vec / gamma_1 - (H + 0.5) * gamma_ints) / nodes ** (H + 1.5)
     grad = 0.5 * v * (A_grad @ v) - 0.5 * b_grad * v
@@ -820,12 +820,6 @@ def european_rule(H, N, T, optimal_weights=False):
                                                   post_processing=False)
         return optimize_error(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
 
-    if isinstance(T, np.ndarray):
-        if N <= 7:
-            T = (8-N)/8 * np.amin(T) + N/8 * np.amax(T)
-        else:
-            T = np.amax(T)
-
     _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
     if N == 1:
         return nodes, weights
@@ -892,6 +886,22 @@ def quadrature_rule(H, N, T, mode="optimized"):
         rule that is especially suitable for pricing European options. Appending old leads to using suboptimal weights
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
+    if isinstance(T, np.ndarray):
+        if N == 1:
+            T = np.amin(T) ** (3 / 5) * np.amax(T) ** (2 / 5)
+        if N == 2:
+            T = np.amin(T) ** (1 / 2) * np.amax(T) ** (1 / 2)
+        if N == 3:
+            T = np.amin(T) ** (1 / 3) * np.amax(T) ** (2 / 3)
+        if N == 4:
+            T = np.amin(T) ** (1 / 4) * np.amax(T) ** (3 / 4)
+        if N == 5:
+            T = np.amin(T) ** (1 / 6) * np.amax(T) ** (5 / 6)
+        if N == 6:
+            T = np.amin(T) ** (1 / 10) * np.amax(T) ** (9 / 10)
+        else:
+            T = np.amax(T)
+
     if mode == "optimized":
         return optimized_rule(H=H, N=N, T=T, optimal_weights=True)
     if mode == "european":
@@ -906,4 +916,6 @@ def quadrature_rule(H, N, T, mode="optimized"):
         return Gaussian_rule(H=H, N=N, T=T, mode="observation", optimal_weights=False)
     if mode == "abi jaber":
         return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
+    if mode == "european alt":
+        return quadrature_rule(H=H, N=N, T=2, mode="european")
     return Gaussian_rule(H=H, N=N, T=T, mode="theorem", optimal_weights=False)

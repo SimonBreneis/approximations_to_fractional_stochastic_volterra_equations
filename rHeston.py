@@ -75,3 +75,25 @@ def iv_eur_call(S_0, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbo
     return rHestonBackbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S_0, H, lambda_, rho, nu,
                                                                                           theta, V_0, T_, N_),
                                        S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+
+
+def skew_eur_call(S_0, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbose=0):
+    """
+    Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
+    Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
+    :param S_0: Initial stock price
+    :param K: Strike price, assumed to be a numpy array
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param rel_tol: Required maximal relative error in the implied volatility
+    :param verbose: Determines how many intermediate results are printed to the console
+    return: The price of the call option
+    """
+    return rHestonBackbone.skew_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S_0, H, lambda_, rho, nu,
+                                                                                            theta, V_0, T_, N_),
+                                         T=T, rel_tol=rel_tol, verbose=verbose)

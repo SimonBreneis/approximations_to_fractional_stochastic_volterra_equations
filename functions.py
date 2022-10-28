@@ -325,6 +325,7 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
     :return: The smile
     """
     filename = get_filename(kind='true', params=params, truth=True, markov=False)
+    print(filename)
     if load:
         if exists(filename):
             return np.load(filename)
