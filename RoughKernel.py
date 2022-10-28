@@ -270,6 +270,7 @@ def Gaussian_rule(H, N, T, mode='observation', optimal_weights=False):
         return np.array([0]), np.array([w_0])
 
     m, n, a, b = Gaussian_parameters(H, N, T, mode)
+    b = mp.log(mp.exp(b) / 20000)
     w_0 = Gaussian_error_and_zero_weight(H, m, n, a, b, T)[1]
     nodes = mp.matrix(m * n + 1, 1)
     weights = mp.matrix(m * n + 1, 1)
@@ -412,8 +413,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
             return err, grad, opt_weight
 
         A_hess = 2 * (1 - (1 + 2 * node * T + 2 * (node * T) ** 2) * exp_node_matrix) / (8 * node ** 3)
-        b_hess = -2 * (-((node * T) ** (H + 1.5) + (H + 1.5) * (node * T) ** (H + 0.5)) * exp_node_vec / gamma_1 + (H + 0.5) * (
-                H + 1.5) * gamma_ints) / node ** (H + 2.5)
+        b_hess = -2 * (-((node * T) ** (H + 1.5) + (H + 1.5) * (node * T) ** (H + 0.5)) * exp_node_vec / gamma_1
+                       + (H + 0.5) * (H + 1.5) * gamma_ints) / node ** (H + 2.5)
         U = b_grad / A
         Y = 2 * A_grad * v
         hess = 0.5 * (2 * Y * U - Y ** 2 / A + 2 * A_hess * v ** 2 - b_hess * v - b_grad * U)
@@ -472,8 +473,8 @@ def error_optimal_weights(H, T, nodes, output='error'):
 
         def diagonalize(x):
             new_x = np.empty((x.shape[0], x.shape[1], x.shape[1]))
-            for j in range(x.shape[0]):
-                new_x[j, :, :] = np.diag(x[j, :])
+            for k in range(x.shape[0]):
+                new_x[k, :, :] = np.diag(x[k, :])
             return new_x
 
         def trans(x):

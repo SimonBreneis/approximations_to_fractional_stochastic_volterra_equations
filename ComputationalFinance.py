@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.stats import norm
-from scipy import integrate
 
 
 def maturity_tensor_strike(S_0, K, T):

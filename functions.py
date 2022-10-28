@@ -22,10 +22,10 @@ def profile(statement):
     import cProfile
     import pstats
     cProfile.run(statement, "{}.profile".format(__file__))
-    stats = pstats.Stats("{}.profile".format(__file__))
-    stats.strip_dirs()
-    stats.sort_stats("cumtime").print_stats(100)
-    stats.sort_stats("tottime").print_stats(100)
+    stats_ = pstats.Stats("{}.profile".format(__file__))
+    stats_.strip_dirs()
+    stats_.sort_stats("cumtime").print_stats(100)
+    stats_.sort_stats("tottime").print_stats(100)
 
 
 def log_linspace(a, b, n):
@@ -418,6 +418,7 @@ def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15, ve
     :param Ns: Numpy array of N values
     :param modes: List of modes of the quadrature rule
     :param num_threads: Number of parallel processes
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The smiles
     """
     params = rHeston_params_grid(params)
@@ -926,8 +927,10 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                                           mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
                                                           weights=weights)
                                     if antithetic:
-                                        final_S[i * samples_per_round:i * samples_per_round + n_samples] = res[:n_samples]
-                                        final_S[m + i * samples_per_round:m + i * samples_per_round + n_samples] = res[n_samples:2 * n_samples]
+                                        final_S[i * samples_per_round:i * samples_per_round + n_samples] = \
+                                            res[:n_samples]
+                                        final_S[m + i * samples_per_round:m + i * samples_per_round + n_samples] = \
+                                            res[n_samples:2 * n_samples]
                                     else:
                                         final_S[i * samples_per_round:(i + 1) * samples_per_round] = res
 
@@ -958,8 +961,8 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                         WB = WB_1[:, samples_per_round*j:samples_per_round*(j+1), :]
                                     WB = resize_WB(WB, N_time)
                                     if not sample_paths:
-                                        final_S[
-                                            i * 100000 + j * samples_per_round:i * 100000 + (j + 1) * samples_per_round] = \
+                                        final_S[i * 100000 + j * samples_per_round:
+                                                i * 100000 + (j + 1) * samples_per_round] = \
                                             rHeston_samples(params=params, N=N, N_time=N_time, WB=WB, m=WB.shape[1],
                                                             mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
                                                             weights=weights)
@@ -967,7 +970,8 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                                         S, V, V_comp = rHeston_samples(params=params, N=N, m=WB.shape[1], N_time=N_time,
                                                                        WB=WB, mode=mode, vol_behaviour=vol_behaviour,
                                                                        nodes=nodes, weights=weights,
-                                                                       sample_paths=sample_paths, return_times=return_times)
+                                                                       sample_paths=sample_paths,
+                                                                       return_times=return_times)
                                         np.save(filename, S)
                                         np.save(filename, V)
                                         np.save(filename, V_comp)
@@ -1730,3 +1734,46 @@ def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_beha
         plt.show()
 
     return markov_smiles, markov_errors, total_errors, lower_total_errors, upper_total_errors, discretization_errors
+
+
+def illustrate_Markovian_approximation(H=0.2, T=1., n=10000):
+    """
+    Illustrates how the Markovian approximation works by plotting a sample path of fBm and an associated 2-dim
+    Markovian approximation.
+    :param H: Hurst parameter
+    :param T: Final time
+    :param n: Number of time steps
+    :return: None
+    """
+    nodes = np.array([1., 400])
+    weights = np.array([1.6, 8])
+    exact_nodes, exact_weights = rk.quadrature_rule(H=H, N=6, T=T, mode="optimized")
+    print(exact_nodes, exact_weights)
+    dt = T / n
+
+    B = np.random.normal(0, np.sqrt(dt), n)
+    exp_nodes = np.exp(-nodes * dt)
+    div_nodes = (1 - np.exp(-2 * nodes * dt)) / (2 * nodes * dt)
+    OU_1 = np.zeros((2, n + 1))
+    for i in range(n):
+        OU_1[:, i + 1] = exp_nodes * OU_1[:, i] + div_nodes * B[i]
+
+    exp_nodes = np.exp(-exact_nodes * dt)
+    div_nodes = (1 - np.exp(-2 * exact_nodes * dt)) / (2 * exact_nodes * dt)
+    OU_2 = np.zeros((6, n + 1))
+    for i in range(n):
+        OU_2[:, i + 1] = exp_nodes * OU_2[:, i] + div_nodes * B[i]
+
+    exact_fBm = np.einsum('i,ij->j', exact_weights, OU_2)
+    approx_fBm = np.einsum('i,ij->j', weights, OU_1)
+
+    time_vec = np.linspace(0, T, n + 1)
+    BM = np.zeros(n + 1)
+    BM[1:] = np.cumsum(B)
+    plt.plot(time_vec, exact_fBm, 'k-', label='Fractional Brownian motion')
+    plt.plot(time_vec, approx_fBm, 'g-', label='Markovian approximation')
+    plt.plot(time_vec, weights[0] * OU_1[0, :], 'b-', label='Slow component')
+    plt.plot(time_vec, weights[-1] * OU_1[-1, :], 'r-', label='Fast component')
+    # plt.plot(time_vec, BM, color='grey', label='Underlying Brownian motion')
+    plt.legend(loc='best')
+    plt.show()

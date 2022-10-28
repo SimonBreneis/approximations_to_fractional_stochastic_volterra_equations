@@ -474,7 +474,8 @@ def sample_values(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_tim
                 V_comp_loc_final = b_ @ A_list[iteration]
                 V_loc_final = V_comp_loc_final @ weights
                 if iteration >= max_iter:
-                    # V_comp_loc_final = V_comp_loc_final + np.fmax(-V_loc_final, 0)[:, None] * rescaled_weights[None, :]
+                    # V_comp_loc_final = V_comp_loc_final + np.fmax(-V_loc_final, 0)[:, None]
+                    # * rescaled_weights[None, :]
                     pass
                 else:
                     crit_ind = V_loc_final < 0

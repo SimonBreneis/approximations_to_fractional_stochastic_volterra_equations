@@ -14,6 +14,7 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
         function, the maturity, and the number of steps used for the Riccati equation
     :param rel_tol: Required maximal relative error in the implied volatility
     :param verbose: Determines how many intermediate results are printed to the console
+    :param return_error: If True, also returns a relative error estimate
     return: The implied volatility of the call option
     """
 
@@ -25,7 +26,8 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
         :param char_fun_: Characteristic function of the log-price. Is a function of the argument of the characteristic
             function and the number of steps used for the Riccati equation
         :param T_: Maturity
-        return: The price of the call option
+        :param eps: Relative error tolerance
+        return: The implied volatility of the call option
         """
         N_Riccati = 250  # Number of time steps used in the solution of the fractional Riccati
         # equation
@@ -111,16 +113,13 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
 
 def skew_eur_call(T, char_fun, rel_tol=1e-03, verbose=0):
     """
-    Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
-    Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
-    :param S_0: Initial stock price
-    :param K: Strike price, assumed to be a numpy array (1d or 2d)
+    Gives the skew of the European call option in the rough Heston model.
     :param T: Numpy array of maturities
     :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
         function, the maturity, and the number of steps used for the Riccati equation
     :param rel_tol: Required maximal relative error in the implied volatility
     :param verbose: Determines how many intermediate results are printed to the console
-    return: The implied volatility of the call option
+    return: The skew of the call option
     """
 
     def single_skew(T_):
@@ -134,30 +133,30 @@ def skew_eur_call(T, char_fun, rel_tol=1e-03, verbose=0):
         eps = rel_tol / 5
         h = 0.0005 * np.sqrt(T_)
         smile, eps = compute_smile(eps_=eps, h_=h)
-        skew = np.abs(smile[2] - smile[1]) / (2 * h)
+        skew_ = np.abs(smile[2] - smile[1]) / (2 * h)
         skew_h = np.abs(smile[3] - smile[0]) / (4 * h)
         old_eps = eps
         smile, eps = compute_smile(eps_=0.9 * eps, h_=h)
-        skew_eps = skew
+        skew_eps = skew_
         skew_eps_h = skew_h
-        skew = np.abs(smile[2] - smile[1]) / (2 * h)
+        skew_ = np.abs(smile[2] - smile[1]) / (2 * h)
         skew_h = np.abs(smile[3] - smile[0]) / (4 * h)
-        error = np.abs(skew_eps_h - skew) / skew
-        error_eps = np.abs(skew_eps - skew) / skew
-        error_h = np.abs(skew_h - skew) / skew
+        error = np.abs(skew_eps_h - skew_) / skew_
+        error_eps = np.abs(skew_eps - skew_) / skew_
+        error_h = np.abs(skew_h - skew_) / skew_
         print(error, error_eps, error_h)
 
         while error > rel_tol:
             if error_eps > rel_tol * 0.8:
                 old_eps = eps
                 smile, eps = compute_smile(eps_=0.9 * eps, h_=h)
-                skew_eps = skew
+                skew_eps = skew_
                 skew_eps_h = skew_h
-                skew = np.abs(smile[2] - smile[1]) / (2 * h)
+                skew_ = np.abs(smile[2] - smile[1]) / (2 * h)
                 skew_h = np.abs(smile[3] - smile[0]) / (4 * h)
-                error = np.abs(skew_eps_h - skew) / skew
-                error_eps = np.abs(skew_eps - skew) / skew
-                error_h = np.abs(skew_h - skew) / skew
+                error = np.abs(skew_eps_h - skew_) / skew_
+                error_eps = np.abs(skew_eps - skew_) / skew_
+                error_h = np.abs(skew_h - skew_) / skew_
 
                 print(error, error_eps, error_h)
             else:
@@ -166,14 +165,14 @@ def skew_eur_call(T, char_fun, rel_tol=1e-03, verbose=0):
                 skew_eps = np.abs(smile[2] - smile[1]) / (2 * h)
                 skew_eps_h = np.abs(smile[3] - smile[0]) / (4 * h)
                 smile, eps = compute_smile(eps_=np.fmin(1.1 * eps, 0.99 * old_eps), h_=h)
-                skew = np.abs(smile[2] - smile[1]) / (2 * h)
+                skew_ = np.abs(smile[2] - smile[1]) / (2 * h)
                 skew_h = np.abs(smile[3] - smile[0]) / (4 * h)
-                error = np.abs(skew_eps_h - skew) / skew
-                error_eps = np.abs(skew_eps - skew) / skew
-                error_h = np.abs(skew_h - skew) / skew
+                error = np.abs(skew_eps_h - skew_) / skew_
+                error_eps = np.abs(skew_eps - skew_) / skew_
+                error_h = np.abs(skew_h - skew_) / skew_
 
                 print(error, error_eps, error_h)
-        return skew
+        return skew_
 
     T_is_float = False
     if not isinstance(T, np.ndarray):
