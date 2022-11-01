@@ -109,10 +109,9 @@ def iv_eur_call(S_0, K, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", 
     """
     if nodes is None or weights is None:
         nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    return rHestonBackbone.iv_eur_call(char_fun=lambda u, T_, N_: characteristic_function(u, S_0, lambda_, rho, nu,
-                                                                                          theta, V_0, T_, N_, nodes,
-                                                                                          weights),
-                                       S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+    return rHestonBackbone.call(char_fun=lambda u, T_, N_: characteristic_function(u, S_0, lambda_, rho, nu, theta, V_0,
+                                                                                   T_, N_, nodes, weights),
+                                S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
 
 
 def skew_eur_call(S_0, H, lambda_, rho, nu, theta, V_0, T, N, mode="european", rel_tol=1e-03, nodes=None,

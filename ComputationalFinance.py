@@ -34,6 +34,21 @@ def BS_samples(sigma, T, N):
     return np.exp(np.random.normal(-sigma*sigma/2*T, sigma*np.sqrt(T), N))
 
 
+def BS_paths(sigma, T, n, m):
+    """
+    Simulates m samples of Black-Scholes paths at n + 1 equidistant times.
+    :param sigma: Volatility
+    :param T: Final time
+    :param n: Number of time steps
+    :param m: Number of samples
+    :return: Array of samples of shape (m, n + 1)
+    """
+    BM_increments = np.random.normal(0, sigma * np.sqrt(T / n), (m, n))
+    BM_samples = np.zeros((m, n + 1))
+    BM_samples[:, 1:] = np.cumsum(BM_increments, axis=1)
+    return np.exp(BM_samples - 0.5 * sigma ** 2 * np.linspace(0, T, n + 1)[None, :])
+
+
 def BS_nodes(S_0, K, sigma, T, r=0., regularize=True):
     """
     Computes the two nodes of the Black-Scholes model where the CDF is evaluated.
@@ -81,7 +96,19 @@ def BS_price_eur_put(S_0, K, sigma, T, r=0.):
     return - S_0 * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
 
 
-def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
+def BS_price_geom_asian_call(S_0, K, sigma, T):
+    """
+    Computes the price of a geometric Asian call option under the Black-Scholes model.
+    :param S_0: Initial stock price
+    :param K: Strike price
+    :param sigma: Volatility
+    :param T: Final time
+    :return: The price of a call option
+    """
+    return BS_price_eur_call(S_0=S_0 * np.exp(-sigma ** 2 * T / 12), K=K, sigma=sigma / np.sqrt(3), T=T, r=0.)
+
+
+def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=2.):
     """
     Computes the implied volatility of an option given its price, assuming the volatility is in [sl, sr].
     :param BS_price_fun: A function of the volatility sigma that returns the corresponding Black-Scholes price
@@ -125,6 +152,18 @@ def iv_eur_put(S_0, K, T, price, r=0.):
     :return: The implied volatility
     """
     return iv(BS_price_fun=lambda s: BS_price_eur_put(S_0=S_0, K=K, sigma=s, r=r, T=T), price=price)
+
+
+def iv_geom_asian_call(S_0, K, T, price):
+    """
+    Computes the implied volatility of a geometric Asian call option given its price.
+    :param S_0: Initial stock price
+    :param K: Strike price
+    :param T: Final time/maturity
+    :param price: (Market) price of the option
+    :return: The implied volatility
+    """
+    return iv(BS_price_fun=lambda s: BS_price_geom_asian_call(S_0=S_0, K=K, sigma=s, T=T), price=price)
 
 
 def payoff_call(S, K):
@@ -225,10 +264,11 @@ def fourier_payoff_call_put(K, u):
     return np.exp(np.log(K)*(1+u))/(u*(1+u))
 
 
-def price_eur_call_fourier(mgf, K, R=2., L=50., N=300):
+def price_call_fourier(mgf, K, R=2., L=50., N=300):
     """
-    Computes the option price of an European call option using Fourier inversion.
-    :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
+    Computes the option price of a call option using Fourier inversion.
+    :param mgf: The moment generating function of the log-variable that should be priced (e.g. the final log-price, or
+        the final log-average), a function of the Fourier argument only
     :param R: The (dampening) shift that we use
     :param K: The strike prices, assumed to be a numpy array
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
@@ -271,4 +311,19 @@ def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    return iv_eur_call(S_0=S_0, K=K, T=T, price=price_eur_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N), r=r)
+    return iv_eur_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N), r=r)
+
+
+def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):
+    """
+    Computes the implied volatility of a geometric Asian call option using Fourier inversion.
+    :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
+    :param S_0: Initial stock price
+    :param T: Maturity
+    :param R: The (dampening) shift that we use
+    :param K: The strike prices, assumed to be a numpy array
+    :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
+    :param N: The number of points used in the trapezoidal rule for the approximation of the integral
+    :return: The estimate of the option price
+    """
+    return iv_geom_asian_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N))

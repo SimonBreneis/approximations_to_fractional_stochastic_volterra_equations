@@ -902,7 +902,7 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
             for vol_behaviour in vol_behaviours:
                 for mode in modes:
                     filename = get_filename(N=N, mode=mode, vol_behaviour=vol_behaviour, N_time=N_time,
-                                            kind='sample paths' if sample_paths else 'samples')
+                                            kind='sample paths' if sample_paths else 'samples', params=params)
                     print(f'Now simulating {filename}')
                     if not recompute and exists(filename):
                         pass
@@ -1167,7 +1167,12 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                     print(f'N={Ns[i]}, {modes[j]}, {vol_behaviours[k]}, N_time={N_times[m]}: total error='
                           f'{100*total_errors[i, j, k, m]:.4}%, discretization error='
                           f'{100*discretization_errors[i, j, k, m]:.4}%, MC error={100*MC_errors[i, j, k, m]:.4}%, '
-                          f'excess error={100*lower_discretization_errors[i, j, k, m]:.4}%')
+                          f'excess error={100*lower_discretization_errors[i, j, k, m]:.4}%'
+                          + ('' if m == 0 else
+                             f' improvement factor='
+                             f'{discretization_errors[i, j, k, m - 1] / discretization_errors[i, j, k, m]:.3}, '
+                             f'{upper_discretization_errors[i, j, k, m - 1] / lower_discretization_errors[i, j, k, m]:.3}, '
+                             f'{lower_discretization_errors[i, j, k, m - 1] / upper_discretization_errors[i, j, k, m]:.3}'))
 
     k_vec = np.log(params['K'])
 

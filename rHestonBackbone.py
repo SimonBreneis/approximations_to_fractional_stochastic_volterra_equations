@@ -3,7 +3,7 @@ import numpy as np
 import ComputationalFinance as cf
 
 
-def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False):
+def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, option='european', output='iv'):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
@@ -15,6 +15,8 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
     :param rel_tol: Required maximal relative error in the implied volatility
     :param verbose: Determines how many intermediate results are printed to the console
     :param return_error: If True, also returns a relative error estimate
+    :param option: Either 'european' or 'geometric asian'
+    :param output: Either 'iv' or 'price'
     return: The implied volatility of the call option
     """
 
@@ -37,15 +39,28 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
         # approximation of the Fourier integral
         R = 2.  # The (dampening) shift that we use for the Fourier inversion
         np.seterr(all='warn')
-
-        def compute_iv(N_Riccati_, L_, N_Fourier_):
-            return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                          S_0=S_0, K=K_, T=T_, r=0., R=R, L=L_, N=N_Fourier_)
+        if output == 'iv':
+            if option == 'european':
+                def compute(N_Riccati_, L_, N_Fourier_):
+                    return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
+                                                  S_0=S_0, K=K_, T=T_, r=0., R=R, L=L_, N=N_Fourier_)
+            elif option == 'geometric asian':
+                def compute(N_Riccati_, L_, N_Fourier_):
+                    return cf.iv_geom_asian_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
+                                                         S_0=S_0, K=K_, T=T_, R=R, L=L_, N=N_Fourier_)
+            else:
+                raise NotImplementedError(f'Option {option} with output {output} is not implemented.')
+        elif output == 'price':
+            def compute(N_Riccati_, L_, N_Fourier_):
+                return cf.price_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
+                                         K=K_, R=R, L=L_, N=N_Fourier_)
+        else:
+            raise NotImplementedError(f'Output {output} is not implemented.')
 
         tic = time.perf_counter()
-        iv = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
+        iv = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
         duration = time.perf_counter() - tic
-        iv_approx = compute_iv(N_Riccati_=int(N_Riccati / 1.6), L_=L / 1.2, N_Fourier_=N_Fourier // 2)
+        iv_approx = compute(N_Riccati_=int(N_Riccati / 1.6), L_=L / 1.2, N_Fourier_=N_Fourier // 2)
         error = np.amax(np.abs(iv_approx - iv) / iv)
         if verbose >= 1:
             print(np.amax(np.abs(iv_approx - iv) / iv))
@@ -54,12 +69,12 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
             if time.perf_counter() - tic > 3600:
                 raise RuntimeError('Smile was not computed in given time.')
             if np.sum(np.isnan(iv)) == 0:
-                iv_approx = compute_iv(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
+                iv_approx = compute(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
                 error_Riccati = np.amax(np.abs(iv_approx - iv) / iv)
                 if not np.isnan(error_Riccati) and error_Riccati < eps / 10 and np.sum(np.isnan(iv_approx)) == 0:
                     N_Riccati = int(N_Riccati / 1.8)
 
-                iv_approx = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier // 2)
+                iv_approx = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier // 2)
                 error_Fourier = np.amax(np.abs(iv_approx - iv) / iv)
                 if not np.isnan(error_Fourier) and error_Fourier < eps / 10 and np.sum(np.isnan(iv_approx)) == 0:
                     N_Fourier = N_Fourier // 2
@@ -80,7 +95,7 @@ def iv_eur_call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=Fals
                       time.strftime("%H:%M:%S", time.localtime()))
 
             tic = time.perf_counter()
-            iv = compute_iv(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
+            iv = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
             duration = time.perf_counter() - tic
             error = np.amax(np.abs(iv_approx - iv) / iv)
             if verbose >= 1:
@@ -126,8 +141,8 @@ def skew_eur_call(T, char_fun, rel_tol=1e-03, verbose=0):
 
         def compute_smile(eps_, h_):
             K = np.exp(np.linspace(-200 * h_, 200 * h_, 401))
-            smile_, error_ = iv_eur_call(S_0=1., K=K, T=T_, char_fun=char_fun, rel_tol=eps_, verbose=verbose - 1,
-                                         return_error=True)
+            smile_, error_ = call(S_0=1., K=K, T=T_, char_fun=char_fun, rel_tol=eps_, verbose=verbose - 1,
+                                  return_error=True, option='european', output='iv')
             return np.array([smile_[198], smile_[199], smile_[201], smile_[202]]), error_
 
         eps = rel_tol / 5

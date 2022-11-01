@@ -841,10 +841,10 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
         V_comp_1 = np.empty((N, m, N_time + 1))
         V_comp_1[:, :, 0] = V_comp
         V_comp = V_comp_1
-        log_S[0] = np.log(S_0)
+        log_S[:, 0] = np.log(S_0)
         for i in range(N_time):
             log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
-        V = np.fmax(weights @ V_comp, 0)
+        V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
         S = np.exp(log_S)
     else:
         log_S = np.ones(m) * np.log(S_0)
