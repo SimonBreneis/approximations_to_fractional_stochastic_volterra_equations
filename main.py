@@ -2,8 +2,10 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import Data
+import RoughKernel
 import rBergomi
 import rHeston
+import rHestonMarkov
 from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
@@ -21,8 +23,51 @@ iv = cf.iv_geom_asian_call(S_0=1., K=1., T=1., price=payoff)
 print(iv)
 time.sleep(36000)
 '''
-iv = rHeston.price_geom_asian_call(S_0=1., K=np.exp(np.linspace(-1., 0.5, 61)), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-03, verbose=10)
-plt.plot(np.linspace(-1., 0.5, 61), iv)
+
+iv = Data.rHeston_prices_geom_asian
+iv_approx = Data.rHeston_prices_geom_asian_european
+for i in range(10):
+    rel_err = np.abs(iv - iv_approx[i, :]) / iv
+    plt.plot(np.linspace(-1, 0.4, 281), np.abs(iv - iv_approx[i, :]) / iv, color=color(i, 10), label=f'N={i+1}')
+    print(i+1, np.amax(rel_err), np.amax(rel_err[:221]))
+plt.plot(np.linspace(-1, 0.4, 281), 2e-05 * np.ones(281), 'k--', label='Discretization error')
+plt.legend(loc='best')
+plt.yscale('log')
+plt.xlabel('Log-strike')
+plt.ylabel('Relative error')
+plt.title('Relative errors of Markovian approximations\nwith european nodes for geometric Asian call options')
+plt.show()
+k = np.linspace(-1., 0.4, 281)
+'''
+true = Data.true_iv_surface_eur_call[0, :]
+k = np.linspace(-1.5, 0.75, 451) * np.sqrt(0.04)
+for i in range(1, 11):
+    approx = rHestonMarkov.iv_eur_call(S_0=1, K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.04, N=i, mode='european', rel_tol=1e-05, verbose=0)
+    print(np.amax(np.abs(true - approx) / true))
+    plt.plot(k, np.abs(true - approx) / true, color=color(i - 1, 10))
+plt.yscale('log')
+plt.show()'''
+# _, nodes, weights = rk.optimize_error_optimal_weights(H=0.1, N=10, T=1., bound=4e+04)
+'''
+for i in range(1, 11):
+    print(rk.quadrature_rule(H=0.1, N=i, T=1., mode='bounded'))
+nodes, weights = rk.quadrature_rule(H=0.1, N=10, T=1., mode='european')
+print(nodes, weights)
+iv_2 = rHestonMarkov.price_geom_asian_call(S_0=1., K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=10, N=10, mode="european", nodes=nodes, weights=weights)
+print((iv_2,))
+print(np.abs(iv - iv_2) / iv)
+time.sleep(360000)'''
+'''
+iv = rHeston.price_geom_asian_call(S_0=1., K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=10)
+print((iv,))
+plt.plot(k, iv)'''
+for i in range(1, 11):
+    iv_approx = rHestonMarkov.price_geom_asian_call(S_0=1., K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=0, N=i, mode="optimized")
+    # print((iv_approx,))
+    print(np.amax(np.abs(iv - iv_approx) / iv))
+plt.plot(k, iv_approx)
+plt.show()
+plt.plot(k, np.abs(iv - iv_approx) / iv)
 plt.show()
 print('Finished')
 time.sleep(360000)

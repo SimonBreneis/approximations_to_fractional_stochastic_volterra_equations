@@ -513,7 +513,7 @@ def error_optimal_weights(H, T, nodes, output='error'):
     except np.linalg.LinAlgError:
         v = np.linalg.lstsq(A, b, rcond=None)[0]
     if np.amax(v) > 0:
-        v = scipy.optimize.lsq_linear(A, b, bounds=(-np.inf, 0)).x
+        v = scipy.optimize.lsq_linear(A, b).x
     err = 0.25 * v @ A @ v - 0.5 * np.dot(b, v) + c  # c - 0.25 * np.dot(b, v)
     opt_weights = -0.5 * v
     if output == 'error' or output == 'err':
@@ -583,10 +583,7 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
         nodes = init_nodes
     lower_bound = 1 / (10 * N * np.amin(T)) * ((0.5 - H) / 0.4) ** 2
     nodes = np.fmin(np.fmax(nodes, lower_bound), bound)
-    if N >= 2:
-        bounds = ((np.log(lower_bound), np.log(bound)),) * (N - 1)
-    else:
-        bounds = ((np.log(lower_bound), np.log(bound)),) * N
+    bounds = ((np.log(lower_bound), np.log(bound)),) * N
     original_error, original_weights = error_optimal_weights(H=H, T=T, nodes=nodes, output='error')
     original_nodes = nodes.copy()
 
@@ -597,13 +594,14 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
             def jac_here(x):
                 res_ = np.zeros(N)
                 res_[i] = 1
-                res_[i-1] = -1
+                res_[i - 1] = -1
                 return res_
-            constraints = constraints + [{'type': 'ineq', 'fun': lambda x: x[i] - x[i-1] - 0.3, 'jac': jac_here}]
+            constraints = constraints + [{'type': 'ineq', 'fun': lambda x: x[i] - x[i - 1] - 0.3, 'jac': jac_here}]
 
         if method == 'error' or method == 'err':
             def func(x):
-                return error_optimal_weights(H, T, np.exp(x), output='error')[0]
+                return error_optimal_weights(H, T, np.exp(x), output='error')[0] \
+                    * (1 + np.sum(np.exp(- (x[1:] - x[:-1]) ** 2 * 3 * N / (0.72 * np.log(5 / H) - np.log(T)))))  #  * N / H * 0.1
 
             res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, constraints=constraints)
 
@@ -622,21 +620,11 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
             res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds)
 
         elif method == 'gradient' or method == 'grad':
-            if N >= 2:
-                def func(x):
-                    nodes_here = np.empty(N)
-                    nodes_here[0] = lower_bound
-                    nodes_here[1:] = np.exp(x)
-                    err_, grad, _ = error_optimal_weights(H, T, nodes_here, output='gradient')
-                    return err_, np.exp(x) * grad[1:]
+            def func(x):
+                err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
+                return err_, np.exp(x) * grad
 
-                res = minimize(func, np.log(nodes)[1:], tol=tol ** 2, bounds=bounds, jac=True)
-            else:
-                def func(x):
-                    err_, grad, _ = error_optimal_weights(H, T, np.exp(x), output='gradient')
-                    return err_, np.exp(x) * grad
-
-                res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True)
+            res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True)
 
         else:
             def func(x):
@@ -651,12 +639,7 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
                            method='trust-constr')
 
     # post-processing, ensuring that the results are of good quality
-    if N >= 2:
-        nodes = np.empty(N)
-        nodes[0] = lower_bound
-        nodes[1:] = np.sort(np.exp(res.x))
-    else:
-        nodes = np.exp(res.x)
+    nodes = np.exp(res.x)
     err, weights = error_optimal_weights(H=H, T=T, nodes=nodes, output='error')
     if post_processing:
         if err < 0 or np.fmax(original_error, 1e-9) < err or err > kernel_norm(H, T) ** 2 \
@@ -835,8 +818,18 @@ def european_rule(H, N, T, optimal_weights=False):
 
     def optimizing_func(N_, tol_, bound_):
         if optimal_weights:
+            if N_ == 1:
+                nod = np.array([1 / T])
+            else:
+                nod = np.empty(N_)
+                if len(last_nodes) == N_:
+                    nod = last_nodes
+                else:
+                    nod[:-1] = last_nodes
+                    nod[-1] = bound_
+            nod = nod / 1.03 ** (np.arange(1, N_ + 1) ** 2)
             return optimize_error_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
-                                                  force_order=False, post_processing=False)
+                                                  force_order=False, post_processing=False, init_nodes=nod)
         return optimize_error(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
 
     _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
@@ -846,19 +839,20 @@ def european_rule(H, N, T, optimal_weights=False):
     L_step = 1.15
     bound = np.amax(nodes) / L_step
     current_N = 1
+    last_nodes = nodes
 
     while current_N < N:
         increase_N = 0
         L_step = 1.15
 
-        while increase_N < 3:
+        while increase_N < 2:
             bound = bound * L_step
             error_, nodes, weights = optimizing_func(N_=current_N+1, tol_=1e-07/current_N, bound_=bound)
             p = np.argsort(nodes)
             nodes = nodes[p]
             weights = weights[p]
-            if np.amin(nodes[1:] / nodes[:-1]) < 1.4 or np.amin(weights) < 1e-03 \
-                    or np.amin(weights[1:] / weights[:-1]) < 0.4:
+            if np.amin(nodes[1:] / nodes[:-1]) < 1.4 or np.abs(np.amin(weights)) < 1e-02 \
+                    or np.abs(np.amin(weights[1:] / weights[:-1])) < 0.4:
                 increase_N = 0
                 L_step = 1.15
             elif error_ < optimizing_func(N_=current_N, tol_=1e-07/current_N, bound_=bound)[0]:
@@ -871,6 +865,7 @@ def european_rule(H, N, T, optimal_weights=False):
                 L_step = 1.15
 
         current_N = current_N + 1
+        last_nodes = nodes
 
     if N >= 4:
         return nodes, weights
@@ -942,6 +937,7 @@ def quadrature_rule(H, N, T, mode="optimized"):
         return Gaussian_rule(H=H, N=N, T=T, mode="observation", optimal_weights=False)
     if mode == "abi jaber":
         return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
-    if mode == "european alt":
-        return quadrature_rule(H=H, N=N, T=2, mode="european")
+    if mode == "bounded":
+        return optimize_error_optimal_weights(H=H, N=N, T=T, bound=4.5 ** np.sqrt(N / H) / (50 * T),
+                                              post_processing=False, force_order=True, method='error')[1:3]
     return Gaussian_rule(H=H, N=N, T=T, mode="theorem", optimal_weights=False)
