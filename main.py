@@ -12,12 +12,21 @@ import rHestonMomentMatching
 from scipy.stats import norm
 import scipy.special
 
+a_1 = np.array([0.30499035, 0.28386569, 0.26116807, 0.23651017, 0.20934237,
+       0.17891143, 0.14470142, 0.11295608, 0.10699895, 0.11578251,
+       0.12689855])
+a_2 = np.array([0.30499035, 0.28386567, 0.26116804, 0.23651014, 0.20934235,
+       0.17891144, 0.14470149, 0.11295606, 0.10699886, 0.11578248,
+       0.12689853])
+print(np.amax(np.abs(a_1 - a_2) / a_1))
 
-true_smile = rHeston.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04)
+tic = time.perf_counter()
+true_smile = rHestonMarkov.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-05, N=3, verbose=0)
+print(time.perf_counter() - tic)
 print((true_smile,))
-true_prices = rHeston.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-0.2, 0.1, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04)
+true_prices = rHestonMarkov.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-0.2, 0.1, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
 print((true_prices,))
-other_prices = rHeston.price_avg_vol_call(K=np.linspace(0.01, 0.03, 11), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04)
+other_prices = rHestonMarkov.price_avg_vol_call(K=np.linspace(0.01, 0.03, 11), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
 print((other_prices,))
 time.sleep(360000)
 

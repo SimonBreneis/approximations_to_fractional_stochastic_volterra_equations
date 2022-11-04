@@ -12,11 +12,10 @@ def adams_scheme(a, F, H, T, N_Riccati):
     :param F: Right-hand side (time-dependent!)
     :param T: Final time
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
-    :return: The characteristic function
+    :return: The solution h
     """
     available_memory = np.sqrt(psutil.virtual_memory().available)
-    necessary_memory = np.sqrt(5) * np.sqrt(len(a)) * np.sqrt(N_Riccati) \
-                       * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
+    necessary_memory = np.sqrt(5 * len(a)) * np.sqrt(N_Riccati) * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
                           f'{len(a)} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
