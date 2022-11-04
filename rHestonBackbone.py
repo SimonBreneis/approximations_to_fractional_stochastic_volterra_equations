@@ -1,6 +1,194 @@
 import time
 import numpy as np
 import ComputationalFinance as cf
+import psutil
+import RoughKernel as rk
+from scipy.special import gamma
+
+
+def adams_scheme(F, H, T, N_Riccati):
+    """
+    Applies the Adams scheme to solve h(t) = int_0^t K(t - s) F(s, h(s)) ds.
+    :param H: Hurst parameter
+    :param F: Right-hand side (time-dependent!)
+    :param T: Final time
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :return: The solution h
+    """
+    dim = len(F(0, 0))
+    available_memory = np.sqrt(psutil.virtual_memory().available)
+    necessary_memory = np.sqrt(5 * dim) * np.sqrt(N_Riccati) * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
+    if necessary_memory > available_memory:
+        raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
+                          f'{dim} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
+                          f'while only {available_memory}**2 bytes are available.')
+
+    dt = T / N_Riccati
+    coefficient = dt ** (H + 0.5) / gamma(H + 2.5)
+    v_1 = np.arange(N_Riccati + 1) ** (H + 1.5)
+    v_2 = np.arange(N_Riccati + 1) ** (H + 0.5)
+    v_3 = coefficient * (v_1[N_Riccati:1:-1] + v_1[N_Riccati - 2::-1] - 2 * v_1[N_Riccati - 1:0:-1])
+    v_4 = coefficient * (v_1[:-1] - (np.arange(N_Riccati) - H - 0.5) * v_2[1:])
+    v_5 = dt ** (H + 0.5) / gamma(H + 1.5) * (v_2[N_Riccati:0:-1] - v_2[N_Riccati - 1::-1])
+
+    h = np.zeros(shape=(dim, N_Riccati + 1), dtype=np.cdouble)
+    F_vec = np.zeros(shape=(dim, N_Riccati), dtype=np.cdouble)
+    F_vec[:, 0] = F(0, h[:, 0])
+    h[:, 1] = F_vec[:, 0] * v_4[0] + coefficient * F(0, F_vec[:, 0] * v_5[-1])
+    for k in range(2, N_Riccati + 1):
+        F_vec[:, k - 1] = F((k - 1) / N_Riccati, h[:, k - 1])
+        h[:, k] = F_vec[:, 0] * v_4[k - 1] + F_vec[:, 1:k] @ v_3[-k + 1:] \
+            + coefficient * F(k / N_Riccati, F_vec[:, :k] @ v_5[-k:])
+
+    return h
+
+
+def predictor_scheme(F, nodes, weights, T, N_Riccati):
+    """
+    Applies a predictor-corrector scheme to solve h(t) = int_0^t K(t - s) F(s, h(s)) ds, where K is the kernel
+    determined by nodes and weights.
+    :param F: Right-hand side (time-dependent!)
+    :param T: Final time
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param nodes: Nodes of the Markovian approximation
+    :param weights: Weights of the Markovian approximation
+    :return: The solution h
+    """
+    dim = len(F(0, 0))
+    available_memory = np.sqrt(psutil.virtual_memory().available)
+    necessary_memory = np.sqrt(4 * dim) * np.sqrt(N_Riccati) * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
+    if necessary_memory > available_memory:
+        raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
+                          f'{dim} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
+                          f'while only {available_memory}**2 bytes are available.')
+
+    nodes, weights = rk.sort(nodes, weights)
+    n_zero_nodes = np.sum(nodes < 1e-08)
+    dt = T / N_Riccati
+    N = len(nodes)
+
+    exp_nodes = np.zeros(N)
+    temp = nodes * dt
+    exp_nodes[temp < 300] = np.exp(-temp[temp < 300])
+    div_nodes = np.zeros(N)
+    div_nodes[:n_zero_nodes] = dt
+    div_nodes[n_zero_nodes:] = (1 - exp_nodes[n_zero_nodes:]) / nodes[n_zero_nodes:]
+    div_weights = div_nodes * weights
+    new_div = np.sum(div_weights)
+
+    psi_x = np.zeros((dim, N), dtype=np.cdouble)
+    psi = np.zeros((dim, N_Riccati + 1), dtype=np.cdouble)
+
+    for i in range(N_Riccati):
+        psi_P = new_div * F(i / N_Riccati, psi[:, i]) + psi_x @ exp_nodes
+        psi_x = div_weights[None, :] * F((i + 0.5) / N_Riccati, 0.5 * (psi[:, i] + psi_P))[:, None] \
+            + psi_x * exp_nodes[None, :]
+        psi[:, i + 1] = np.sum(psi_x, axis=1)
+
+    return psi
+
+
+def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
+    """
+    Gives the characteristic function of the log-price in the Markovian approximation of the rough Heston model.
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
+    :param S_0: Initial stock price
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param nodes: Nodes of the Markovian approximation
+    :param weights: Weights of the Markovian approximation
+    :return: The characteristic function
+    """
+    z = complex(0, 1) * z
+    a = nu * nu / 2
+    b = rho * nu * z - lambda_
+    c = (z - 1) * z / 2
+
+    def F(t, x):
+        return c + (b + a * x) * x
+
+    if nodes is None or weights is None:
+        psi = adams_scheme(F=F, H=H, T=T, N_Riccati=N_Riccati)
+    else:
+        psi = predictor_scheme(F=F, nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+    integral = np.trapz(psi, dx=T / N_Riccati)
+    integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
+
+    return np.exp(z * np.log(S_0) + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq)
+
+
+def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
+    """
+    Gives the characteristic function of the average (on [0, T]) log-price in the Markovian approximation of the
+    rough Heston model.
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
+    :param S_0: Initial stock price
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param nodes: Nodes of the Markovian approximation
+    :param weights: Weights of the Markovian approximation
+    :return: The characteristic function
+    """
+    z = complex(0, 1) * z
+    z_sq = z * z
+    dt = T / N_Riccati
+
+    def F(t, x):
+        return 0.5 * t ** 2 * z_sq - 0.5 * t * z + (rho * nu * t * z - lambda_ + 0.5 * nu ** 2 * x) * x
+
+    if nodes is None or weights is None:
+        psi = adams_scheme(F=F, H=H, T=T, N_Riccati=N_Riccati)
+    else:
+        psi = predictor_scheme(F=F, nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+
+    integral = np.trapz(psi, dx=dt)
+    integral_sq = np.trapz(psi ** 2, dx=dt)
+    integral_time = np.trapz(psi * np.linspace(0, 1, N_Riccati + 1), dx=dt)
+
+    return np.exp(z * np.log(S_0) + (z / 6 - 0.25) * (V_0 * T) * z + (theta - lambda_ * V_0) * integral
+                  + 0.5 * V_0 * nu ** 2 * integral_sq + V_0 * nu * rho * z * integral_time)
+
+
+def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
+    """
+    Gives the characteristic function of the average (on [0, T]) volatility in the Markovian approximation of the
+    rough Heston model.
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
+    :param lambda_: Mean-reversion speed
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Final time
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param nodes: Nodes of the Markovian approximation
+    :param weights: Weights of the Markovian approximation
+    :return: The characteristic function
+    """
+    z = complex(0, 1) * z
+    dt = T / N_Riccati
+
+    def F(t, x):
+        return z / T + (-lambda_ + 0.5 * nu ** 2 * x) * x
+
+    if nodes is None or weights is None:
+        psi = adams_scheme(F=F, H=H, T=T, N_Riccati=N_Riccati)
+    else:
+        psi = predictor_scheme(F=F, nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
+
+    integral = np.trapz(psi, dx=dt)
+    integral_sq = np.trapz(psi ** 2, dx=dt)
+
+    return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq)
 
 
 def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, option='european', output='iv'):
@@ -133,7 +321,7 @@ def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, opti
     return iv_surface
 
 
-def skew_eur_call(T, char_fun, rel_tol=1e-03, verbose=0):
+def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
     """
     Gives the skew of the European call option in the rough Heston model.
     :param T: Numpy array of maturities
@@ -209,3 +397,123 @@ def skew_eur_call(T, char_fun, rel_tol=1e-03, verbose=0):
     if T_is_float:
         skew = skew[0]
     return skew
+
+
+def iv_eur_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+                weights=None, verbose=0):
+    """
+    Gives the implied volatility of the European call option in the rough Heston model. Uses Fourier inversion.
+    :param S_0: Initial stock price
+    :param K: Strike price, assumed to be a numpy array
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param verbose: Determines how many intermediate results are printed to the console
+    return: The implied volatility of the call option
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+    return call(char_fun=lambda u, T_, N_: cf_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta,
+                                                        V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights),
+                S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+
+
+def skew_eur_call(S_0, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+                  weights=None, verbose=0):
+    """
+    Gives the skew of the European call option in the rough Heston model. Uses Fourier inversion.
+    :param S_0: Initial stock price
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param verbose: Determines how many intermediate results are printed to the console
+    return: The skew of the call option
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H, N, T, mode)
+    return skew_eur_call_comp(char_fun=lambda u, T_, N_: cf_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu,
+                                                                      theta=theta, V_0=V_0, T=T_, N_Riccati=N_, H=H,
+                                                                      nodes=nodes, weights=weights),
+                              T=T, rel_tol=rel_tol, verbose=verbose)
+
+
+def price_geom_asian_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None,
+                          nodes=None, weights=None, verbose=0):
+    """
+    Gives the price of the geometric Asian call option in the rough Heston model. Uses Fourier inversion.
+    :param S_0: Initial stock price
+    :param K: Strike price, assumed to be a numpy array
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param verbose: Determines how many intermediate results are printed to the console
+    return: The implied volatility of the call option
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H, N, np.array([T / 2, T]), mode)
+    return call(char_fun=lambda u, T_, N_: cf_avg_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta,
+                                                            V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes,
+                                                            weights=weights),
+                S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose, option='geometric asian', output='price')
+
+
+def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+                       weights=None, verbose=0):
+    """
+    Gives the price of the European call option on the average volatility in the rough Heston model.
+    Uses Fourier inversion.
+    :param H: Hurst parameter
+    :param K: Strike price, assumed to be a numpy array
+    :param lambda_: Mean-reversion speed
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param verbose: Determines how many intermediate results are printed to the console
+    return: The implied volatility of the call option
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H, N, T, mode)
+    return call(char_fun=lambda u, T_, N_: cf_avg_vol(z=u, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T_,
+                                                      N_Riccati=N_, H=H, nodes=nodes, weights=weights),
+                S_0=V_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose, option='average volatility', output='price')

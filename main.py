@@ -6,6 +6,7 @@ import RoughKernel
 import rBergomi
 import rHeston
 import rHestonMarkov
+import rHestonBackbone
 from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
@@ -32,14 +33,26 @@ a_3 = np.array([0.30496339, 0.28383204, 0.26113008, 0.23647212, 0.20931119,
 print(np.amax(np.abs(a_1 - a_2) / a_1))
 print(np.amax(np.abs(a_2 - a_3) / a_2))
 
+
+other_prices = rHestonBackbone.price_avg_vol_call(K=np.linspace(0.01, 0.03, 11), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04)
+print((other_prices,))
+
+other_prices = rHestonBackbone.price_avg_vol_call(K=np.linspace(0.01, 0.03, 11), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
+print((other_prices,))
+true_prices = rHestonBackbone.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-0.2, 0.1, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04)
+print((true_prices,))
+
+true_prices = rHestonBackbone.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-0.2, 0.1, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
+print((true_prices,))
+
 tic = time.perf_counter()
-true_smile = rHestonMarkov.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, N=3, rel_tol=1e-05, verbose=0)
+true_smile = rHestonBackbone.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, N=3, rel_tol=1e-05, verbose=0)
 print(time.perf_counter() - tic)
 print((true_smile,))
-true_prices = rHestonMarkov.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-0.2, 0.1, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
-print((true_prices,))
-other_prices = rHestonMarkov.price_avg_vol_call(K=np.linspace(0.01, 0.03, 11), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
-print((other_prices,))
+tic = time.perf_counter()
+true_smile = rHestonBackbone.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-05, verbose=0)
+print(time.perf_counter() - tic)
+print((true_smile,))
 time.sleep(360000)
 
 K = 0.02 / 0.3 * np.exp(np.linspace(-1., 0.5, 151))
