@@ -12,105 +12,151 @@ import rHestonMomentMatching
 from scipy.stats import norm
 import scipy.special
 
-'''
-BS_paths = cf.BS_paths(sigma=0.2, T=1., m=100000, n=1000)
-print(1)
-geom_avg = np.exp(np.trapz(np.log(BS_paths), dx=1/1000, axis=-1))
-print(2)
-payoff = np.array(np.average(cf.payoff_call(S=geom_avg, K=1.)))
-print(3)
-iv = cf.iv_geom_asian_call(S_0=1., K=1., T=1., price=payoff)
-print(iv)
-time.sleep(36000)
-'''
 
-iv = Data.rHeston_prices_geom_asian
-iv_approx = Data.rHeston_prices_geom_asian_european
-for i in range(10):
-    rel_err = np.abs(iv - iv_approx[i, :]) / iv
-    plt.plot(np.linspace(-1, 0.4, 281), np.abs(iv - iv_approx[i, :]) / iv, color=color(i, 10), label=f'N={i+1}')
-    print(i+1, np.amax(rel_err), np.amax(rel_err[:221]))
-plt.plot(np.linspace(-1, 0.4, 281), 2e-05 * np.ones(281), 'k--', label='Discretization error')
-plt.legend(loc='best')
-plt.yscale('log')
-plt.xlabel('Log-strike')
-plt.ylabel('Relative error')
-plt.title('Relative errors of Markovian approximations\nwith european nodes for geometric Asian call options')
-plt.show()
-k = np.linspace(-1., 0.4, 281)
-'''
-true = Data.true_iv_surface_eur_call[0, :]
-k = np.linspace(-1.5, 0.75, 451) * np.sqrt(0.04)
+K = 0.02 / 0.3 * np.exp(np.linspace(-1., 0.5, 151))
+print(K)
+true_smile = rHeston.price_avg_vol_call(K=K, H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=10)
 for i in range(1, 11):
-    approx = rHestonMarkov.iv_eur_call(S_0=1, K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=0.04, N=i, mode='european', rel_tol=1e-05, verbose=0)
-    print(np.amax(np.abs(true - approx) / true))
-    plt.plot(k, np.abs(true - approx) / true, color=color(i - 1, 10))
-plt.yscale('log')
-plt.show()'''
-# _, nodes, weights = rk.optimize_error_optimal_weights(H=0.1, N=10, T=1., bound=4e+04)
-'''
-for i in range(1, 11):
-    print(rk.quadrature_rule(H=0.1, N=i, T=1., mode='bounded'))
-nodes, weights = rk.quadrature_rule(H=0.1, N=10, T=1., mode='european')
-print(nodes, weights)
-iv_2 = rHestonMarkov.price_geom_asian_call(S_0=1., K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=10, N=10, mode="european", nodes=nodes, weights=weights)
-print((iv_2,))
-print(np.abs(iv - iv_2) / iv)
-time.sleep(360000)'''
-'''
-iv = rHeston.price_geom_asian_call(S_0=1., K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=10)
-print((iv,))
-plt.plot(k, iv)'''
-for i in range(1, 11):
-    iv_approx = rHestonMarkov.price_geom_asian_call(S_0=1., K=np.exp(k), H=0.1, lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=0, N=i, mode="optimized")
-    # print((iv_approx,))
-    print(np.amax(np.abs(iv - iv_approx) / iv))
-plt.plot(k, iv_approx)
-plt.show()
-plt.plot(k, np.abs(iv - iv_approx) / iv)
-plt.show()
+    approx_smile = rHestonMarkov.price_avg_vol_call(K=K, H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, verbose=10, N=i)
+    print(np.amax(np.abs(approx_smile - true_smile) / true_smile))
 print('Finished')
 time.sleep(360000)
 
-for i in range(1, 11):
-    print(rk.quadrature_rule(H=0.1, T=1., N=i, mode='european'))
-print('Finished')
+true_smile = np.array([0.92920471, 0.92020472, 0.91120472, 0.90220471, 0.89320472,
+       0.88420472, 0.87520472, 0.86620472, 0.85720471, 0.84820473,
+       0.83920472, 0.83020473, 0.82120472, 0.81220472, 0.80320471,
+       0.79420472, 0.78520473, 0.77620472, 0.76720472, 0.75820473,
+       0.74920472, 0.74020473, 0.73120472, 0.72220472, 0.71320473,
+       0.70420472, 0.69520472, 0.68620472, 0.67720472, 0.66820472,
+       0.65920472, 0.65020472, 0.64120472, 0.63220473, 0.62320472,
+       0.61420473, 0.60520472, 0.59620472, 0.58720472, 0.57820472,
+       0.56920472, 0.56020472, 0.55120472, 0.54220473, 0.53320472,
+       0.52420472, 0.51520473, 0.50620471, 0.49720473, 0.48820472,
+       0.47920472, 0.47020473, 0.46120473, 0.45220472, 0.44320472,
+       0.43420471, 0.42520471, 0.41620471, 0.40720472, 0.39820472,
+       0.38920473, 0.38020473, 0.37120472, 0.36220471, 0.35320473,
+       0.34420472, 0.33520471, 0.32620473, 0.31720471, 0.30820473,
+       0.29920471, 0.29020473, 0.28120471, 0.27220473, 0.26320472,
+       0.25420471, 0.24520473, 0.23620472, 0.22720471, 0.21820472,
+       0.20920474, 0.20020473, 0.19120471, 0.18220471, 0.17320471,
+       0.16420472, 0.15520473, 0.14620474, 0.13720474, 0.12820475,
+       0.11920475, 0.11020475, 0.10120475, 0.09220474, 0.08320473,
+       0.0742047 , 0.06520467, 0.05620464, 0.04720467, 0.03820481,
+       0.02920523])
+
+approx_smile = np.array([0.92939164, 0.92039165, 0.91139165, 0.90239164, 0.89339165,
+       0.88439165, 0.87539165, 0.86639165, 0.85739164, 0.84839165,
+       0.83939164, 0.83039165, 0.82139165, 0.81239165, 0.80339164,
+       0.79439164, 0.78539165, 0.77639165, 0.76739165, 0.75839165,
+       0.74939165, 0.74039166, 0.73139165, 0.72239165, 0.71339166,
+       0.70439165, 0.69539165, 0.68639164, 0.67739165, 0.66839165,
+       0.65939165, 0.65039164, 0.64139165, 0.63239165, 0.62339164,
+       0.61439165, 0.60539165, 0.59639164, 0.58739164, 0.57839164,
+       0.56939164, 0.56039164, 0.55139165, 0.54239165, 0.53339165,
+       0.52439164, 0.51539165, 0.50639164, 0.49739165, 0.48839165,
+       0.47939164, 0.47039165, 0.46139166, 0.45239165, 0.44339165,
+       0.43439164, 0.42539164, 0.41639164, 0.40739165, 0.39839165,
+       0.38939166, 0.38039165, 0.37139164, 0.36239164, 0.35339166,
+       0.34439165, 0.33539164, 0.32639166, 0.31739164, 0.30839166,
+       0.29939164, 0.29039166, 0.28139164, 0.27239166, 0.26339165,
+       0.25439164, 0.24539166, 0.23639165, 0.22739164, 0.21839165,
+       0.20939166, 0.20039166, 0.19139164, 0.18239163, 0.17339164,
+       0.16439165, 0.15539166, 0.14639166, 0.13739167, 0.12839167,
+       0.11939167, 0.11039167, 0.10139167, 0.09239167, 0.08339165,
+       0.07439162, 0.06539159, 0.05639158, 0.04739162, 0.03839176,
+       0.02939217])
+
+another_smile = np.array([9.21943449e-01, 9.10943449e-01, 8.99943449e-01, 8.88943449e-01,
+       8.77943449e-01, 8.66943449e-01, 8.55943449e-01, 8.44943449e-01,
+       8.33943449e-01, 8.22943449e-01, 8.11943449e-01, 8.00943449e-01,
+       7.89943449e-01, 7.78943449e-01, 7.67943449e-01, 7.56943449e-01,
+       7.45943449e-01, 7.34943449e-01, 7.23943449e-01, 7.12943449e-01,
+       7.01943449e-01, 6.90943449e-01, 6.79943449e-01, 6.68943449e-01,
+       6.57943449e-01, 6.46943449e-01, 6.35943449e-01, 6.24943449e-01,
+       6.13943449e-01, 6.02943449e-01, 5.91943449e-01, 5.80943449e-01,
+       5.69943449e-01, 5.58943449e-01, 5.47943449e-01, 5.36943449e-01,
+       5.25943449e-01, 5.14943449e-01, 5.03943449e-01, 4.92943449e-01,
+       4.81943449e-01, 4.70943449e-01, 4.59943449e-01, 4.48943449e-01,
+       4.37943449e-01, 4.26943449e-01, 4.15943449e-01, 4.04943449e-01,
+       3.93943449e-01, 3.82943449e-01, 3.71943449e-01, 3.60943449e-01,
+       3.49943449e-01, 3.38943449e-01, 3.27943449e-01, 3.16943449e-01,
+       3.05943449e-01, 2.94943449e-01, 2.83943449e-01, 2.72943449e-01,
+       2.61943449e-01, 2.50943449e-01, 2.39943449e-01, 2.28943449e-01,
+       2.17943449e-01, 2.06943449e-01, 1.95943449e-01, 1.84943449e-01,
+       1.73943449e-01, 1.62943449e-01, 1.51943449e-01, 1.40943449e-01,
+       1.29943449e-01, 1.18943449e-01, 1.07943449e-01, 9.69434491e-02,
+       8.59434493e-02, 7.49434492e-02, 6.39434494e-02, 5.29434490e-02,
+       4.19434491e-02, 3.09434496e-02, 1.99470630e-02, 1.18954541e-02,
+       7.72334645e-03, 5.24813374e-03, 3.65589094e-03, 2.58550717e-03,
+       1.84733839e-03, 1.33003081e-03, 9.63463629e-04, 7.01546909e-04,
+       5.13157710e-04, 3.76897376e-04, 2.77861981e-04, 2.05569100e-04,
+       1.52588278e-04, 1.13618091e-04, 8.48549565e-05, 6.35564947e-05,
+       4.77366142e-05])
+
+iv = cf.iv_eur_call(S_0=0.02, K=np.linspace(0.1, 1.2, 101), T=0.04, price=another_smile)
+
+more_smiles = np.array([0.93564394, 0.92464395, 0.91364395, 0.90264395, 0.89164394,
+       0.88064395, 0.86964395, 0.85864395, 0.84764394, 0.83664394,
+       0.82564395, 0.81464395, 0.80364395, 0.79264395, 0.78164395,
+       0.77064395, 0.75964394, 0.74864395, 0.73764395, 0.72664395,
+       0.71564395, 0.70464395, 0.69364395, 0.68264395, 0.67164394,
+       0.66064395, 0.64964395, 0.63864395, 0.62764395, 0.61664394,
+       0.60564394, 0.59464395, 0.58364395, 0.57264395, 0.56164395,
+       0.55064394, 0.53964395, 0.52864395, 0.51764394, 0.50664395,
+       0.49564395, 0.48464395, 0.47364394, 0.46264394, 0.45164395,
+       0.44064395, 0.42964395, 0.41864395, 0.40764394, 0.39664395,
+       0.38564395, 0.37464395, 0.36364395, 0.35264395, 0.34164395,
+       0.33064395, 0.31964395, 0.30864394, 0.29764395, 0.28664395,
+       0.27564395, 0.26464395, 0.25364395, 0.24264395, 0.23164394,
+       0.22064395, 0.20964394, 0.19864394, 0.18764394, 0.17664394,
+       0.16564394, 0.15464395, 0.14364395, 0.13264394, 0.12164394,
+       0.11064395, 0.09964395, 0.08864395, 0.07764396, 0.06664396,
+       0.05564393, 0.04464395, 0.03390773, 0.02936877, 0.02686203,
+       0.02503089, 0.02356842, 0.0223449 , 0.02129122, 0.02036555,
+       0.01954035, 0.01879636, 0.01811957, 0.01749936, 0.01692756,
+       0.01639761, 0.0159043 , 0.01544327, 0.01501096, 0.01460434,
+       0.01422086])
+
+now = np.array([0.02729494, 0.0269547 , 0.02661483, 0.02627564, 0.02593751,
+       0.02560087, 0.02526617, 0.0249339 , 0.02460453, 0.0242785 ,
+       0.02395622, 0.02363802, 0.02332417, 0.02301487, 0.02271027,
+       0.02241042, 0.02211535, 0.02182506, 0.02153948, 0.02125859,
+       0.02098231, 0.02071058, 0.02044336, 0.0201806 , 0.01992225,
+       0.01966826, 0.01941857, 0.01917314, 0.01893187, 0.01869471,
+       0.01846154, 0.01823229, 0.01800684, 0.0177851 , 0.01756699,
+       0.0173524 , 0.01714128, 0.01693354, 0.01672913, 0.01652799,
+       0.01633006, 0.01613529, 0.01594362, 0.01575498, 0.01556931,
+       0.01538653, 0.01520658, 0.01502939, 0.01485487, 0.01468299,
+       0.01451366, 0.01434685, 0.0141825 , 0.01402058, 0.01386104,
+       0.01370386, 0.01354898, 0.01339637, 0.01324598, 0.01309776,
+       0.01295167, 0.01280766, 0.01266568, 0.01252568, 0.01238761,
+       0.01225145, 0.01211716, 0.01198471, 0.01185407, 0.01172521,
+       0.01159812, 0.01147276, 0.01134911, 0.01122712, 0.01110678,
+       0.01098804, 0.01087087, 0.01075524, 0.0106411 , 0.01052844,
+       0.01041724, 0.01030745, 0.01019908, 0.0100921 , 0.00998649,
+       0.00988223, 0.00977932, 0.00967771, 0.0095774 , 0.00947836,
+       0.00938055, 0.00928396, 0.00918855, 0.00909432, 0.00900123,
+       0.00890927, 0.00881843, 0.00872869, 0.00864004, 0.00855248,
+       0.00846598])
+
+plt.plot(np.linspace(0.1, 1, 101), true_smile)
+plt.plot(np.linspace(0.1, 1, 101), approx_smile)
+plt.plot(np.linspace(0.1, 1.2, 101), another_smile)
+plt.plot(np.linspace(0.1, 1.2, 101), more_smiles)
+plt.plot(np.linspace(0.1, 1, 101), np.fmax(1 - np.linspace(0.1, 1, 101), 0))
+plt.plot(np.linspace(0.001, 0.035, 101), now)
+plt.show()
+true_smile = rHeston.price_geom_asian_call(S_0=10, rho=-0.7, K=10 * np.linspace(0.8, 0.95, 101), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=1, rel_tol=2e-03, verbose=10)
+iv = cf.iv_geom_asian_call(S_0=1, K=np.linspace(0.8, 1.2, 101), T=1, price=true_smile)
+print((true_smile,))
+true_smile = rHeston.price_avg_vol_call(K=np.linspace(0.001, 0.035, 101), H=0.1, lambda_=0.3, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=2e-04, verbose=10)
+print((true_smile,))
 time.sleep(36000)
 
-for N_times in 2 ** np.arange(9):
-    '''
-    tic = time.perf_counter()
-    compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=N_times, modes=['european'], vol_behaviours=['sticky'], recompute=True, m=20000000)
-    print(time.perf_counter() - tic)
-    tic = time.perf_counter()
-    compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=N_times, modes=['european'], vol_behaviours=['mackevicius random'], recompute=True, m=20000000)
-    print(time.perf_counter() - tic)
-    tic = time.perf_counter()
-    compute_final_rHeston_stock_prices(params='simple', Ns=np.array([2]), N_times=N_times, modes=['european'], vol_behaviours=['mackevicius sequential'], recompute=True, m=20000000)
-    print(time.perf_counter() - tic)'''
-
-    params = {'T': 0.004, 'K': np.exp(np.linspace(-0.4, 0.4, 33))}
-    tic = time.perf_counter()
-    compute_final_rHeston_stock_prices(params=rHeston_params(params), Ns=np.array([1]), N_times=N_times, modes=['european'], vol_behaviours=['mackevicius sequential antithetic'], recompute=False, m=1000000, sample_paths=True)
-    print(time.perf_counter() - tic)
-
-print('Finished')
-# time.sleep(360000)
-
-# print(rk.quadrature_rule(0.1, 2, 1))
-k = np.sqrt(0.004) * np.linspace(-1.5, 0.75, 451)[220:-70:5]# [280:-140:10]# [220:-70:5]
-params = {'K': np.exp(k), 'T': 0.004}
-params = rHeston_params(params)
-# true_smile = Data.true_iv_surface_eur_call[-1, 220:-70:5]
-print(k, len(k))
-
-# simulation_errors_depending_on_node_size(params=params, verbose=1, true_smile=true_smile, N_times=2**np.arange(4, 10), largest_nodes=np.linspace(0, 10, 101)/0.04, vol_behaviour='sticky')
-# optimize_kernel_approximation_for_simulation_vector_inputs(Ns=np.array([1]), N_times=2 ** np.arange(6, 9), params=params, true_smile=true_smile, plot=True, recompute=True, vol_behaviours=['hyperplane reset'], m=10000000)
-
-# compute_strong_discretization_errors(Ns=np.array([2]), N_times=2 ** np.arange(14), N_time_ref=2 ** 14, vol_behaviours=['hyperplane reset', 'ninomiya victoir', 'sticky'], plot=True)
-# compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(16), modes=None, vol_behaviours=['hyperplane reset', 'ninomiya victoir', 'sticky'], plot=True, true_smile=true_smile)
-compute_smiles_given_stock_prices(params=params, Ns=np.array([1, 2, 3]), N_times=2 ** np.arange(9), modes=['european'], vol_behaviours=['mackevicius sequential antithetic'], plot=True, true_smile=None)
-# compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european'], vol_behaviours=['ninomiya victoir', 'correct ninomiya victoir', 'sticky'], plot='vol_behaviour', true_smile=true_smile)
-# compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(10), modes=['european', 'fitted'], vol_behaviours=['hyperplane reset'], plot='mode', true_smile=true_smile)
-print('Finished')
+true_smile = Data.rHeston_prices_geom_asian
+for i in range(1, 11):
+    approx_smile = rHestonMarkov.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-1, 0.4, 281)), H=0.1, lambda_=0.3,
+                                                       rho=-0.7, nu=0.3, theta=0.02,
+                                                       V_0=0.02, T=1, N=i, mode='optimized', rel_tol=1e-05)
+    print(np.amax(np.abs(true_smile - approx_smile) / true_smile))
 

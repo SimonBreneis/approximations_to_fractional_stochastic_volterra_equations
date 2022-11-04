@@ -51,9 +51,16 @@ def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, opti
             else:
                 raise NotImplementedError(f'Option {option} with output {output} is not implemented.')
         elif output == 'price':
-            def compute(N_Riccati_, L_, N_Fourier_):
-                return cf.price_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                             K=K_, R=R, L=L_, N=N_Fourier_)
+            if option == 'geometric asian':
+                def compute(N_Riccati_, L_, N_Fourier_):
+                    return cf.price_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
+                                                 K=K_, R=R, L=L_, N=N_Fourier_, log_price=True)
+            elif option == 'average volatility':
+                def compute(N_Riccati_, L_, N_Fourier_):
+                    return cf.price_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
+                                                 K=K_, R=R, L=L_, N=N_Fourier_, log_price=False)
+            else:
+                raise NotImplementedError(f'Option {option} with output {output} is not implemented.')
         else:
             raise NotImplementedError(f'Output {output} is not implemented.')
 

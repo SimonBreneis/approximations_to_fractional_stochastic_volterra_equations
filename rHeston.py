@@ -241,5 +241,5 @@ def price_avg_vol_call(K, H, lambda_, nu, theta, V_0, T, rel_tol=1e-03, verbose=
     """
     return rHestonBackbone.call(char_fun=lambda u, T_, N_: characteristic_function_avg_vol(u, H, lambda_, nu, theta,
                                                                                            V_0, T_, N_),
-                                S_0=1., K=K, T=T, rel_tol=rel_tol, verbose=verbose, option='average volatility',
+                                S_0=V_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose, option='average volatility',
                                 output='price')

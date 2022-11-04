@@ -108,7 +108,7 @@ def BS_price_geom_asian_call(S_0, K, sigma, T):
     return BS_price_eur_call(S_0=S_0 * np.exp(-sigma ** 2 * T / 12), K=K, sigma=sigma / np.sqrt(3), T=T, r=0.)
 
 
-def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=2.):
+def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
     """
     Computes the implied volatility of an option given its price, assuming the volatility is in [sl, sr].
     :param BS_price_fun: A function of the volatility sigma that returns the corresponding Black-Scholes price
@@ -258,13 +258,26 @@ def fourier_payoff_call_put(K, u):
     :param u: Argument of the Fourier transform
     :return: hat(f)(u) (or hat(f)(K, u) if K is a numpy array)
     """
+    if isinstance(K, np.ndarray):
+        return - np.exp(np.multiply.outer(K, complex(0, 1) * u)) / u ** 2
+    return - np.exp(K * complex(0, 1) * u) / u ** 2
+
+
+def fourier_payoff_call_put_logarithmic(K, u):
+    """
+    Returns the value of the Fourier transform of the payoff of a put or call option (same Fourier transform).
+    Is a complex number.
+    :param K: Strike price, may also be a numpy array
+    :param u: Argument of the Fourier transform
+    :return: hat(f)(u) (or hat(f)(K, u) if K is a numpy array)
+    """
     u = complex(0, 1) * u
     if isinstance(K, np.ndarray):
-        return np.exp(np.multiply.outer(np.log(K), 1+u)) / (u * (1+u))
-    return np.exp(np.log(K)*(1+u))/(u*(1+u))
+        return np.exp(np.multiply.outer(np.log(K), 1 + u)) / (u * (1 + u))
+    return np.exp(np.log(K) * (1 + u)) / (u * (1 + u))
 
 
-def price_call_fourier(mgf, K, R=2., L=50., N=300):
+def price_call_fourier(mgf, K, R=2., L=50., N=300, log_price=True):
     """
     Computes the option price of a call option using Fourier inversion.
     :param mgf: The moment generating function of the log-variable that should be priced (e.g. the final log-price, or
@@ -295,7 +308,11 @@ def price_call_fourier(mgf, K, R=2., L=50., N=300):
             else:
                 raise MemoryError('Not enough memory to carry out Fourier inversion.')
         current_round = current_round + 1
-    return np.real(fourier_payoff_call_put(K, x + complex(0, 1) * R) @ (mgf_output * y)) / np.pi
+    if log_price:
+        fourier_payoff = fourier_payoff_call_put_logarithmic(K, x + complex(0, 1) * R)
+    else:
+        fourier_payoff = fourier_payoff_call_put(K, x + complex(0, 1) * R)
+    return np.real(fourier_payoff @ (mgf_output * y)) / np.pi
 
 
 def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):

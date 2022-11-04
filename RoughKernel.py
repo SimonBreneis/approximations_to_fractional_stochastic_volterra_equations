@@ -541,7 +541,7 @@ def error_optimal_weights(H, T, nodes, output='error'):
 
 
 def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False,
-                                   post_processing=True, init_nodes=None):
+                                   post_processing=True, init_nodes=None, iterative=False):
     """
     Optimizes the L^2 strong approximation error with N points for fBm. Always uses the best weights and only
     numerically optimizes over the nodes.
@@ -559,6 +559,18 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
         If this is not the case, may call this function, or other processes again to potentially achieve better results
     :return: The minimal relative error together with the associated nodes and weights.
     """
+
+    if iterative and not init_nodes and N >= 2:
+        init_nodes = np.empty(N)
+        init_nodes[:-1] = optimize_error_optimal_weights(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
+                                                         force_order=force_order, post_processing=post_processing,
+                                                         init_nodes=None, iterative=iterative)[1]
+        init_nodes[:-1] = init_nodes[:N - 1] / 1.03 ** np.fmin(np.arange(1, N) ** 2, 100)
+        if bound is not None:
+            init_nodes[N - 1] = np.fmax(bound, 10 * init_nodes[N - 2])
+        else:
+            init_nodes[N - 1] = 5 * init_nodes[N - 2]
+
     original_bound = bound
 
     # get starting value and bounds for the optimization problem
@@ -800,7 +812,8 @@ def optimized_rule(H, N, T, optimal_weights=False):
     :return: All the nodes and weights in increasing order, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
     if optimal_weights:
-        _, nodes, weights = optimize_error_optimal_weights(H=H, N=N, T=T, bound=None, method='gradient')
+        _, nodes, weights = optimize_error_optimal_weights(H=H, N=N, T=T, bound=None, method='gradient',
+                                                           iterative=False)
     else:
         _, nodes, weights = optimize_error(H=H, N=N, T=T, bound=None, iterative=False)
     return nodes, weights
@@ -827,7 +840,7 @@ def european_rule(H, N, T, optimal_weights=False):
                 else:
                     nod[:-1] = last_nodes
                     nod[-1] = bound_
-            nod = nod / 1.03 ** (np.arange(1, N_ + 1) ** 2)
+            nod = nod / 1.03 ** np.fmin(np.arange(1, N_ + 1) ** 2, 100)
             return optimize_error_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
                                                   force_order=False, post_processing=False, init_nodes=nod)
         return optimize_error(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
