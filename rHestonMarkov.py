@@ -38,13 +38,13 @@ def predictor_scheme(F, nodes, weights, T, N_Riccati):
     new_div = np.sum(div_weights)
 
     psi_x = np.zeros((dim, N), dtype=np.cdouble)
-    psi = np.zeros((N_Riccati + 1, dim), dtype=np.cdouble)
+    psi = np.zeros((dim, N_Riccati + 1), dtype=np.cdouble)
 
     for i in range(N_Riccati):
-        psi_P = new_div * F(i / N_Riccati, psi[i, :]) + psi_x @ exp_nodes
-        psi_x = div_weights[None, :] * F((i + 0.5) / N_Riccati, 0.5 * (psi[i, :] + psi_P))[:, None] \
+        psi_P = new_div * F(i / N_Riccati, psi[:, i]) + psi_x @ exp_nodes
+        psi_x = div_weights[None, :] * F((i + 0.5) / N_Riccati, 0.5 * (psi[:, i] + psi_P))[:, None] \
             + psi_x * exp_nodes[None, :]
-        psi[i + 1, :] = np.sum(psi_x, axis=1)
+        psi[:, i + 1] = np.sum(psi_x, axis=1)
 
     return psi
 
@@ -74,8 +74,8 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, weig
         return c + (b + a * x) * x
 
     psi = predictor_scheme(F=F, nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
-    integral = np.trapz(psi, dx=T / N_Riccati, axis=0)
-    integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati, axis=0)
+    integral = np.trapz(psi, dx=T / N_Riccati)
+    integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
 
     return np.exp(z * np.log(S_0) + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq)
 
@@ -106,9 +106,9 @@ def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, nodes, 
 
     psi = predictor_scheme(F=F, nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
 
-    integral = np.trapz(psi, dx=dt, axis=0)
-    integral_sq = np.trapz(psi ** 2, dx=dt, axis=0)
-    integral_time = np.trapz(psi * np.linspace(0, 1, N_Riccati + 1)[:, None], dx=dt, axis=0)
+    integral = np.trapz(psi, dx=dt)
+    integral_sq = np.trapz(psi ** 2, dx=dt)
+    integral_time = np.trapz(psi * np.linspace(0, 1, N_Riccati + 1), dx=dt)
 
     return np.exp(z * np.log(S_0) + (z / 6 - 0.25) * (V_0 * T) * z + (theta - lambda_ * V_0) * integral
                   + 0.5 * V_0 * nu ** 2 * integral_sq + V_0 * nu * rho * z * integral_time)
@@ -137,8 +137,8 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, nodes, weights):
 
     psi = predictor_scheme(F=F, nodes=nodes, weights=weights, T=T, N_Riccati=N_Riccati)
 
-    integral = np.trapz(psi, dx=dt, axis=0)
-    integral_sq = np.trapz(psi ** 2, dx=dt, axis=0)
+    integral = np.trapz(psi, dx=dt)
+    integral_sq = np.trapz(psi ** 2, dx=dt)
 
     return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq)
 

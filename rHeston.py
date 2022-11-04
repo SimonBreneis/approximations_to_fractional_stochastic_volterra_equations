@@ -4,21 +4,21 @@ import rHestonBackbone
 import psutil
 
 
-def adams_scheme(a, F, H, T, N_Riccati):
+def adams_scheme(F, H, T, N_Riccati):
     """
     Applies the Adams scheme to solve h(t) = int_0^t K(t - s) F(s, h(s)) ds.
-    :param a: Argument of the characteristic function (assumed to be a numpy array)
     :param H: Hurst parameter
     :param F: Right-hand side (time-dependent!)
     :param T: Final time
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
     :return: The solution h
     """
+    dim = len(F(0, 0))
     available_memory = np.sqrt(psutil.virtual_memory().available)
-    necessary_memory = np.sqrt(5 * len(a)) * np.sqrt(N_Riccati) * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
+    necessary_memory = np.sqrt(5 * dim) * np.sqrt(N_Riccati) * np.sqrt(np.array([0.], dtype=np.cdouble).nbytes)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
-                          f'{len(a)} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
+                          f'{dim} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
                           f'while only {available_memory}**2 bytes are available.')
 
     dt = T / N_Riccati
@@ -29,8 +29,8 @@ def adams_scheme(a, F, H, T, N_Riccati):
     v_4 = coefficient * (v_1[:-1] - (np.arange(N_Riccati) - H - 0.5) * v_2[1:])
     v_5 = dt ** (H + 0.5) / gamma(H + 1.5) * (v_2[N_Riccati:0:-1] - v_2[N_Riccati - 1::-1])
 
-    h = np.zeros(shape=(len(a), N_Riccati + 1), dtype=np.cdouble)
-    F_vec = np.zeros(shape=(len(a), N_Riccati), dtype=np.cdouble)
+    h = np.zeros(shape=(dim, N_Riccati + 1), dtype=np.cdouble)
+    F_vec = np.zeros(shape=(dim, N_Riccati), dtype=np.cdouble)
     F_vec[:, 0] = F(0, h[:, 0])
     h[:, 1] = F_vec[:, 0] * v_4[0] + coefficient * F(0, F_vec[:, 0] * v_5[-1])
     for k in range(2, N_Riccati + 1):
@@ -41,10 +41,10 @@ def adams_scheme(a, F, H, T, N_Riccati):
     return h
 
 
-def cf_log_price(a, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
+def cf_log_price(z, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
     """
     Gives the characteristic function of the log-price in the rough Heston model.
-    :param a: Argument of the characteristic function (assumed to be a numpy array)
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
     :param S_0: Initial stock price
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -56,23 +56,25 @@ def cf_log_price(a, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
     :return: The characteristic function
     """
-    a_ = -0.5 * (a + np.complex(0, 1)) * a
-    b_ = np.complex(0, 1) * rho * nu * a - lambda_
-    c_ = nu * nu / 2
+    z = complex(0, 1) * z
+    a = nu * nu / 2
+    b = rho * nu * z - lambda_
+    c = (z - 1) * z / 2
 
     def F(t, x):
-        return a_ + (b_ + c_ * x) * x
+        return c + (b + a * x) * x
 
-    h = adams_scheme(a=a, F=F, H=H, T=T, N_Riccati=N_Riccati)
-    integral = np.trapz(h, dx=T / N_Riccati)
-    fractional_integral = -np.trapz(h, x=np.linspace(T, 0, N_Riccati+1) ** (0.5 - H) / gamma(1.5-H), axis=1)
-    return np.exp(complex(0, 1) * a * np.log(S_0) + theta * integral + V_0 * fractional_integral)
+    psi = adams_scheme(F=F, H=H, T=T, N_Riccati=N_Riccati)
+    integral = np.trapz(psi, dx=T / N_Riccati)
+    integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
+
+    return np.exp(z * np.log(S_0) + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq)
 
 
-def cf_avg_log_price(a, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
+def cf_avg_log_price(z, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
     """
     Gives the characteristic function of the average (on [0, T]) log-price in the rough Heston model.
-    :param a: Argument of the characteristic function (assumed to be a numpy array)
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
     :param S_0: Initial stock price
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
@@ -84,26 +86,26 @@ def cf_avg_log_price(a, S_0, H, lambda_, rho, nu, theta, V_0, T, N_Riccati=200):
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
     :return: The characteristic function
     """
-    a = complex(0, 1) * a
+    z = complex(0, 1) * z
     dt = T / N_Riccati
-    a_sq = a ** 2
+    a_sq = z ** 2
 
     def F(t, x):
-        return (0.5 * t ** 2) * a_sq - (0.5 * t) * a + ((rho * nu * t) * a - lambda_ + (nu ** 2 / 2) * x) * x
+        return (0.5 * t ** 2) * a_sq - (0.5 * t) * z + ((rho * nu * t) * z - lambda_ + (nu ** 2 / 2) * x) * x
 
-    h = adams_scheme(a=a, F=F, H=H, T=T, N_Riccati=N_Riccati)
+    h = adams_scheme(F=F, H=H, T=T, N_Riccati=N_Riccati)
 
     integral = np.trapz(h, dx=dt)
     integral_squared = np.trapz(h ** 2, dx=dt)
     integral_time = np.trapz(h * np.linspace(0, 1, N_Riccati + 1), dx=dt)
-    return np.exp(a * np.log(S_0) + T * V_0 * (a / 6 - 0.25) * a + (theta - lambda_ * V_0) * integral
-                  + nu ** 2 * V_0 / 2 * integral_squared + nu * rho * V_0 * integral_time * a)
+    return np.exp(z * np.log(S_0) + T * V_0 * (z / 6 - 0.25) * z + (theta - lambda_ * V_0) * integral
+                  + nu ** 2 * V_0 / 2 * integral_squared + nu * rho * V_0 * integral_time * z)
 
 
-def cf_avg_vol(a, H, lambda_, nu, theta, V_0, T, N_Riccati=200):
+def cf_avg_vol(z, H, lambda_, nu, theta, V_0, T, N_Riccati=200):
     """
     Gives the characteristic function of the average (on [0, T]) volatility in the rough Heston model.
-    :param a: Argument of the characteristic function (assumed to be a numpy array)
+    :param z: Argument of the characteristic function (assumed to be a numpy array)
     :param H: Hurst parameter
     :param lambda_: Mean-reversion speed
     :param nu: Volatility of volatility
@@ -113,17 +115,17 @@ def cf_avg_vol(a, H, lambda_, nu, theta, V_0, T, N_Riccati=200):
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
     :return: The characteristic function
     """
-    a = complex(0, 1) * a
+    z = complex(0, 1) * z
     dt = T / N_Riccati
 
     def F(t, x):
-        return a / T + (-lambda_ + (nu ** 2 / 2) * x) * x
+        return z / T + (-lambda_ + (nu ** 2 / 2) * x) * x
 
-    h = adams_scheme(a=a, F=F, H=H, T=T, N_Riccati=N_Riccati)
+    h = adams_scheme(F=F, H=H, T=T, N_Riccati=N_Riccati)
 
     integral = np.trapz(h, dx=dt)
     integral_squared = np.trapz(h ** 2, dx=dt)
-    return np.exp(a * V_0 + (theta - lambda_ * V_0) * integral + nu ** 2 * V_0 / 2 * integral_squared)
+    return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + nu ** 2 * V_0 / 2 * integral_squared)
 
 
 def iv_eur_call(S_0, K, H, lambda_, rho, nu, theta, V_0, T, rel_tol=1e-03, verbose=0):

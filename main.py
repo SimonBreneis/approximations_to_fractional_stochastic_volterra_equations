@@ -20,8 +20,20 @@ a_2 = np.array([0.30499035, 0.28386567, 0.26116804, 0.23651014, 0.20934235,
        0.12689853])
 print(np.amax(np.abs(a_1 - a_2) / a_1))
 
+a_1 = np.array([0.30495498, 0.28382563, 0.26112537, 0.23646876, 0.2093087 ,
+       0.17889441, 0.14470716, 0.11296505, 0.10698657, 0.11573642,
+       0.12682933])
+a_2 = np.array([0.30496294, 0.28383166, 0.26112978, 0.2364719 , 0.20931106,
+       0.17889678, 0.14471142, 0.11297331, 0.10698504, 0.11573126,
+       0.12682308])
+a_3 = np.array([0.30496339, 0.28383204, 0.26113008, 0.23647212, 0.20931119,
+       0.17889683, 0.14471143, 0.11297398, 0.10698509, 0.11573127,
+       0.12682317])
+print(np.amax(np.abs(a_1 - a_2) / a_1))
+print(np.amax(np.abs(a_2 - a_3) / a_2))
+
 tic = time.perf_counter()
-true_smile = rHestonMarkov.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-05, N=3, verbose=0)
+true_smile = rHestonMarkov.iv_eur_call(S_0=1, K=np.exp(np.linspace(-0.5, 0.3, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, N=3, rel_tol=1e-05, verbose=0)
 print(time.perf_counter() - tic)
 print((true_smile,))
 true_prices = rHestonMarkov.price_geom_asian_call(S_0=1, K=np.exp(np.linspace(-0.2, 0.1, 11)), H=0.1, lambda_=0.3, nu=0.3, rho=-0.7, theta=0.02, V_0=0.02, T=0.5, rel_tol=1e-04, N=3)
