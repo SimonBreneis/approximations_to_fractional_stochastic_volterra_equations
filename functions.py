@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 import scipy
 from scipy import stats, optimize
 import ComputationalFinance as cf
-import rHeston
-import rHestonMarkov
+import rHestonFourier
 import RoughKernel as rk
 import rHestonMarkovSamplePaths as rHestonSP
 from os.path import exists
@@ -344,9 +343,10 @@ def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
                     return true_smile
     print('Actually compute it')
     try:
-        result = rHeston.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                     rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                     T=params['T'], rel_tol=params['rel_tol'], verbose=verbose)
+        result = rHestonFourier.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                            rho=params['rho'], nu=params['nu'], theta=params['theta'],
+                                            V_0=params['V_0'], T=params['T'], rel_tol=params['rel_tol'],
+                                            verbose=verbose)
     except RuntimeError:
         print('Did not converge in given time')
         if isinstance(params['T'], np.ndarray):
@@ -396,10 +396,10 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     if load and exists(filename):
         return np.load(filename)
     try:
-        result = rHestonMarkov.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                           rho=params['rho'], nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                           T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
-                                           weights=weights, verbose=verbose)
+        result = rHestonFourier.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                            rho=params['rho'], nu=params['nu'], theta=params['theta'],
+                                            V_0=params['V_0'], T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode,
+                                            nodes=nodes, weights=weights, verbose=verbose)
     except RuntimeError:
         print('Did not converge in given time')
         if isinstance(params['T'], np.ndarray):
