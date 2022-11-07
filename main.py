@@ -38,8 +38,10 @@ mark_prices = np.array([0.18277981, 0.17494436, 0.16707057, 0.1591631 , 0.151227
        0.03108728, 0.02543945, 0.0203247 , 0.01581317, 0.0119602 ,
        0.00879218, 0.00629392, 0.00440521, 0.00303114, 0.00206221,
        0.00139421])
+nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='european')
 p, l, u = rHestonMarkovSamplePaths.price_geom_asian_call(K=np.exp(k), lambda_=lambda_, rho=rho, nu=nu, theta=theta,
-                                                           V_0=V_0, S_0=S_0, T=T, H=H, N=N, m=10000, N_time=100)
+                                                         V_0=V_0, S_0=S_0, T=T, m=100000, N_time=200, nodes=nodes,
+                                                         weights=weights, euler=False)
 
 print(np.amax(np.abs(mark_prices - true_prices) / true_prices))
 plt.plot(k, true_prices, 'k-')
@@ -52,9 +54,9 @@ plt.show()
 params = {'S': 1., 'K': np.exp(np.linspace(-0.25, 0.15, 71)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
                      'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-04}
 
-compute_rHeston_samples(params=params, Ns=np.array([2]), N_times=2 ** np.arange(9), modes=['european'], vol_behaviours=['mackevicius antithetic'], m=1000000, sample_paths=True, recompute=False, vol_only=True)
+compute_rHeston_samples(params=params, Ns=np.array([2]), N_times=2 ** np.arange(9), modes=['european'], m=1000000, sample_paths=True, recompute=False, vol_only=True)
 
 
 params = {'S': 1., 'K': np.exp(np.linspace(-0.15, 0.1, 26)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
                      'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-04}
-compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(9), modes=['european'], vol_behaviours=['mackevicius antithetic'], option='geometric asian call')
+compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=2 ** np.arange(9), modes=['european'], option='geometric asian call')
