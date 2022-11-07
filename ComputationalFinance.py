@@ -208,8 +208,7 @@ def iv_eur_call_MC(S_0, K, T, samples, antithetic=False):
     :param S_0: The initial stock price
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
-    :param samples: The final stock prices. Either an array of stock prices, or a list of two arrays. If it is a list,
-        it is assumed that these two arrays correspond to antithetic variates
+    :param samples: The final stock prices
     :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
@@ -228,9 +227,8 @@ def iv_eur_call_MC(S_0, K, T, samples, antithetic=False):
 
 def iv_eur_put_MC(S_0, K, T, samples, antithetic=False):
     """
-    Computes the volatility smile for a European call option given samples of final stock prices.
-    :param samples: The final stock prices. Either an array of stock prices, or a list of two arrays. If it is a list,
-        it is assumed that these two arrays correspond to antithetic variates
+    Computes the volatility smile for a European put option given samples of final stock prices.
+    :param samples: The final stock prices
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param S_0: The initial stock price
@@ -248,6 +246,42 @@ def iv_eur_put_MC(S_0, K, T, samples, antithetic=False):
     implied_volatility_lower = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate - price_stat)
     implied_volatility_upper = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
+
+
+def price_geom_asian_call_MC(K, samples, antithetic=False):
+    """
+    Computes the prices for geometric Asian call options given samples of the stock price processes.
+    :param K: The strike prices of the call options
+    :param samples: The stock price paths
+    :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
+    :return: Three numpy arrays: The prices, and lower and upper confidence interval bounds
+    """
+    geom_avg_prices = np.exp(np.trapz(np.log(samples), dx=1 / (samples.shape[-1] - 1), axis=-1))
+    if antithetic:
+        payoffs = 0.5 * (payoff_call(S=geom_avg_prices[:len(geom_avg_prices) // 2], K=K)
+                         + payoff_call(S=geom_avg_prices[len(geom_avg_prices) // 2:], K=K))
+    else:
+        payoffs = payoff_call(S=geom_avg_prices, K=K)
+    price_estimate, price_stat = MC(payoffs)
+    return price_estimate, price_estimate - price_stat, price_estimate + price_stat
+
+
+def price_avg_vol_call_MC(K, samples, antithetic=False):
+    """
+    Computes the prices for call options on the average volatility given samples of the stock price processes.
+    :param K: The strike prices of the call options
+    :param samples: The volatility paths
+    :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
+    :return: Three numpy arrays: The prices, and lower and upper confidence interval bounds
+    """
+    avg_vol = np.trapz(samples, dx=1 / (samples.shape[-1] - 1), axis=-1)
+    if antithetic:
+        payoffs = 0.5 * (payoff_call(S=avg_vol[:len(avg_vol) // 2], K=K)
+                         + payoff_call(S=avg_vol[len(avg_vol) // 2:], K=K))
+    else:
+        payoffs = payoff_call(S=avg_vol, K=K)
+    price_estimate, price_stat = MC(payoffs)
+    return price_estimate, price_estimate - price_stat, price_estimate + price_stat
 
 
 def fourier_payoff_call_put(K, u):

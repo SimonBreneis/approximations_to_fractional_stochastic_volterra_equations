@@ -652,6 +652,9 @@ def sample_values_sticky(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000
         nodes = np.array([nodes[0], 1])
         weights = np.array([weights[0], 0])
         N = 2
+        one_node = True
+    else:
+        one_node = False
 
     V_comp = np.zeros((m, N))
     V_comp[:, 0] = V_0 / weights[0]
@@ -698,6 +701,9 @@ def sample_values_sticky(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000
             S, V_comp, sq_V = sticky(S_=S, sq_V_=sq_V, V_comp_=V_comp)
 
     if sample_paths:
+        V_comp = V_comp.transpose((1, 0, 2))
+        if one_node:
+            V_comp = V_comp[0, :, :]
         if return_times is not None:
             times = np.linspace(0, T, N_time + 1)
             S = scipy.interpolate.interp1d(x=times, y=S)(return_times)
@@ -707,8 +713,9 @@ def sample_values_sticky(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000
     return S
 
 
-def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m=1000, N_time=1000, mode="best",
-                              nodes=None, weights=None, sample_paths=False, return_times=None, vol_behaviour=None):
+def sample_values_mackevicius(lambda_, rho, nu, theta, V_0, T, S_0, H=None, N=None, m=1000, N_time=1000, mode="best",
+                              nodes=None, weights=None, sample_paths=False, return_times=None, vol_behaviour=None,
+                              vol_only=False):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model, using a combination of
     Mackevicius and Alfonsi.
@@ -735,6 +742,7 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
     :param vol_behaviour: Is of the form 'mackevicius x y z', where x is either random (for randomly deciding which part
         of the SDE splitting to solve first) or sequential (for splitting non-randomly), where y is either antithetic
         (for using antithetic random variables in MC) or standard (for not using antithetic random variables in MC)
+    :param vol_only: If True, simulates only the volatility process, not the stock price process
     :return: Numpy array of the final stock prices
     """
     random_splitting = 'random' in vol_behaviour
@@ -748,9 +756,12 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
         nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
     N = len(nodes)
     if N == 1:
-        nodes = np.array([nodes[0], 1])
+        nodes = np.array([nodes[0], 2 * nodes[0] + 1])
         weights = np.array([weights[0], 0])
         N = 2
+        one_node = True
+    else:
+        one_node = False
 
     V_comp = np.zeros((N, m))
     V_comp[0, :] = V_0 / weights[0]
@@ -823,29 +834,46 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
         S_new = S_ + rho / nu * (drift_SDE_step_W + (dt / 2 * nodes[0]) * dY[0, :] + fact_1 * (weights @ dY)
                                  + (V_new[0, :] - V_[0, :]))
         return S_new, V_new
-
-    if random_splitting:
-        def step_SV(S_, V_):
-            rv = np.random.uniform(0, 1, len(S_))  # surprisingly faster than np.random.binomial(1, 0.5, len(S))
-            ind_1 = rv < 0.5
-            ind_2 = rv >= 0.5
-            S_[ind_1], V_[:, ind_1] = SDE_step_B(*SDE_step_W(S_[ind_1], V_[:, ind_1]))
-            S_[ind_2], V_[:, ind_2] = SDE_step_W(*SDE_step_B(S_[ind_2], V_[:, ind_2]))
-            return S_, V_
+    if vol_only:
+        def step_SV(V_):
+            return step_V(V_)
     else:
-        def step_SV(S_, V_):
-            return SDE_step_B(*SDE_step_W(*SDE_step_B(S_, V_)))
+        if random_splitting:
+            def step_SV(S_, V_):
+                rv = np.random.uniform(0, 1, len(S_))  # surprisingly faster than np.random.binomial(1, 0.5, len(S))
+                ind_1 = rv < 0.5
+                ind_2 = rv >= 0.5
+                S_[ind_1], V_[:, ind_1] = SDE_step_B(*SDE_step_W(S_[ind_1], V_[:, ind_1]))
+                S_[ind_2], V_[:, ind_2] = SDE_step_W(*SDE_step_B(S_[ind_2], V_[:, ind_2]))
+                return S_, V_
+        else:
+            def step_SV(S_, V_):
+                return SDE_step_B(*SDE_step_W(*SDE_step_B(S_, V_)))
 
     if sample_paths:
-        log_S = np.empty((m, N_time + 1))
         V_comp_1 = np.empty((N, m, N_time + 1))
         V_comp_1[:, :, 0] = V_comp
         V_comp = V_comp_1
-        log_S[:, 0] = np.log(S_0)
-        for i in range(N_time):
-            log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
-        V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
-        S = np.exp(log_S)
+        if vol_only:
+            for i in range(N_time):
+                print(f'Step {i} of {N_time}')
+                V_comp[:, :, i + 1] = step_SV(V_comp[:, :, i])
+            V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
+            if one_node:
+                V_comp = V_comp[0, :, :]
+            if return_times is not None:
+                times = np.linspace(0, T, N_time+1)
+                V = scipy.interpolate.interp1d(x=times, y=V)(return_times)
+                V_comp = scipy.interpolate.interp1d(x=times, y=V_comp)(return_times)
+            return np.sqrt(V), V_comp
+        else:
+            log_S = np.empty((m, N_time + 1))
+            log_S[:, 0] = np.log(S_0)
+            for i in range(N_time):
+                print(f'Step {i} of {N_time}')
+                log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
+            V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
+            S = np.exp(log_S)
     else:
         log_S = np.ones(m) * np.log(S_0)
         for i in range(N_time):
@@ -855,6 +883,8 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
             S = np.exp(log_S)
 
     if sample_paths:
+        if one_node:
+            V_comp = V_comp[0, :, :]
         if return_times is not None:
             times = np.linspace(0, T, N_time+1)
             S = scipy.interpolate.interp1d(x=times, y=S)(return_times)
@@ -864,8 +894,8 @@ def sample_values_mackevicius(H, lambda_, rho, nu, theta, V_0, T, S_0, N=None, m
     return S
 
 
-def call(K, lambda_, rho, nu, theta, V_0, H, N, S_0, T, m=1000, N_time=1000, WB=None, mode='best',
-         vol_behaviour='sticky'):
+def iv_eur_call(K, lambda_, rho, nu, theta, V_0, S_0, T, H=None, N=None, nodes=None, weights=None, m=1000, N_time=1000,
+                WB=None, mode='european', vol_behaviour='mackevicius antithetic'):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
     Uses the implicit Euler scheme.
@@ -879,35 +909,83 @@ def call(K, lambda_, rho, nu, theta, V_0, H, N, S_0, T, m=1000, N_time=1000, WB=
     :param N: Number of quadrature points
     :param S_0: Initial stock price
     :param T: Final time/Time of maturity
+    :param nodes: The nodes of the Markovian approximation
+    :param weights: The weights of the Markovian approximation
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param N_time: Number of time steps used in simulation
     :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
         parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
         of these three options that seems most suitable
-    :param vol_behaviour: The behaviour of the volatility at 0. The following options are possible:
-        - sticky: If V becomes negative, resets V to 0 without resetting the components of V
-        - constant: Uses constant volatility V_0, as in the Black-Scholes model
-        - mean reversion: If V becomes negative, inserts as much fictitious time as needed until the components have
-            reverted enough to ensure positive V. The fictitious time is only for the dt component, as the dW and dB
-            components always have a factor containing V in front, which is interpreted to be 0 on these fictitious time
-            intervals
-        - hyperplane reset: If V becomes negative, resets the components just enough to ensure V=0. The components are
-            reset by adding the correct multiple of the weights array
-        - hyperplane reflection: If V becomes negative, resets the components by twice as much as in hyperplane reset.
-            This ensures that V changes sign and does not stay 0
-        - adaptive: If V becomes negative, subdivides the last interval into two intervals. This is continued
-            recursively until V is non-negative, but at most 5 consecutive times (i.e. an interval is divided into at
-            most 32 intervals)
-        - multiple time scales: Solves for the components on different time scales corresponding to their mean
-            reversions. If V becomes negative, applies the hyperplane reset method
-        - split kernel: Uses the invariant measure of the high mean-reversion components instead of actually simulating
-            them. In practice, this is essentially equivalent to a certain smoothing of the square root. If V becomes
-            negative, applies the hyperplane reset method
-        - ninomiya victoir: This is actually not an implicit Euler method, but the Ninomiya-Victoir method. If the
-            volatility becomes negative, applies the hyperplane reset method
+    :param vol_behaviour: How the volatility process should be simulated
     return: The prices of the call option for the various strike prices in K
     """
     samples_ = sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, m=m, S_0=S_0,
-                             N_time=N_time, WB=WB, mode=mode, vol_behaviour=vol_behaviour)
+                             N_time=N_time, WB=WB, mode=mode, vol_behaviour=vol_behaviour, nodes=nodes, weights=weights)
     return cf.iv_eur_call_MC(S_0=S_0, K=K, T=T, samples=samples_)
+
+
+def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, H=None, N=None, nodes=None, weights=None, m=1000,
+                          N_time=1000, WB=None, mode='european', vol_behaviour='mackevicius antithetic'):
+    """
+    Gives the price of a European call option in the approximated, Markovian rough Heston model.
+    Uses the implicit Euler scheme.
+    :param K: Strike prices, assumed to be a numpy array
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param H: Hurst parameter
+    :param N: Number of quadrature points
+    :param S_0: Initial stock price
+    :param T: Final time/Time of maturity
+    :param nodes: The nodes of the Markovian approximation
+    :param weights: The weights of the Markovian approximation
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param N_time: Number of time steps used in simulation
+    :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param vol_behaviour: How the volatility process should be simulated
+    return: The prices of the call option for the various strike prices in K
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H, N, np.array([T / 2, T]), mode)
+    samples_ = sample_values(H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, N=N, m=m, S_0=S_0,
+                             N_time=N_time, WB=WB, mode=mode, vol_behaviour=vol_behaviour, nodes=nodes, weights=weights,
+                             sample_paths=True)[0]
+    return cf.price_geom_asian_call_MC(K=K, samples=samples_, antithetic='antithetic' in vol_behaviour)
+
+
+def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, H=None, N=None, nodes=None, weights=None, m=1000, N_time=1000,
+                       mode='european', vol_behaviour='mackevicius antithetic'):
+    """
+    Gives the price of a European call option in the approximated, Markovian rough Heston model.
+    Uses the implicit Euler scheme.
+    :param K: Strike prices, assumed to be a numpy array
+    :param lambda_: Mean-reversion speed
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param H: Hurst parameter
+    :param N: Number of quadrature points
+    :param T: Final time/Time of maturity
+    :param nodes: The nodes of the Markovian approximation
+    :param weights: The weights of the Markovian approximation
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param N_time: Number of time steps used in simulation
+    :param WB: Brownian increments. Has shape (2, m, N_time). First components are the dW, second the dB
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param vol_behaviour: How the volatility process should be simulated
+    return: The prices of the call option for the various strike prices in K
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H, N, T, mode)
+    samples_ = sample_values_mackevicius(H=H, lambda_=lambda_, rho=-0.5, nu=nu, theta=theta, V_0=V_0, T=T, N=N, m=m,
+                                         S_0=1, N_time=N_time, mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
+                                         weights=weights, sample_paths=True, vol_only=True)[0]
+    return cf.price_avg_vol_call_MC(K=K, samples=samples_, antithetic='antithetic' in vol_behaviour)

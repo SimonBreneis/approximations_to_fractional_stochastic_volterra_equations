@@ -236,12 +236,12 @@ def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, opti
             if np.sum(np.isnan(iv)) == 0:
                 iv_approx = compute(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
                 error_Riccati = np.amax(np.abs(iv_approx - iv) / iv)
-                if not np.isnan(error_Riccati) and error_Riccati < eps / 10 and np.sum(np.isnan(iv_approx)) == 0:
+                if not np.isnan(error_Riccati) and error_Riccati < eps / 5 and np.sum(np.isnan(iv_approx)) == 0:
                     N_Riccati = int(N_Riccati / 1.8)
 
                 iv_approx = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier // 2)
                 error_Fourier = np.amax(np.abs(iv_approx - iv) / iv)
-                if not np.isnan(error_Fourier) and error_Fourier < eps / 10 and np.sum(np.isnan(iv_approx)) == 0:
+                if not np.isnan(error_Fourier) and error_Fourier < eps / 5 and np.sum(np.isnan(iv_approx)) == 0:
                     N_Fourier = N_Fourier // 2
             else:
                 error_Fourier, error_Riccati = np.nan, np.nan

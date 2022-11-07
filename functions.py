@@ -254,9 +254,12 @@ def get_filename(kind, N=None, mode=None, vol_behaviour=None, N_time=None, param
     V_0 = params['V_0']
     T = params['T']
     K = (np.log(np.amin(params['K'])), np.log(np.amax(params['K'])), len(params['K']))
+    # K = (-0.25, 0.15, 81)
     K_string = f'K=({K[0]:.4}, {K[1]:.4}, {K[2]})'
-    if isinstance(T, np.ndarray):
+    if isinstance(T, np.ndarray) and len(T) > 1:
         T_string = f'T=({np.amin(T):.4}, {np.amax(T):.4}, {len(T)})'
+    elif isinstance(T, np.ndarray):
+        T_string = f'T={T[0]:.4}'
     else:
         T_string = f'T={T:.4}'
     if truth:
@@ -302,85 +305,27 @@ def plot_log_linear_regression(x, y, col, lab, line_style='--', offset=0):
     return power, constant
 
 
-def rHeston_samples(params, N=-1, N_time=-1, WB=None, m=1, mode=None, vol_behaviour=None, nodes=None, weights=None,
-                    sample_paths=False, return_times=None):
+def rHeston_samples(params, N=0, N_time=-1, WB=None, m=1, mode=None, vol_behaviour=None, nodes=None, weights=None,
+                    sample_paths=False, return_times=None, vol_only=False):
     """
     Shorthand for rHestonSP.sample_values.
     """
     params = rHeston_params(params)
+    if vol_only and 'mackevicius' in vol_behaviour:
+        return rHestonSP.sample_values_mackevicius(H=params['H'], lambda_=params['lambda'], rho=params['rho'],
+                                                   nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                                   T=params['T'], N=N, S_0=params['S'], N_time=N_time, m=m, mode=mode,
+                                                   vol_behaviour=vol_behaviour, nodes=nodes, weights=weights,
+                                                   sample_paths=sample_paths, return_times=return_times, vol_only=True)
     return rHestonSP.sample_values(H=params['H'], lambda_=params['lambda'], rho=params['rho'], nu=params['nu'],
                                    theta=params['theta'], V_0=params['V_0'], T=params['T'], N=N, S_0=params['S'],
                                    N_time=N_time, WB=WB, m=m, mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
                                    weights=weights, sample_paths=sample_paths, return_times=return_times)
 
 
-def rHeston_iv_eur_call(params, load=True, save=False, verbose=0):
+def rHestonFourier_iv_eur_call(params, N=0, mode=None, nodes=None, weights=None, load=True, save=False, verbose=0):
     """
-    Shorthand for rHeston.iv_eur_call.
-    :param params: Parameters of the rough Heston model
-    :param load: If True, loads the smile instead of computing it, if it is saved
-    :param save: If True, saves the smile after computing it
-    :param verbose: Determines how many intermediate results are printed to the console
-    :return: The smile
-    """
-    filename = get_filename(kind='true', params=params, truth=True, markov=False)
-    print(filename)
-    if load:
-        if exists(filename):
-            return np.load(filename)
-        if not isinstance(params['T'], np.ndarray):
-            T_vec = np.linspace(0.04, 1., 25)
-            if np.amin(np.abs(params['T'] - T_vec)) < 1e-06:
-                min_ind = np.argmin(np.abs(params['T'] - T_vec))
-                alt_params = params.copy()
-                alt_params['T'] = T_vec
-                alt_filename = get_filename(kind='true', params=alt_params, truth=True, markov=False)
-                if exists(alt_filename):
-                    true_smile = np.load(alt_filename)
-                    true_smile = true_smile[min_ind, :]
-                    if save:
-                        np.save(filename, true_smile)
-                    return true_smile
-    print('Actually compute it')
-    try:
-        result = rHestonFourier.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                            rho=params['rho'], nu=params['nu'], theta=params['theta'],
-                                            V_0=params['V_0'], T=params['T'], rel_tol=params['rel_tol'],
-                                            verbose=verbose)
-    except RuntimeError:
-        print('Did not converge in given time')
-        if isinstance(params['T'], np.ndarray):
-            return np.empty((len(params['T']), len(params['K'])))
-        else:
-            return np.empty(len(params['K']))
-    if save:
-        np.save(filename, result)
-    return result
-
-
-def rHeston_iv_eur_call_parallelized(params, num_threads=5, verbose=0):
-    """
-    Parallelized version of rHeston_iv_eur_call.
-    :param params: Parameters of the rough Heston model
-    :param num_threads: Number of parallel processes
-    :param verbose: Determines how many intermediate results are printed to the console
-    :return: The smiles
-    """
-    params = rHeston_params_grid(params)
-    H, lambda_, rho, nu, theta, V_0 = flat_mesh(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                params['theta'], params['V_0'])
-    dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
-                     'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
-                    for i in range(len(H))]
-    with mp.Pool(processes=num_threads) as pool:
-        result = pool.starmap(rHeston_iv_eur_call, zip(dictionaries, itertools.repeat(True), itertools.repeat(True),
-                                                       itertools.repeat(verbose)))
-    return result
-
-
-def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None, load=True, save=False, verbose=0):
-    """
-    Shorthand for rHestonMarkov.iv_eur_call.
+    Shorthand for rHestonFourier.iv_eur_call.
     :param params: Parameters of the rough Heston model
     :param N: Number of nodes
     :param mode: The mode of the quadrature rule
@@ -391,7 +336,9 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     :param verbose: Determines how many intermediate results are printed to the console
     :return: The smile
     """
-    filename = get_filename(kind='Markov', params=params, truth=False, markov=True, N=N, mode=mode)
+    is_true = N == 0 and (nodes is None or weights is None)
+    filename = get_filename(kind='true' if is_true else 'Markov', params=params, truth=is_true, markov=not is_true, N=N,
+                            mode=mode)
     print(filename)
     if load and exists(filename):
         return np.load(filename)
@@ -411,26 +358,76 @@ def rHestonMarkov_iv_eur_call(params, N=-1, mode=None, nodes=None, weights=None,
     return result
 
 
-def rHestonMarkov_iv_eur_call_parallelized(params, Ns, modes, num_threads=15, verbose=0):
+def rHestonFourier_price_geom_asian_call(params, N=0, mode=None, nodes=None, weights=None, load=True, save=False,
+                                         verbose=0):
     """
-    Parallelized version of rHestonMarkov_iv_eur_call.
+    Shorthand for rHestonFourier.price_geom_asian_call.
     :param params: Parameters of the rough Heston model
-    :param Ns: Numpy array of N values
-    :param modes: List of modes of the quadrature rule
-    :param num_threads: Number of parallel processes
-    :param verbose: Determines the number of intermediary results printed to the console
-    :return: The smiles
+    :param N: Number of nodes
+    :param mode: The mode of the quadrature rule
+    :param nodes: The nodes of the quadrature rule
+    :param weights: The weights of the quadrature rule
+    :param load: If True, loads the smile instead of computing it, if it is saved
+    :param save: If True, saves the smile after computing it
+    :param verbose: Determines how many intermediate results are printed to the console
+    :return: The smile
     """
-    params = rHeston_params_grid(params)
-    H, lambda_, rho, nu, theta, V_0, N, mode = flat_mesh(params['H'], params['lambda'], params['rho'], params['nu'],
-                                                         params['theta'], params['V_0'], Ns, modes)
-    dictionaries = [{'S': params['S'], 'K': params['K'], 'H': H[i], 'T': params['T'], 'lambda': lambda_[i],
-                     'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i], 'rel_tol': params['rel_tol']}
-                    for i in range(len(H))]
-    with mp.Pool(processes=num_threads) as pool:
-        result = pool.starmap(rHestonMarkov_iv_eur_call, zip(dictionaries, N, mode, itertools.repeat(None),
-                                                             itertools.repeat(None), itertools.repeat(True),
-                                                             itertools.repeat(True), itertools.repeat(verbose)))
+    is_true = N == 0 and (nodes is None or weights is None)
+    filename = get_filename(kind='true' if is_true else 'Markov', params=params, truth=is_true, markov=not is_true, N=N,
+                            mode=mode)
+    print(filename)
+    if load and exists(filename):
+        return np.load(filename)
+    try:
+        result = rHestonFourier.price_geom_asian_call(S_0=params['S'], K=params['K'], H=params['H'],
+                                                      lambda_=params['lambda'], rho=params['rho'], nu=params['nu'],
+                                                      theta=params['theta'], V_0=params['V_0'], T=params['T'],
+                                                      rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
+                                                      weights=weights, verbose=verbose)
+    except RuntimeError:
+        print('Did not converge in given time')
+        if isinstance(params['T'], np.ndarray):
+            return np.empty((len(params['T']), len(params['K'])))
+        else:
+            return np.empty(len(params['K']))
+    if save:
+        np.save(filename, result)
+    return result
+
+
+def rHestonFourier_price_avg_vol_call(params, N=0, mode=None, nodes=None, weights=None, load=True, save=False,
+                                      verbose=0):
+    """
+    Shorthand for rHestonFourier.price_avg_vol_call.
+    :param params: Parameters of the rough Heston model
+    :param N: Number of nodes
+    :param mode: The mode of the quadrature rule
+    :param nodes: The nodes of the quadrature rule
+    :param weights: The weights of the quadrature rule
+    :param load: If True, loads the smile instead of computing it, if it is saved
+    :param save: If True, saves the smile after computing it
+    :param verbose: Determines how many intermediate results are printed to the console
+    :return: The smile
+    """
+    is_true = N == 0 and (nodes is None or weights is None)
+    filename = get_filename(kind='true vol' if is_true else 'Markov vol', params=params, truth=is_true,
+                            markov=not is_true, N=N, mode=mode)
+    print(filename)
+    if load and exists(filename):
+        return np.load(filename)
+    try:
+        result = rHestonFourier.price_avg_vol_call(K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                                   nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                                   T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode,
+                                                   nodes=nodes, weights=weights, verbose=verbose)
+    except RuntimeError:
+        print('Did not converge in given time')
+        if isinstance(params['T'], np.ndarray):
+            return np.empty((len(params['T']), len(params['K'])))
+        else:
+            return np.empty(len(params['K']))
+    if save:
+        np.save(filename, result)
     return result
 
 
@@ -623,14 +620,14 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
     """
     params = rHeston_params(params)
     Ns = set_array_default(Ns, np.arange(1, 11))
-    modes = set_list_default(modes, ['paper', 'optimized', 'european old', 'european'])
+    modes = set_list_default(modes, ['paper', 'optimized', 'european'])
 
     kernel_errs = np.empty((len(modes), len(Ns)))
     largest_nodes = np.empty((len(modes), len(Ns)))
     smile_errs = np.empty((len(modes), len(Ns)))
 
     if true_smile is None:
-        true_smile = rHeston_iv_eur_call(params=params, load=load, save=save, verbose=verbose)
+        true_smile = rHestonFourier_iv_eur_call(params=params, load=load, save=save, verbose=verbose)
 
     if isinstance(params['T'], np.ndarray):
         approx_smiles = np.empty((len(modes), len(Ns), len(params['T']), len(params['K'])))
@@ -642,8 +639,8 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
     for i in range(len(Ns)):
         for j in range(len(modes)):
             nodes, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
-            approx_smiles[j, i] = rHestonMarkov_iv_eur_call(params=params, N=Ns[i], mode=modes[j], nodes=nodes,
-                                                            weights=weights, verbose=verbose, load=load, save=save)
+            approx_smiles[j, i] = rHestonFourier_iv_eur_call(params=params, N=Ns[i], mode=modes[j], nodes=nodes,
+                                                             weights=weights, verbose=verbose, load=load, save=save)
             largest_nodes[j, i] = np.amax(nodes)
             kernel_errs[j, i] = np.amax(np.sqrt(rk.error(H=params['H'], nodes=nodes, weights=weights, T=params['T'],
                                                          output='error')) / ker_norm)
@@ -871,10 +868,10 @@ def plot_rHeston_sample_path(params, N=2, N_time=1024, mode='european', vol_beha
     return S, V, V_components, durations
 
 
-def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None, vol_behaviours=None,
-                                       recompute=False, sample_paths=False, return_times=None, m=1000000):
+def compute_rHeston_samples(params, Ns=None, N_times=None, modes=None, vol_behaviours=None, recompute=False,
+                            sample_paths=False, return_times=None, m=1000000, vol_only=False):
     """
-    Computes the final stock prices of 1000000 sample paths of the Markovian approximation of the rough Heston model.
+    Computes samples of the Markovian approximation of the rough Heston model.
     :param params: Parameters of the rough Heston model
     :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
     :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(18)
@@ -888,6 +885,7 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
     :param return_times: May specify an array of times at which the sample path values should be returned. If None and
         sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
     :param m: Number of samples - only relevant for vol_behaviour = mackevicius
+    :param vol_only: If True, simulates only the volatility process
     :return: None, the stock prices are saved in a file
     """
     params = rHeston_params(params)
@@ -907,42 +905,46 @@ def compute_final_rHeston_stock_prices(params, Ns=None, N_times=None, modes=None
                     if not recompute and exists(filename):
                         pass
                     else:
-                        if 'mackevicius' in vol_behaviour or vol_behaviour == 'sticky' and not sample_paths:
-                            samples_per_round = int(np.fmin(100000000, m))
-                            n_rounds = int(np.ceil(m / samples_per_round))
-                            antithetic = 'antithetic' in vol_behaviour
+                        if 'mackevicius' in vol_behaviour and vol_only and sample_paths:
+                            V, V_comp = rHeston_samples(params=params, N=N, m=m, N_time=N_time, WB=None, mode=mode,
+                                                        vol_behaviour=vol_behaviour, sample_paths=sample_paths,
+                                                        return_times=return_times, vol_only=True)
+                            save_arr = np.empty((1 + N, m, N_time + 1))
+                            save_arr[0, :, :] = V
+                            save_arr[1:, :, :] = V_comp
+                            np.save(filename, save_arr)
+                        elif 'mackevicius' in vol_behaviour or vol_behaviour == 'sticky':
                             if not sample_paths:
                                 final_S = np.empty(m)
-                            else:
-                                final_S = np.empty(1)
-                            nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
-                            for i in range(n_rounds):
-                                print(f'{i} of {n_rounds}')
-                                if i == n_rounds - 1:
-                                    n_samples = m - (n_rounds - 1) * samples_per_round
-                                else:
-                                    n_samples = samples_per_round
-                                if not sample_paths:
-                                    res = rHeston_samples(params=params, N=N, N_time=N_time, WB=None, m=n_samples,
-                                                          mode=mode, vol_behaviour=vol_behaviour, nodes=nodes,
-                                                          weights=weights)
-                                    if antithetic:
-                                        final_S[i * samples_per_round:i * samples_per_round + n_samples] = \
-                                            res[:n_samples]
-                                        final_S[m + i * samples_per_round:m + i * samples_per_round + n_samples] = \
-                                            res[n_samples:2 * n_samples]
+                                samples_per_round = int(np.fmin(100000000, m))
+                                n_rounds = int(np.ceil(m / samples_per_round))
+                                antithetic = 'antithetic' in vol_behaviour
+                                for i in range(n_rounds):
+                                    print(f'{i} of {n_rounds}')
+                                    if i == n_rounds - 1:
+                                        n_samples = m - (n_rounds - 1) * samples_per_round
                                     else:
-                                        final_S[i * samples_per_round:(i + 1) * samples_per_round] = res
-
-                                if sample_paths:
-                                    S, V, V_comp = rHeston_samples(params=params, N=N, m=n_samples, N_time=N_time,
-                                                                   WB=None, mode=mode, vol_behaviour=vol_behaviour,
-                                                                   nodes=nodes, weights=weights,
-                                                                   sample_paths=sample_paths,
-                                                                   return_times=return_times)
-                                    np.save(filename, S)
-                                    np.save(filename, V)
-                                    np.save(filename, V_comp)
+                                        n_samples = samples_per_round
+                                    if not sample_paths:
+                                        res = rHeston_samples(params=params, N=N, N_time=N_time, WB=None, m=n_samples,
+                                                              mode=mode, vol_behaviour=vol_behaviour)
+                                        if antithetic:
+                                            final_S[i * samples_per_round:i * samples_per_round + n_samples] = \
+                                                res[:n_samples]
+                                            final_S[m + i * samples_per_round:m + i * samples_per_round + n_samples] = \
+                                                res[n_samples:2 * n_samples]
+                                        else:
+                                            final_S[i * samples_per_round:(i + 1) * samples_per_round] = res
+                            else:
+                                S, V, V_comp = rHeston_samples(params=params, N=N, m=m, N_time=N_time,
+                                                               WB=None, mode=mode, vol_behaviour=vol_behaviour,
+                                                               sample_paths=sample_paths,
+                                                               return_times=return_times)
+                                save_arr = np.empty((2 + N, m, N_time + 1))
+                                save_arr[0, :, :] = S
+                                save_arr[1, :, :] = V
+                                save_arr[2:, :, :] = V_comp
+                                np.save(filename, save_arr)
                         else:
                             n_rounds = int(np.ceil(N_time / 2048))
                             samples_per_round = int(np.ceil(100000 / n_rounds))
@@ -983,7 +985,7 @@ def compute_final_rHeston_stock_prices_parallelized(params, Ns=None, N_times=Non
                                                     recompute=False, sample_paths=False, return_times=None,
                                                     num_threads=5):
     """
-    Computes the final stock prices of 1000000 sample paths of the Markovian approximation of the rough Heston model.
+    Computes samples of the Markovian approximation of the rough Heston model.
     :param params: Parameters of the rough Heston model
     :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 6]
     :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(18)
@@ -1014,10 +1016,9 @@ def compute_final_rHeston_stock_prices_parallelized(params, Ns=None, N_times=Non
                      'lambda': lambda_[i], 'rho': rho[i], 'nu': nu[i], 'theta': theta[i], 'V_0': V_0[i],
                      'rel_tol': params['rel_tol']} for i in range(len(H))]
     with mp.Pool(processes=num_threads) as pool:
-        pool.starmap(compute_final_rHeston_stock_prices, zip(dictionaries, N, N_time, mode, vol_behaviour,
-                                                             itertools.repeat(recompute),
-                                                             itertools.repeat(sample_paths),
-                                                             itertools.repeat(return_times)))
+        pool.starmap(compute_rHeston_samples, zip(dictionaries, N, N_time, mode, vol_behaviour,
+                                                  itertools.repeat(recompute), itertools.repeat(sample_paths),
+                                                  itertools.repeat(return_times)))
 
 
 def plot_smile_errors_given_stock_prices(Ns, N_times, modes, vol_behaviours, nodes, markov_errors, total_errors,
@@ -1094,7 +1095,7 @@ def plot_smile_errors_given_stock_prices(Ns, N_times, modes, vol_behaviours, nod
 
 
 def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None, vol_behaviours=None, plot=True,
-                                      true_smile=None, parallelizable_output=False):
+                                      true_smile=None, parallelizable_output=False, option='european call'):
     """
     Computes the implied volatility smiles given the final stock prices
     :param params: Parameters of the rough Heston model
@@ -1109,6 +1110,7 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
         smiles, the lower MC errors, the upper MC errors, the discretization errors of the approximated smiles, the
         lower MC discretization errors and the upper MC discretization errors, all of shape
         (len(Ns), len(modes), len(vol_behaviours), len(N_times)). If False, returns what is written below
+    :param option: The kind of option that is used
     :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
         the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
         MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
@@ -1123,7 +1125,14 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
     vol_behaviours = set_list_default(vol_behaviours, ['hyperplane reset', 'ninomiya victoir', 'sticky',
                                                        'hyperplane reflection', 'adaptive'])
     if true_smile is None:
-        true_smile = rHeston_iv_eur_call(params)
+        if option == 'european call':
+            true_smile = rHestonFourier_iv_eur_call(params)
+        elif option == 'geometric asian call':
+            true_smile = rHestonFourier_price_geom_asian_call(params)
+        elif option == 'average volatility call':
+            true_smile = rHestonFourier_price_avg_vol_call(params)
+        else:
+            raise NotImplementedError
 
     total_errors = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times)))
     discretization_errors = np.empty((len(Ns), len(modes), len(vol_behaviours), len(N_times)))
@@ -1144,18 +1153,53 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
 
     for i in range(len(Ns)):
         for j in range(len(modes)):
-            nodes_, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
-            nodes[i][j, :] = nodes_
-            markov_smiles[i, j, :, :] = rHestonMarkov_iv_eur_call(params=params, N=Ns[i], mode=modes[j], nodes=nodes_,
-                                                                  weights=weights)
+            if option == 'european call':
+                nodes_, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
+                nodes[i][j, :] = nodes_
+                markov_smiles[i, j, :, :] = rHestonFourier_iv_eur_call(params=params, N=Ns[i], mode=modes[j],
+                                                                       nodes=nodes_, weights=weights)
+            elif option == 'geometric asian call':
+                nodes_, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=np.array([params['T'] / 2, params['T']]),
+                                                     mode=modes[j])
+                nodes[i][j, :] = nodes_
+                markov_smiles[i, j, :, :] = rHestonFourier_price_geom_asian_call(params=params, N=Ns[i], mode=modes[j],
+                                                                                 nodes=nodes_, weights=weights)
+
+            if option == 'average volatility call':
+                nodes_, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
+                nodes[i][j, :] = nodes_
+                markov_smiles[i, j, :, :] = rHestonFourier_price_avg_vol_call(params=params, N=Ns[i], mode=modes[j],
+                                                                              nodes=nodes_, weights=weights)
+            else:
+                raise NotImplementedError
             markov_errors[i, j] = np.amax(np.abs(markov_smiles[i, j, :, :] - true_smile)/true_smile)
             print(f'N={Ns[i]}, {modes[j]}: Markovian error={100*markov_errors[i, j]:.4}%')
             for k in range(len(vol_behaviours)):
                 for m in range(len(N_times)):
-                    final_S = np.load(f'rHeston samples {Ns[i]} dim {modes[j]} {vol_behaviours[k]} {N_times[m]} time '
-                                      + f'steps.npy')
-                    vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=final_S,
-                                                      antithetic='antithetic' in vol_behaviours[k])
+                    if option == 'european call':
+                        kind = 'samples'
+                        final_S = np.load(get_filename(kind=kind, N=Ns[i], mode=modes[j],
+                                                       vol_behaviour=vol_behaviours[k], N_time=N_times[m],
+                                                       params=params))
+                        vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'],
+                                                          samples=final_S,
+                                                          antithetic='antithetic' in vol_behaviours[k])
+                    elif option == 'geometric asian call':
+                        kind = 'sample paths'
+                        fn = get_filename(kind=kind, N=Ns[i], mode=modes[j], vol_behaviour=vol_behaviours[k],
+                                          N_time=N_times[m], params=params)
+                        final_S = np.load(fn)[0, :, :]
+                        vol, low, upp = cf.price_geom_asian_call_MC(K=params['K'], samples=final_S,
+                                                                    antithetic='antithetic' in vol_behaviours[k])
+                    elif option == 'average volatility call':
+                        kind = 'vol sample paths'
+                        fn = get_filename(kind=kind, N=Ns[i], mode=modes[j], vol_behaviour=vol_behaviours[k],
+                                          N_time=N_times[m], params=params)
+                        final_S = np.load(fn)[0, :, :]
+                        vol, low, upp = cf.price_avg_vol_call_MC(K=params['K'], samples=final_S,
+                                                                 antithetic='antithetic' in vol_behaviours[k])
+                    else:
+                        raise NotImplementedError
                     approx_smiles[i, j, k, m, :, :] = vol
                     lower_smiles[i, j, k, m, :, :] = low
                     upper_smiles[i, j, k, m, :, :] = upp
@@ -1177,7 +1221,7 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
     k_vec = np.log(params['K'])
 
     def finalize_plot():
-        plt.plot(k_vec, true_smile, color='k', label='Exact smile')
+        plt.plot(k_vec, true_smile[0, :], color='k', label='Exact smile')
         plt.legend(loc='upper right')
         plt.xlabel('Log-moneyness')
         plt.ylabel('Implied volatility')
@@ -1462,7 +1506,7 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
     """
     params = rHeston_params(params)
     if true_smile is None:
-        true_smile = rHeston_iv_eur_call(params)
+        true_smile = rHestonFourier_iv_eur_call(params)
     if m is None:
         if test:
             WB = np.empty((2, 500000, N_time))
@@ -1503,7 +1547,7 @@ def optimize_kernel_approximation_for_simulation(params, N=2, N_time=128, vol_be
     total_error, lower_error, upper_error, MC_error = max_errors_MC(truth=true_smile, estimate=approx_smile,
                                                                     lower=lower_smile, upper=upper_smile)
 
-    markov_smile = rHestonMarkov_iv_eur_call(params=params, nodes=nodes, weights=weights)
+    markov_smile = rHestonFourier_iv_eur_call(params=params, nodes=nodes, weights=weights)
     discretization_error, lower_disc_error, upper_disc_error, MC_error_2 = max_errors_MC(truth=markov_smile,
                                                                                          estimate=approx_smile,
                                                                                          lower=lower_smile,
@@ -1546,7 +1590,7 @@ def optimize_kernel_approximation_for_simulation_vector_inputs(params, Ns=None, 
                                                        'hyperplane reflection', 'adaptive'])
     largest_nodes = np.empty((len(Ns), len(vol_behaviours), len(N_times)))
     if true_smile is None:
-        true_smile = rHeston_iv_eur_call(params)
+        true_smile = rHestonFourier_iv_eur_call(params)
     elif len(true_smile.shape) == 1:
         true_smile = true_smile[None, :]
     markov_smiles = np.empty((len(Ns), len(params['T']), len(params['K'])))
@@ -1682,7 +1726,7 @@ def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_beha
     """
     params = rHeston_params(params)
     if true_smile is None:
-        true_smile = rHeston_iv_eur_call(params)
+        true_smile = rHestonFourier_iv_eur_call(params)
     N_times = set_array_default(N_times, 2 ** np.arange(12))
     largest_nodes = set_array_default(largest_nodes, np.linspace(0, 10, 101))
 
@@ -1707,9 +1751,9 @@ def simulation_errors_depending_on_node_size(params, N=1, N_times=None, vol_beha
             if i == 0:
                 if verbose >= 1:
                     print(f'Simulating Markovian smile with N={N} and largest node={largest_nodes[j]}.')
-                markov_smiles[j, :] = rHestonMarkov_iv_eur_call(params=params, N=N, mode=None, nodes=nodes,
-                                                                weights=weights, load=False, save=False,
-                                                                verbose=verbose-1)
+                markov_smiles[j, :] = rHestonFourier_iv_eur_call(params=params, N=N, mode=None, nodes=nodes,
+                                                                 weights=weights, load=False, save=False,
+                                                                 verbose=verbose-1)
                 markov_errors[j] = np.amax(np.abs(true_smile - markov_smiles[j, :]) / true_smile)
             if verbose >= 1:
                 print(f'Simulating paths with N={N}, N_times={N_times[i]}, largest node={largest_nodes[j]} '
