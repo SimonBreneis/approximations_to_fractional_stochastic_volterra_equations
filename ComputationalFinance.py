@@ -202,13 +202,14 @@ def payoff_put(S, K):
     return np.fmax(K[:, :, None] - S[:, None, :], 0)
 
 
-def iv_eur_call_MC(S_0, K, T, samples, antithetic=False):
+def iv_eur_call_MC(S_0, K, T, samples, r=0., antithetic=False):
     """
     Computes the volatility smile for a European call option given samples of final stock prices.
     :param S_0: The initial stock price
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param samples: The final stock prices
+    :param r: Interest rate
     :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
@@ -218,20 +219,21 @@ def iv_eur_call_MC(S_0, K, T, samples, antithetic=False):
                          + payoff_call(S=samples[len(samples) // 2:], K=K))
     else:
         payoffs = payoff_call(S=samples, K=K)
-    price_estimate, price_stat = MC(payoffs)
-    implied_volatility_estimate = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate)
-    implied_volatility_lower = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate - price_stat)
-    implied_volatility_upper = iv_eur_call(S_0=S_0, K=K, r=0, T=T, price=price_estimate + price_stat)
+    price_estimate, price_stat = MC(np.exp(-r * T) * payoffs)
+    implied_volatility_estimate = iv_eur_call(S_0=S_0, K=K, r=r, T=T, price=price_estimate)
+    implied_volatility_lower = iv_eur_call(S_0=S_0, K=K, r=r, T=T, price=price_estimate - price_stat)
+    implied_volatility_upper = iv_eur_call(S_0=S_0, K=K, r=r, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
-def iv_eur_put_MC(S_0, K, T, samples, antithetic=False):
+def iv_eur_put_MC(S_0, K, T, samples, r=0., antithetic=False):
     """
     Computes the volatility smile for a European put option given samples of final stock prices.
     :param samples: The final stock prices
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param S_0: The initial stock price
+    :param r: Interest rate
     :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
@@ -241,10 +243,10 @@ def iv_eur_put_MC(S_0, K, T, samples, antithetic=False):
                          + payoff_put(S=samples[len(samples) // 2:], K=K))
     else:
         payoffs = payoff_put(S=samples, K=K)
-    price_estimate, price_stat = MC(payoffs)
-    implied_volatility_estimate = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate)
-    implied_volatility_lower = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate - price_stat)
-    implied_volatility_upper = iv_eur_put(S_0=S_0, K=K, r=0, T=T, price=price_estimate + price_stat)
+    price_estimate, price_stat = MC(np.exp(-r * T) * payoffs)
+    implied_volatility_estimate = iv_eur_put(S_0=S_0, K=K, r=r, T=T, price=price_estimate)
+    implied_volatility_lower = iv_eur_put(S_0=S_0, K=K, r=r, T=T, price=price_estimate - price_stat)
+    implied_volatility_upper = iv_eur_put(S_0=S_0, K=K, r=r, T=T, price=price_estimate + price_stat)
     return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
 
 
@@ -311,13 +313,15 @@ def fourier_payoff_call_put_logarithmic(K, u):
     return np.exp(np.log(K) * (1 + u)) / (u * (1 + u))
 
 
-def price_call_fourier(mgf, K, R=2., L=50., N=300, log_price=True):
+def price_call_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True):
     """
     Computes the option price of a call option using Fourier inversion.
     :param mgf: The moment generating function of the log-variable that should be priced (e.g. the final log-price, or
         the final log-average), a function of the Fourier argument only
     :param R: The (dampening) shift that we use
     :param K: The strike prices, assumed to be a numpy array
+    :param r: Interest rate
+    :param T: Maturity (only needed for discounting, i.e. if r != 0)
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
@@ -346,7 +350,7 @@ def price_call_fourier(mgf, K, R=2., L=50., N=300, log_price=True):
         fourier_payoff = fourier_payoff_call_put_logarithmic(K, x + complex(0, 1) * R)
     else:
         fourier_payoff = fourier_payoff_call_put(K, x + complex(0, 1) * R)
-    return np.real(fourier_payoff @ (mgf_output * y)) / np.pi
+    return np.exp(-r * T) / np.pi * np.real(fourier_payoff @ (mgf_output * y))
 
 
 def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
@@ -362,7 +366,7 @@ def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    return iv_eur_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N), r=r)
+    return iv_eur_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, r=r, T=T, R=R, L=L, N=N), r=r)
 
 
 def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):

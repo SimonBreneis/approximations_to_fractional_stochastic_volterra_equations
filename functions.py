@@ -40,9 +40,9 @@ def rHeston_params(params):
     :return: The modified and completed params dictionary
     """
     simple_params = {'S': 1., 'K': np.exp(np.linspace(-1.5, 0.75, 451)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
-                     'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05}
+                     'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05, 'r': 0.}
     difficult_params = {'S': 1., 'K': np.exp(np.linspace(-0.5, 0.1, 181)), 'H': 0.07, 'T': 0.04, 'lambda': 0.6,
-                        'rho': -0.8, 'nu': 0.5, 'theta': 0.01, 'V_0': 0.01, 'rel_tol': 1e-05}
+                        'rho': -0.8, 'nu': 0.5, 'theta': 0.01, 'V_0': 0.01, 'rel_tol': 1e-05, 'r': 0.}
     if params is None or params == 'simple':
         return simple_params
     if params == 'difficult':
@@ -253,9 +253,9 @@ def rHeston_samples(params, N_time=-1, m=1, nodes=None, weights=None,
     """
     params = rHeston_params(params)
     return rHestonSP.samples(lambda_=params['lambda'], rho=params['rho'], nu=params['nu'], theta=params['theta'],
-                             V_0=params['V_0'], T=params['T'], S_0=params['S'], N_time=N_time, m=m, nodes=nodes,
-                             weights=weights, sample_paths=sample_paths, return_times=return_times, euler=euler,
-                             antithetic=antithetic, vol_only=vol_only)
+                             V_0=params['V_0'], T=params['T'], S_0=params['S'], r=params['r'], N_time=N_time, m=m,
+                             nodes=nodes, weights=weights, sample_paths=sample_paths, return_times=return_times,
+                             euler=euler, antithetic=antithetic, vol_only=vol_only)
 
 
 def rHestonFourier_iv_eur_call(params, N=0, mode=None, nodes=None, weights=None, load=True, save=False, verbose=0):
@@ -280,8 +280,8 @@ def rHestonFourier_iv_eur_call(params, N=0, mode=None, nodes=None, weights=None,
     try:
         result = rHestonFourier.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
                                             rho=params['rho'], nu=params['nu'], theta=params['theta'],
-                                            V_0=params['V_0'], T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode,
-                                            nodes=nodes, weights=weights, verbose=verbose)
+                                            V_0=params['V_0'], T=params['T'], r=params['r'], rel_tol=params['rel_tol'],
+                                            N=N, mode=mode, nodes=nodes, weights=weights, verbose=verbose)
     except RuntimeError:
         print('Did not converge in given time')
         if isinstance(params['T'], np.ndarray):
@@ -847,7 +847,7 @@ def plot_smile_errors_given_stock_prices(Ns, N_times, modes, euler, antithetic, 
 
 
 def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None, euler=None, antithetic=None, plot=True,
-                                      true_smile=None, parallelizable_output=False, option='european call'):
+                                      true_smile=None, option='european call'):
     """
     Computes the implied volatility smiles given the final stock prices
     :param params: Parameters of the rough Heston model
@@ -858,10 +858,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
     :param antithetic: List of simulation schemes. Default is [False, True]
     :param plot: Creates plots depending on that parameter
     :param true_smile: The smile under the true rough Heston model can be specified here. Otherwise it is computed
-    :param parallelizable_output: If True, returns only the Markovian errors, the total errors of the approximated
-        smiles, the lower MC errors, the upper MC errors, the discretization errors of the approximated smiles, the
-        lower MC discretization errors and the upper MC discretization errors, all of shape
-        (len(Ns), len(modes), len(vol_behaviours), len(N_times)). If False, returns what is written below
     :param option: The kind of option that is used
     :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
         the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
@@ -1059,9 +1055,6 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                                          lower_total_errors=lower_total_errors, upper_total_errors=upper_total_errors,
                                          discretization_errors=discretization_errors, plot=plot)
 
-    if parallelizable_output:
-        return markov_errors[:, :, None, None], total_errors, lower_total_errors, upper_total_errors, \
-               discretization_errors, lower_discretization_errors, upper_discretization_errors
     return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_errors, total_errors, \
         lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors

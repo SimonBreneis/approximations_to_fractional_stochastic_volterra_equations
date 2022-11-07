@@ -123,15 +123,6 @@ rHeston_difficult_params = np.array([0.6193224, 0.61516358, 0.61097976, 0.606772
                                      0.11915087])
 
 '''
-Rough Heston surface with parameters
-T = log_linspace(0.004, 1, 25), 
-K = np.exp(np.linspace(-1.5, 0.75, 451)[None, :] * np.sqrt(log_linspace(0.004, 1, 25))[:, None])
-S, H, lambda_, rho, nu, theta, V_0, rel_tol = 1, 0.1, 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05
-'''
-rHeston_surface = np.load('rHeston true, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, '
-                          'T=(0.004, 1.0, 25), K=(-1.5, 0.75, 25).npy')
-
-'''
 Markovian approximations of rough Heston surfaces with parameters
 T = log_linspace(0.004, 1, 25), 
 K = np.exp(np.linspace(-1.25, 0.5, 351)[None, :] * np.sqrt(log_linspace(0.004, 1, 25))[:, None])

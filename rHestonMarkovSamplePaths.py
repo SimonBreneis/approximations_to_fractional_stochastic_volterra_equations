@@ -32,7 +32,7 @@ def rand_uniform(size=1, antithetic=False):
     return rv
 
 
-def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., m=1000, N_time=1000, sample_paths=False,
+def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=1000, N_time=1000, sample_paths=False,
             return_times=None, vol_only=False, euler=False, antithetic=True):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model, using a combination of
@@ -45,6 +45,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., m=1000, 
     :param T: Final time/Time of maturity
     :param N_time: Number of time steps
     :param S_0: Initial stock price
+    :param r: Interest rate
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param nodes: Can specify the nodes directly
     :param weights: Can specify the weights directly
@@ -89,7 +90,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., m=1000, 
                 sq_V = np.sqrt(np.fmax(weights @ V_comp_, 0))
                 dW = rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
                 dB = rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
-                log_S_ = log_S_ + sq_V * (rho * dW + np.sqrt(1 - rho ** 2) * dB) - 0.5 * sq_V ** 2 * dt
+                log_S_ = log_S_ + r * dt + sq_V * (rho * dW + np.sqrt(1 - rho ** 2) * dB) - 0.5 * sq_V ** 2 * dt
                 V_comp_ = A_inv @ (V_comp_ + nu * (sq_V * dW)[None, :] + b)
                 return log_S_, V_comp_
 
@@ -137,8 +138,8 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., m=1000, 
         def SDE_step_W(log_S_, V_):
             V_new = step_V(V_)
             dY = V_ + V_new
-            log_S_new = log_S_ + rho / nu * (drift_SDE_step_W + (dt / 2 * nodes[0]) * dY[0, :] + fact_1 * (weights @ dY)
-                                             + (V_new[0, :] - V_[0, :]))
+            log_S_new = log_S_ + r * dt + rho / nu * (drift_SDE_step_W + (dt / 2 * nodes[0]) * dY[0, :]
+                                                      + fact_1 * (weights @ dY) + (V_new[0, :] - V_[0, :]))
             return log_S_new, V_new
 
         if vol_only:
@@ -210,7 +211,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., m=1000, 
     return result
 
 
-def iv_eur_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, m=1000, N_time=1000, euler=False,
+def iv_eur_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m=1000, N_time=1000, euler=False,
                 antithetic=True):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
@@ -225,15 +226,16 @@ def iv_eur_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, m=1000,
     :param T: Final time/Time of maturity
     :param nodes: The nodes of the Markovian approximation
     :param weights: The weights of the Markovian approximation
+    :param r: Interest rate
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param N_time: Number of time steps used in simulation
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param antithetic: If True, uses antithetic variates to reduce the MC error
     return: The prices of the call option for the various strike prices in K
     """
-    samples_ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, N_time=N_time,
+    samples_ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, r=r, N_time=N_time,
                        nodes=nodes, weights=weights, sample_paths=False, euler=euler, antithetic=antithetic)[0, :]
-    return cf.iv_eur_call_MC(S_0=S_0, K=K, T=T, samples=samples_)
+    return cf.iv_eur_call_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_)
 
 
 def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, m=1000, N_time=1000, euler=False,

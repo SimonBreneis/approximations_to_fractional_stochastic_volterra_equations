@@ -908,7 +908,7 @@ def AbiJaberElEuch_quadrature_rule(H, N, T):
     return gamma_vec, c_vec
 
 
-def quadrature_rule(H, N, T, mode="optimized"):
+def quadrature_rule(H, N, T, mode="european"):
     """
     Returns the nodes and weights of a quadrature rule for the fractional kernel with Hurst parameter H. The nodes are
     sorted in increasing order.

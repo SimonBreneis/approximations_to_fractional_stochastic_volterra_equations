@@ -68,7 +68,7 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
     return psi
 
 
-def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
+def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=None, nodes=None, weights=None):
     """
     Gives the characteristic function of the log-price of the rough Heston model.
     :param z: Argument of the characteristic function (assumed to be a numpy array)
@@ -80,6 +80,7 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nod
     :param V_0: Initial variance
     :param T: Final time
     :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param r: Interest rate
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
@@ -97,7 +98,7 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nod
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
 
-    return np.exp(z * np.log(S_0) + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq)
+    return np.exp((np.log(S_0) + r * T) * z + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq)
 
 
 def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
@@ -161,7 +162,7 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq)
 
 
-def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, option='european', output='iv'):
+def call(S_0, K, T, char_fun, r=0., rel_tol=1e-03, verbose=0, return_error=False, option='european', output='iv'):
     """
     Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
     Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
@@ -170,6 +171,7 @@ def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, opti
     :param T: Numpy array of maturities
     :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
         function, the maturity, and the number of steps used for the Riccati equation
+    :param r: Interest rate
     :param rel_tol: Required maximal relative error in the implied volatility
     :param verbose: Determines how many intermediate results are printed to the console
     :param return_error: If True, also returns a relative error estimate
@@ -201,7 +203,7 @@ def call(S_0, K, T, char_fun, rel_tol=1e-03, verbose=0, return_error=False, opti
             if option == 'european':
                 def compute(N_Riccati_, L_, N_Fourier_):
                     return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                                  S_0=S_0, K=K_, T=T_, r=0., R=R, L=L_, N=N_Fourier_)
+                                                  S_0=S_0, K=K_, T=T_, r=r, R=R, L=L_, N=N_Fourier_)
             elif option == 'geometric asian':
                 def compute(N_Riccati_, L_, N_Fourier_):
                     return cf.iv_geom_asian_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
@@ -369,7 +371,7 @@ def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
     return skew
 
 
-def iv_eur_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+def iv_eur_call(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
                 weights=None, verbose=0):
     """
     Gives the implied volatility of the European call option in the rough Heston model. Uses Fourier inversion.
@@ -382,6 +384,7 @@ def iv_eur_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", r
     :param theta: Mean variance
     :param V_0: Initial variance
     :param T: Maturity
+    :param r: Interest rate
     :param N: Total number of points in the quadrature rule
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
         parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
@@ -394,9 +397,9 @@ def iv_eur_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", r
     """
     if N >= 1 and (nodes is None or weights is None):
         nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
-    return call(char_fun=lambda u, T_, N_: cf_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta,
+    return call(char_fun=lambda u, T_, N_: cf_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, r=r,
                                                         V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights),
-                S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+                S_0=S_0, K=K, T=T, r=r, rel_tol=rel_tol, verbose=verbose)
 
 
 def skew_eur_call(S_0, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
