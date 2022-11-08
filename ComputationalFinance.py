@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import norm
+from sklearn.linear_model import LinearRegression
 
 
 def maturity_tensor_strike(S_0, K, T):
@@ -23,30 +24,67 @@ def MC(samples):
     return np.average(samples, axis=-1), 1.95 * np.std(samples, axis=-1) / np.sqrt(samples.shape[-1])
 
 
-def BS_samples(sigma, T, N):
+def rand_normal(loc=0, scale=1, size=1, antithetic=False):
+    if antithetic:
+        rv = np.empty(size)
+        rv[:size // 2] = np.random.normal(loc, scale, size // 2)
+        if size % 2 == 0:
+            rv[size // 2:] = -rv[:size // 2]
+        else:
+            rv[size // 2:-1] = -rv[:size // 2]
+            rv[-1] = np.random.normal(loc, scale, 1)
+    else:
+        rv = np.random.normal(loc, scale, size)
+    return rv
+
+
+def rand_uniform(size=1, antithetic=False):
+    if antithetic:
+        rv = np.empty(size)
+        rv[:size // 2] = np.random.uniform(0, 1, size // 2)
+        if size % 2 == 0:
+            rv[size // 2:] = 1 - rv[:size // 2]
+        else:
+            rv[size // 2:-1] = 1 - rv[:size // 2]
+            rv[-1] = np.random.uniform(0, 1, 1)
+    else:
+        rv = np.random.uniform(size)
+    return rv
+
+
+def BS_samples(sigma, T, N, r=0., antithetic=True):
     """
     Simulates N samples of a Black-Scholes price at time T.
     :param sigma: Volatility
     :param T: Final time
     :param N: Number of samples
+    :param r: Interest rate
+    :param antithetic: If True, uses antithetic variates
     :return: Array of final stock values
     """
-    return np.exp(np.random.normal(-sigma*sigma/2*T, sigma*np.sqrt(T), N))
+    return np.exp(rand_normal(loc=(r - sigma ** 2 / 2) * T, scale=sigma * np.sqrt(T), size=N, antithetic=antithetic))
 
 
-def BS_paths(sigma, T, n, m):
+def BS_paths(sigma, T, n, m, r=0., antithetic=True):
     """
     Simulates m samples of Black-Scholes paths at n + 1 equidistant times.
     :param sigma: Volatility
     :param T: Final time
     :param n: Number of time steps
     :param m: Number of samples
+    :param r: Interest rate
+    :param antithetic: If True, uses antithetic variates
     :return: Array of samples of shape (m, n + 1)
     """
-    BM_increments = np.random.normal(0, sigma * np.sqrt(T / n), (m, n))
+    if antithetic:
+        BM_increments = np.empty((m, n))
+        BM_increments[:m // 2, :] = np.random.normal(0, sigma * np.sqrt(T / n), (m // 2, n))
+        BM_increments[m // 2:, :] = - BM_increments[:m // 2, :]
+    else:
+        BM_increments = np.random.normal(0, sigma * np.sqrt(T / n), (m, n))
     BM_samples = np.zeros((m, n + 1))
     BM_samples[:, 1:] = np.cumsum(BM_increments, axis=1)
-    return np.exp(BM_samples - 0.5 * sigma ** 2 * np.linspace(0, T, n + 1)[None, :])
+    return np.exp(BM_samples + (r - 0.5 * sigma ** 2) * np.linspace(0, T, n + 1)[None, :])
 
 
 def BS_nodes(S_0, K, sigma, T, r=0., regularize=True):
@@ -128,30 +166,30 @@ def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
     return np.where(sm < threshold, np.nan, sm)
 
 
-def iv_eur_call(S_0, K, T, price, r=0.):
+def iv_eur(S_0, K, T, price, payoff, r=0.):
     """
-    Computes the implied volatility of a European call option given its price.
+    Computes the implied volatility of a European call or put option given its price.
     :param S_0: Initial stock price
     :param K: Strike price
     :param r: Drift
     :param T: Final time/maturity
     :param price: (Market) price of the option
+    :param payoff: Either 'call' or 'put' or a payoff function taking as input S (final stock price samples) and K
+        (strike or other parameters), and returning the payoffs for all the stock prices S
     :return: The implied volatility
     """
-    return iv(BS_price_fun=lambda s: BS_price_eur_call(S_0=S_0, K=K, sigma=s, r=r, T=T), price=price)
+    if payoff == 'call' or payoff == payoff_call:
+        def price_fun(s):
+            return BS_price_eur_call(S_0=S_0, K=K, sigma=s, r=r, T=T)
+    elif payoff == 'put' or payoff == payoff_put:
+        def price_fun(s):
+            return BS_price_eur_put(S_0=S_0, K=K, sigma=s, r=r, T=T)
+    else:
+        normal_rv = np.random.normal(0, np.sqrt(T), 1000000)
 
-
-def iv_eur_put(S_0, K, T, price, r=0.):
-    """
-    Computes the implied volatility of a European put option given its price.
-    :param S_0: Initial stock price
-    :param K: Strike price
-    :param r: Drift
-    :param T: Final time/maturity
-    :param price: (Market) price of the option
-    :return: The implied volatility
-    """
-    return iv(BS_price_fun=lambda s: BS_price_eur_put(S_0=S_0, K=K, sigma=s, r=r, T=T), price=price)
+        def price_fun(s):
+            return np.average(np.exp(-r * T) * payoff(S=np.exp(s * normal_rv + (r - 0.5 * s ** 2) * T), K=K), axis=-1)
+    return iv(BS_price_fun=price_fun, price=price)
 
 
 def iv_geom_asian_call(S_0, K, T, price):
@@ -202,52 +240,36 @@ def payoff_put(S, K):
     return np.fmax(K[:, :, None] - S[:, None, :], 0)
 
 
-def iv_eur_call_MC(S_0, K, T, samples, r=0., antithetic=False):
+def eur_MC(S_0, K, T, samples, r=0., payoff="call", antithetic=False, implied_vol=False):
     """
-    Computes the volatility smile for a European call option given samples of final stock prices.
+    Computes the price or the implied volatility for a European option given samples of final stock prices.
     :param S_0: The initial stock price
     :param K: The strike prices for which the implied volatilities should be calculated
     :param T: The final time
     :param samples: The final stock prices
     :param r: Interest rate
+    :param payoff: Either a payoff function with two parameters S (for the samples) and K (for the strike or additional
+        parameters), or one of the strings 'put' and 'call'
     :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
+    :param implied_vol: If True, returns the implied volatility, else returns the prices
     :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
              so as to get 95% confidence intervals
     """
+    if payoff == 'call':
+        payoff = payoff_call
+    elif payoff == 'put':
+        payoff = payoff_put
     if antithetic:
-        payoffs = 0.5 * (payoff_call(S=samples[:len(samples) // 2], K=K)
-                         + payoff_call(S=samples[len(samples) // 2:], K=K))
+        payoffs = 0.5 * (payoff(S=samples[:len(samples) // 2], K=K) + payoff(S=samples[len(samples) // 2:], K=K))
     else:
         payoffs = payoff_call(S=samples, K=K)
     price_estimate, price_stat = MC(np.exp(-r * T) * payoffs)
-    implied_volatility_estimate = iv_eur_call(S_0=S_0, K=K, r=r, T=T, price=price_estimate)
-    implied_volatility_lower = iv_eur_call(S_0=S_0, K=K, r=r, T=T, price=price_estimate - price_stat)
-    implied_volatility_upper = iv_eur_call(S_0=S_0, K=K, r=r, T=T, price=price_estimate + price_stat)
-    return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
-
-
-def iv_eur_put_MC(S_0, K, T, samples, r=0., antithetic=False):
-    """
-    Computes the volatility smile for a European put option given samples of final stock prices.
-    :param samples: The final stock prices
-    :param K: The strike prices for which the implied volatilities should be calculated
-    :param T: The final time
-    :param S_0: The initial stock price
-    :param r: Interest rate
-    :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
-    :return: Three numpy arrays: The implied volatility smile, and a lower and an upper bound on the volatility smile,
-             so as to get 95% confidence intervals
-    """
-    if antithetic:
-        payoffs = 0.5 * (payoff_put(S=samples[:len(samples) // 2], K=K)
-                         + payoff_put(S=samples[len(samples) // 2:], K=K))
-    else:
-        payoffs = payoff_put(S=samples, K=K)
-    price_estimate, price_stat = MC(np.exp(-r * T) * payoffs)
-    implied_volatility_estimate = iv_eur_put(S_0=S_0, K=K, r=r, T=T, price=price_estimate)
-    implied_volatility_lower = iv_eur_put(S_0=S_0, K=K, r=r, T=T, price=price_estimate - price_stat)
-    implied_volatility_upper = iv_eur_put(S_0=S_0, K=K, r=r, T=T, price=price_estimate + price_stat)
-    return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
+    if implied_vol:
+        implied_volatility_estimate = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate, payoff=payoff)
+        implied_volatility_lower = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate - price_stat, payoff=payoff)
+        implied_volatility_upper = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate + price_stat, payoff=payoff)
+        return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
+    return price_estimate, price_stat
 
 
 def price_geom_asian_call_MC(K, samples, antithetic=False):
@@ -324,6 +346,8 @@ def price_call_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True):
     :param T: Maturity (only needed for discounting, i.e. if r != 0)
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
+    :param log_price: If True, assumes that the mgf is the mgf of the log-price. If False, assumes it is the mgf of the
+        price (without the logarithm)
     :return: The estimate of the option price
     """
     x = np.linspace(0, L, N + 1)
@@ -366,7 +390,8 @@ def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    return iv_eur_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, r=r, T=T, R=R, L=L, N=N), r=r)
+    return iv_eur(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, r=r, T=T, R=R, L=L, N=N), r=r,
+                  payoff='call')
 
 
 def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):
@@ -382,3 +407,83 @@ def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):
     :return: The estimate of the option price
     """
     return iv_geom_asian_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N))
+
+
+def price_am(K, T, r, samples, payoff, N_features=3, antithetic=False):
+    """
+    Prices American options.
+    :param K: Strike price
+    :param T: Maturity
+    :param r: Interest rate
+    :param samples: Numpy array of shape (d, m, N + 1), where N is the number of time steps, m the number of samples,
+        and d is the dimension of the Markovian process. It is assumed that the first dimension is the stock price
+        process
+    :param payoff: The payoff function, either 'call' or 'put' or a function of S (sample values) and K (strike price)
+    :param N_features: Integer, scales the number of features that should be used (higher is more features)
+    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :return: The price of the American option, a list of the models for each exercise time that approximate the
+        future payoff, and the function computing the features of the samples
+    """
+    N_time = samples.shape[-1] - 1
+    m = samples.shape[1]
+    dt = T / N_time
+    d = samples.shape[0]
+    if payoff == 'call':
+        payoff = payoff_call
+    elif payoff == 'put':
+        payoff = payoff_put
+
+    def features(x):
+        n_samples = x.shape[-1]
+        x_transformed = x.copy()
+        x_transformed[0, :] = (x_transformed[0, :] - K) / K
+        if N_features == 1:
+            res = x_transformed.T
+        elif N_features == 2:
+            res = np.empty((x.shape[1], d + 1))
+            res[:, :d] = x_transformed.T
+            res[:, -1] = x_transformed[0, :] ** 2
+        elif N_features == 3:
+            res = np.empty((x.shape[1], d + d ** 2 + 1))
+            res[:, :d] = x_transformed.T
+            res[:, d:d + d ** 2] = \
+                ((x_transformed[:, None, :] * x_transformed[None, :, :]).reshape(d ** 2, n_samples)).T
+            res[:, d + d ** 2] = x_transformed[0, :] ** 3
+        elif N_features == 4:
+            res = np.empty((x.shape[1], d + d ** 2 + 2))
+            res[:, :d] = x_transformed.T
+            res[:, d:d + d ** 2] = \
+                ((x_transformed[:, None, :] * x_transformed[None, :, :]).reshape(d ** 2, n_samples)).T
+            res[:, d + d ** 2] = x_transformed[0, :] ** 3
+            res[:, d + d ** 2 + 1] = x_transformed[0, :] ** 4
+        else:  # N_features >= 5
+            res = np.empty((x.shape[1], d + d ** 2 + d ** 3 + N_features - 3))
+            res[:, :d] = x_transformed.T
+            temp = (x_transformed[:, None, :] * x_transformed[None, :, :]).reshape((d ** 2, n_samples))
+            res[:, d:d + d ** 2] = temp.T
+            res[:, d + d ** 2:d + d ** 2 + d ** 3] = \
+                ((temp[:, None, :] * x_transformed[None, :, :]).reshape((d ** 3, n_samples))).T
+            res[:, d + d ** 2 + d ** 3:] = x_transformed[0, :, None] ** np.arange(4, N_features + 1)[None, :]
+        return res
+
+    discount = np.exp(-r * dt)
+    models = [LinearRegression() for _ in range(N_time)]
+    discounted_future_payoffs = payoff(S=samples[0, :, -1], K=K)
+    for i in range(N_time - 1, -1, -1):
+        discounted_future_payoffs = discount * discounted_future_payoffs
+        current_payoff = payoff(S=samples[0, :, i], K=K)
+        active_indices = current_payoff > 0
+        if np.sum(active_indices) > 1:
+            ft = features(samples[:, active_indices, i])
+            models[i] = models[i].fit(ft, discounted_future_payoffs[active_indices])
+            predicted_future_payoffs = np.ones(m)  # the indices where the current payoff is 0 do not matter and are
+            # certainly excluded in the following code if we just set the predicted future payoff 1
+            predicted_future_payoffs[active_indices] = models[i].predict(ft)
+            execute_now = current_payoff > predicted_future_payoffs
+            discounted_future_payoffs[execute_now] = current_payoff[execute_now]
+        else:
+            ft = features(np.zeros((d, 1)))
+            models[i] = models[i].fit(ft, np.array([0]))
+    if antithetic:
+        discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:] + discounted_future_payoffs[:m // 2])
+    return MC(discounted_future_payoffs), models, features

@@ -4,39 +4,10 @@ import ComputationalFinance as cf
 import scipy.stats
 
 
-def rand_normal(loc=0, scale=1, size=1, antithetic=False):
-    if antithetic:
-        rv = np.empty(size)
-        rv[:size // 2] = np.random.normal(loc, scale, size // 2)
-        if size % 2 == 0:
-            rv[size // 2:] = -rv[:size // 2]
-        else:
-            rv[size // 2:-1] = -rv[:size // 2]
-            rv[-1] = np.random.normal(loc, scale, 1)
-    else:
-        rv = np.random.normal(loc, scale, size)
-    return rv
-
-
-def rand_uniform(size=1, antithetic=False):
-    if antithetic:
-        rv = np.empty(size)
-        rv[:size // 2] = np.random.uniform(0, 1, size // 2)
-        if size % 2 == 0:
-            rv[size // 2:] = 1 - rv[:size // 2]
-        else:
-            rv[size // 2:-1] = 1 - rv[:size // 2]
-            rv[-1] = np.random.uniform(0, 1, 1)
-    else:
-        rv = np.random.uniform(size)
-    return rv
-
-
 def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=1000, N_time=1000, sample_paths=False,
             return_times=None, vol_only=False, euler=False, antithetic=True):
     """
-    Simulates sample paths under the Markovian approximation of the rough Heston model, using a combination of
-    Mackevicius and Alfonsi.
+    Simulates sample paths under the Markovian approximation of the rough Heston model.
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
@@ -83,13 +54,13 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
         if vol_only:
             def step_SV(V_comp_):
                 sq_V = np.sqrt(np.fmax(weights @ V_comp_, 0))
-                dW = rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
+                dW = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
                 return A_inv @ (V_comp_ + nu * (sq_V * dW)[None, :] + b)
         else:
             def step_SV(log_S_, V_comp_):
                 sq_V = np.sqrt(np.fmax(weights @ V_comp_, 0))
-                dW = rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
-                dB = rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
+                dW = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
+                dB = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
                 log_S_ = log_S_ + r * dt + sq_V * (rho * dW + np.sqrt(1 - rho ** 2) * dB) - 0.5 * sq_V ** 2 * dt
                 V_comp_ = A_inv @ (V_comp_ + nu * (sq_V * dW)[None, :] + b)
                 return log_S_, V_comp_
@@ -112,7 +83,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
 
         def SDE_step_V(V_):
             x = weights @ V_
-            rv = rand_uniform(size=m, antithetic=antithetic)
+            rv = cf.rand_uniform(size=m, antithetic=antithetic)
             temp = np.sqrt((3 * z) * x + (B * z) ** 2)
             p_1 = (z / 2) * x * ((A * B - A - B + 1.5) * z + (np.sqrt(3) - 1) / 4 * temp + x) / (
                     (x + B * z - temp) * temp * (temp - (B - A) * z))
@@ -128,7 +99,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             return ODE_step_V(SDE_step_V(ODE_step_V(V_)))
 
         def SDE_step_B(log_S_, V_):
-            dB = rand_normal(loc=0, scale=np.sqrt(dt / 2), size=m, antithetic=antithetic)
+            dB = cf.rand_normal(loc=0, scale=np.sqrt(dt / 2), size=m, antithetic=antithetic)
             x = weights @ V_
             return log_S_ + np.sqrt(x) * rho_bar * dB - (0.5 * rho_bar_sq * dt / 2) * x, V_
 
@@ -181,7 +152,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             log_S = np.empty((m, N_time + 1))
             log_S[:, 0] = np.log(S_0)
             for i in range(N_time):
-                print(f'Step {i} of {N_time}')
+                # print(f'Step {i} of {N_time}')
                 log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
             V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
             if return_times is not None:
@@ -198,7 +169,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             V_comp[:, :] = V_init[:, None]
             log_S = np.ones(m) * np.log(S_0)
             for i in range(N_time):
-                print(f'Step {i} of {N_time}')
+                # print(f'Step {i} of {N_time}')
                 log_S, V_comp = step_SV(log_S, V_comp)
             V = np.fmax(weights @ V_comp, 0)
             result = np.empty((N + 2, m))
@@ -207,15 +178,14 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             result[2:, :] = V_comp
 
     if one_node:
-        result = result[:-1, :, :]
+        result = result[:-1, ...]
     return result
 
 
-def iv_eur_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m=1000, N_time=1000, euler=False,
-                antithetic=True):
+def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m=1000, N_time=1000, euler=False,
+        antithetic=True, payoff='call', implied_vol=False):
     """
-    Gives the price of a European call option in the approximated, Markovian rough Heston model.
-    Uses the implicit Euler scheme.
+    Gives the price or the implied volatility of a European option in the approximated, Markovian rough Heston model.
     :param K: Strike prices, assumed to be a numpy array
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -231,18 +201,20 @@ def iv_eur_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m
     :param N_time: Number of time steps used in simulation
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param payoff: The payoff function, or the string 'call' or the string 'put'
+    :param implied_vol: If True (only for payoff 'call' or 'put') returns the implied volatility, else returns the price
     return: The prices of the call option for the various strike prices in K
     """
     samples_ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, r=r, N_time=N_time,
                        nodes=nodes, weights=weights, sample_paths=False, euler=euler, antithetic=antithetic)[0, :]
-    return cf.iv_eur_call_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_)
+    return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_, payoff=payoff, antithetic=antithetic,
+                     implied_vol=implied_vol)
 
 
 def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, m=1000, N_time=1000, euler=False,
                           antithetic=True):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
-    Uses the implicit Euler scheme.
     :param K: Strike prices, assumed to be a numpy array
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -268,7 +240,6 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m=1000, N_
                        antithetic=True):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
-    Uses the implicit Euler scheme.
     :param K: Strike prices, assumed to be a numpy array
     :param lambda_: Mean-reversion speed
     :param nu: Volatility of volatility
@@ -286,3 +257,42 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m=1000, N_
     samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, m=m, N_time=N_time, nodes=nodes,
                        weights=weights, sample_paths=True, vol_only=True, euler=euler, antithetic=antithetic)[0, :, :]
     return cf.price_avg_vol_call_MC(K=K, samples=samples_, antithetic=antithetic)
+
+
+def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=0., m=1000, N_time=1000, N_dates=None,
+             N_features=3, euler=False, antithetic=True):
+    """
+    Gives the price of an American option in the approximated, Markovian rough Heston model.
+    :param K: Strike price
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param S_0: Initial stock price
+    :param T: Final time/Time of maturity
+    :param nodes: The nodes of the Markovian approximation
+    :param weights: The weights of the Markovian approximation
+    :param payoff: The payoff function, either 'call' or 'put' or a function taking as inputs S (samples) and K (strike)
+    :param r: Interest rate
+    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param N_time: Number of time steps used in the simulation
+    :param N_dates: Number of exercise dates. If None, N_dates = N_time
+    :param N_features: Scales with the number of functions used in the regression
+    :param euler: If True, uses an Euler scheme. If False, uses moment matching
+    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    return: The prices of the call option for the various strike prices in K
+    """
+    if N_dates is None:
+        N_dates = N_time
+    ex_times = np.linspace(0, T, N_dates + 1)
+    samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
+                       S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
+                       euler=euler, antithetic=antithetic)
+    preprocessed_samples = np.empty((samples_.shape[0] - 1, samples_.shape[1], samples_.shape[2]))
+    preprocessed_samples[0, :, :] = samples_[0, :, :]
+    preprocessed_samples[1:, :, :] = weights[:, None, None] * samples_[2:, :, :]
+    return cf.price_am(K=K, T=T, r=r, samples=preprocessed_samples, N_features=N_features, antithetic=antithetic,
+                       payoff=payoff)
+
+

@@ -164,8 +164,7 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
 
 def call(S_0, K, T, char_fun, r=0., rel_tol=1e-03, verbose=0, return_error=False, option='european', output='iv'):
     """
-    Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
-    Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
+    Gives the implied volatility of the European call option in the rough Heston model. Uses Fourier inversion.
     :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array (1d or 2d)
     :param T: Numpy array of maturities
