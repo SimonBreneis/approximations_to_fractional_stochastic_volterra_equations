@@ -162,31 +162,33 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq)
 
 
-def call(S_0, K, T, char_fun, r=0., rel_tol=1e-03, verbose=0, return_error=False, option='european', output='iv'):
+def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_error=False):
     """
-    Gives the implied volatility of the European call option in the rough Heston model. Uses Fourier inversion.
+    Computes the Fourier inversion given a relative error tolerance by finding the appropriate parameters for
+    solving the Riccati equations, and computing the inverse Fourier integral.
     :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array (1d or 2d)
     :param T: Numpy array of maturities
-    :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
-        function, the maturity, and the number of steps used for the Riccati equation
-    :param r: Interest rate
+    :param fun: Function that computes the Fourier inversion given the numerical parameters. Is a function of
+        T_ (single maturity), K_ (array of strikes), N_Riccati (number of Riccati intervals),
+        L (cutoff for the Fourier integral), N_Fourier (number of Fourier intervals),
+        R (dampening shift that makes the Fourier inversion integrable)
     :param rel_tol: Required maximal relative error in the implied volatility
     :param verbose: Determines how many intermediate results are printed to the console
     :param return_error: If True, also returns a relative error estimate
-    :param option: Either 'european' or 'geometric asian'
-    :param output: Either 'iv' or 'price'
     return: The implied volatility of the call option
     """
+    R = 2.  # The (dampening) shift that we use for the Fourier inversion
 
-    def single_smile(K_, T_, char_fun_, eps):
+    def single_maturity(T_, compute, eps):
         """
-        Gives the implied volatility of the European call option in the rough Heston model as described in El Euch and
-        Rosenbaum, The characteristic function of rough Heston models. Uses the Adams scheme. Uses Fourier inversion.
-        :param K_: Strike price, assumed to be a numpy array
-        :param char_fun_: Characteristic function of the log-price. Is a function of the argument of the characteristic
-            function and the number of steps used for the Riccati equation
-        :param T_: Maturity
+        Computes the Fourier inversion for a single maturity given a relative error tolerance by finding the appropriate
+        parameters for solving the Riccati equations, and computing the inverse Fourier integral.
+        :param T_: Single maturity
+        :param compute: Function that computes the Fourier inversion given the numerical parameters for a single
+            maturity. Is a function of
+            N_Riccati (number of Riccati intervals), L (cutoff for the Fourier integral),
+            N_Fourier (number of Fourier intervals)
         :param eps: Relative error tolerance
         return: The implied volatility of the call option
         """
@@ -196,59 +198,35 @@ def call(S_0, K, T, char_fun, r=0., rel_tol=1e-03, verbose=0, return_error=False
         # reals, but only over [0, L]
         N_Fourier = int(8 * L)  # The number of points used in the trapezoidal rule for the
         # approximation of the Fourier integral
-        R = 2.  # The (dampening) shift that we use for the Fourier inversion
         np.seterr(all='warn')
-        if output == 'iv':
-            if option == 'european':
-                def compute(N_Riccati_, L_, N_Fourier_):
-                    return cf.iv_eur_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                                  S_0=S_0, K=K_, T=T_, r=r, R=R, L=L_, N=N_Fourier_)
-            elif option == 'geometric asian':
-                def compute(N_Riccati_, L_, N_Fourier_):
-                    return cf.iv_geom_asian_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                                         S_0=S_0, K=K_, T=T_, R=R, L=L_, N=N_Fourier_)
-            else:
-                raise NotImplementedError(f'Option {option} with output {output} is not implemented.')
-        elif output == 'price':
-            if option == 'geometric asian':
-                def compute(N_Riccati_, L_, N_Fourier_):
-                    return cf.price_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                                 K=K_, R=R, L=L_, N=N_Fourier_, log_price=True)
-            elif option == 'average volatility':
-                def compute(N_Riccati_, L_, N_Fourier_):
-                    return cf.price_call_fourier(mgf=lambda u: char_fun_(np.complex(0, -1) * u, N_Riccati_),
-                                                 K=K_, R=R, L=L_, N=N_Fourier_, log_price=False)
-            else:
-                raise NotImplementedError(f'Option {option} with output {output} is not implemented.')
-        else:
-            raise NotImplementedError(f'Output {output} is not implemented.')
-
         tic = time.perf_counter()
-        iv = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
+        smile = compute(N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier)
         duration = time.perf_counter() - tic
-        iv_approx = compute(N_Riccati_=int(N_Riccati / 1.6), L_=L / 1.2, N_Fourier_=N_Fourier // 2)
-        error = np.amax(np.abs(iv_approx - iv) / iv)
-        if verbose >= 1:
-            print(np.amax(np.abs(iv_approx - iv) / iv))
+        smile_approx = compute(N_Riccati=int(N_Riccati / 1.6), L=L / 1.2, N_Fourier=N_Fourier // 2)
+        error = np.amax(np.abs(smile_approx - smile) / smile)
+        if verbose >= 3:
+            print(np.abs(smile_approx - smile) / smile)
+        if verbose >= 2:
+            print(error)
 
-        while np.isnan(error) or error > eps or np.sum(np.isnan(iv)) > 0:
+        while np.isnan(error) or error > eps or np.sum(np.isnan(smile)) > 0:
             if time.perf_counter() - tic > 3600:
                 raise RuntimeError('Smile was not computed in given time.')
-            if np.sum(np.isnan(iv)) == 0:
-                iv_approx = compute(N_Riccati_=N_Riccati // 2, L_=L, N_Fourier_=N_Fourier)
-                error_Riccati = np.amax(np.abs(iv_approx - iv) / iv)
-                if not np.isnan(error_Riccati) and error_Riccati < eps / 5 and np.sum(np.isnan(iv_approx)) == 0:
+            if np.sum(np.isnan(smile)) == 0:
+                smile_approx = compute(N_Riccati=N_Riccati // 2, L=L, N_Fourier=N_Fourier)
+                error_Riccati = np.amax(np.abs(smile_approx - smile) / smile)
+                if not np.isnan(error_Riccati) and error_Riccati < eps / 5 and np.sum(np.isnan(smile_approx)) == 0:
                     N_Riccati = int(N_Riccati / 1.8)
 
-                iv_approx = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier // 2)
-                error_Fourier = np.amax(np.abs(iv_approx - iv) / iv)
-                if not np.isnan(error_Fourier) and error_Fourier < eps / 5 and np.sum(np.isnan(iv_approx)) == 0:
+                smile_approx = compute(N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier // 2)
+                error_Fourier = np.amax(np.abs(smile_approx - smile) / smile)
+                if not np.isnan(error_Fourier) and error_Fourier < eps / 5 and np.sum(np.isnan(smile_approx)) == 0:
                     N_Fourier = N_Fourier // 2
             else:
                 error_Fourier, error_Riccati = np.nan, np.nan
 
-            iv_approx = iv
-            if np.sum(np.isnan(iv)) > 0:
+            smile_approx = smile
+            if np.sum(np.isnan(smile)) > 0:
                 L = L * 1.6
                 N_Fourier = int(N_Fourier * 1.7)
                 N_Riccati = int(N_Riccati * 1.7)
@@ -256,19 +234,20 @@ def call(S_0, K, T, char_fun, r=0., rel_tol=1e-03, verbose=0, return_error=False
                 L = L * 1.4
                 N_Fourier = int(N_Fourier * 1.4) if error_Fourier < eps / 2 else N_Fourier * 2
                 N_Riccati = int(N_Riccati * 1.4) if error_Riccati < eps / 2 else N_Riccati * 2
-            if verbose >= 1:
+            if verbose >= 2:
                 print(error, error_Fourier, error_Riccati, L, N_Fourier, N_Riccati, duration,
                       time.strftime("%H:%M:%S", time.localtime()))
 
             tic = time.perf_counter()
-            iv = compute(N_Riccati_=N_Riccati, L_=L, N_Fourier_=N_Fourier)
+            smile = compute(N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier)
             duration = time.perf_counter() - tic
-            error = np.amax(np.abs(iv_approx - iv) / iv)
-            if verbose >= 1:
-                # print(np.abs(iv_approx - iv) / iv)
+            error = np.amax(np.abs(smile_approx - smile) / smile)
+            if verbose >= 3:
+                print(np.abs(smile_approx - smile) / smile)
+            if verbose >= 2:
                 print(error)
 
-        return iv, error
+        return smile, error
 
     T_is_float = False
     if not isinstance(T, np.ndarray):
@@ -277,38 +256,105 @@ def call(S_0, K, T, char_fun, r=0., rel_tol=1e-03, verbose=0, return_error=False
     if len(K.shape) == 1:
         _, K = cf.maturity_tensor_strike(S_0=S_0, K=K, T=T)
 
-    iv_surface = np.empty_like(K)
+    surface = np.empty_like(K)
     errors = np.empty(len(T))
     for i in range(len(T)):
         if verbose >= 1 and len(T) > 1:
             print(f'Now simulating maturity {i+1} of {len(T)}')
-        iv_surface[i, :], errors[i] = single_smile(K_=K[i, :], T_=T[i], char_fun_=lambda u, N: char_fun(u, T[i], N),
+
+        def fun_maturity(N_Riccati, L, N_Fourier):
+            return fun(T_=T[i], K_=K[i, :], N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier, R=R)
+        surface[i, :], errors[i] = single_maturity(compute=fun_maturity, T_=T[i],
                                                    eps=rel_tol[i] if isinstance(rel_tol, np.ndarray) else rel_tol)
     if T_is_float:
-        iv_surface = iv_surface[0, :]
+        surface = surface[0, :]
         errors = errors[0]
     if return_error:
-        return iv_surface, errors
-    return iv_surface
+        return surface, errors
+    return surface
 
 
-def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
+def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+                 weights=None, implied_vol=True, call=True, return_error=False, verbose=0):
     """
-    Gives the skew of the European call option in the rough Heston model.
-    :param T: Numpy array of maturities
-    :param char_fun: Characteristic function of the log-price. Is a function of the argument of the characteristic
-        function, the maturity, and the number of steps used for the Riccati equation
+    Computes the implied volatility or price of the European call or put option in the rough Heston model.
+    Uses Fourier inversion.
+    :param S_0: Initial stock price
+    :param K: Strike price, assumed to be a numpy array
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param r: Interest rate
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
     :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
+    :param implied_vol: If True, computes the implied volatility, else computes the price
+    :param call: If True, uses the call option, else uses the put option
+    :param return_error: If True, also returns a relative maximal error estimate
+    :param verbose: Determines how many intermediate results are printed to the console
+    return: The implied volatility of the call option
+    """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
+
+    def mgf(z, T_, N_):
+        return cf_log_price(z=np.complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, r=r,
+                            V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)
+
+    if implied_vol:
+        def compute(T_, K_, N_Riccati, L, N_Fourier, R):
+            return cf.iv_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), S_0=S_0, K=K_, T=T_, r=r,
+                                              R=R, L=L, N=N_Fourier)
+    else:
+        def compute(T_, K_, N_Riccati, L, N_Fourier, R):
+            return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=r, R=R, L=L,
+                                                 N=N_Fourier, log_price=True, call=call)
+
+    return compute_Fourier_inversion(fun=compute, S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose,
+                                     return_error=return_error)
+
+
+def skew_eur_call_put(lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+                      weights=None, verbose=0):
+    """
+    Gives the skew of the European call or put option (skew is the same in both cases) in the rough Heston model.
+    Uses Fourier inversion.
+    :param H: Hurst parameter
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param T: Maturity
+    :param r: Interest rate
+    :param N: Total number of points in the quadrature rule
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
+        of these three options that seems most suitable
+    :param rel_tol: Required maximal relative error in the implied volatility
+    :param nodes: Can specify the nodes directly
+    :param weights: Can specify the weights directly
     :param verbose: Determines how many intermediate results are printed to the console
     return: The skew of the call option
     """
+    if N >= 1 and (nodes is None or weights is None):
+        nodes, weights = rk.quadrature_rule(H, N, T, mode)
 
     def single_skew(T_):
 
         def compute_smile(eps_, h_):
             K = np.exp(np.linspace(-200 * h_, 200 * h_, 401))
-            smile_, error_ = call(S_0=1., K=K, T=T_, char_fun=char_fun, rel_tol=eps_, verbose=verbose - 1,
-                                  return_error=True, option='european', output='iv')
+            smile_, error_ = eur_call_put(S_0=1., K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T_, r=r,
+                                          N=N, mode=mode, rel_tol=eps_, H=H, nodes=nodes, weights=weights,
+                                          implied_vol=True, call=True, return_error=True, verbose=verbose - 2)
             return np.array([smile_[198], smile_[199], smile_[201], smile_[202]]), error_
 
         eps = rel_tol / 5
@@ -325,7 +371,8 @@ def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
         error = np.abs(skew_eps_h - skew_) / skew_
         error_eps = np.abs(skew_eps - skew_) / skew_
         error_h = np.abs(skew_h - skew_) / skew_
-        print(error, error_eps, error_h)
+        if verbose >= 2:
+            print(error, error_eps, error_h)
 
         while error > rel_tol:
             if error_eps > rel_tol * 0.8:
@@ -338,8 +385,6 @@ def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
                 error = np.abs(skew_eps_h - skew_) / skew_
                 error_eps = np.abs(skew_eps - skew_) / skew_
                 error_h = np.abs(skew_h - skew_) / skew_
-
-                print(error, error_eps, error_h)
             else:
                 h = h / 2
                 smile, old_eps = compute_smile(eps_=1.1 * old_eps, h_=h)
@@ -352,6 +397,7 @@ def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
                 error_eps = np.abs(skew_eps - skew_) / skew_
                 error_h = np.abs(skew_h - skew_) / skew_
 
+            if verbose >= 2:
                 print(error, error_eps, error_h)
         return skew_
 
@@ -370,71 +416,11 @@ def skew_eur_call_comp(T, char_fun, rel_tol=1e-03, verbose=0):
     return skew
 
 
-def iv_eur_call(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
-                weights=None, verbose=0):
+def geom_asian_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None,
+                        nodes=None, weights=None, implied_vol=False, call=True, return_error=False, verbose=0):
     """
-    Gives the implied volatility of the European call option in the rough Heston model. Uses Fourier inversion.
-    :param S_0: Initial stock price
-    :param K: Strike price, assumed to be a numpy array
-    :param H: Hurst parameter
-    :param lambda_: Mean-reversion speed
-    :param rho: Correlation between Brownian motions
-    :param nu: Volatility of volatility
-    :param theta: Mean variance
-    :param V_0: Initial variance
-    :param T: Maturity
-    :param r: Interest rate
-    :param N: Total number of points in the quadrature rule
-    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
-        of these three options that seems most suitable
-    :param rel_tol: Required maximal relative error in the implied volatility
-    :param nodes: Can specify the nodes directly
-    :param weights: Can specify the weights directly
-    :param verbose: Determines how many intermediate results are printed to the console
-    return: The implied volatility of the call option
-    """
-    if N >= 1 and (nodes is None or weights is None):
-        nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
-    return call(char_fun=lambda u, T_, N_: cf_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, r=r,
-                                                        V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights),
-                S_0=S_0, K=K, T=T, r=r, rel_tol=rel_tol, verbose=verbose)
-
-
-def skew_eur_call(S_0, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
-                  weights=None, verbose=0):
-    """
-    Gives the skew of the European call option in the rough Heston model. Uses Fourier inversion.
-    :param S_0: Initial stock price
-    :param H: Hurst parameter
-    :param lambda_: Mean-reversion speed
-    :param rho: Correlation between Brownian motions
-    :param nu: Volatility of volatility
-    :param theta: Mean variance
-    :param V_0: Initial variance
-    :param T: Maturity
-    :param N: Total number of points in the quadrature rule
-    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If best, chooses any
-        of these three options that seems most suitable
-    :param rel_tol: Required maximal relative error in the implied volatility
-    :param nodes: Can specify the nodes directly
-    :param weights: Can specify the weights directly
-    :param verbose: Determines how many intermediate results are printed to the console
-    return: The skew of the call option
-    """
-    if N >= 1 and (nodes is None or weights is None):
-        nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    return skew_eur_call_comp(char_fun=lambda u, T_, N_: cf_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu,
-                                                                      theta=theta, V_0=V_0, T=T_, N_Riccati=N_, H=H,
-                                                                      nodes=nodes, weights=weights),
-                              T=T, rel_tol=rel_tol, verbose=verbose)
-
-
-def price_geom_asian_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None,
-                          nodes=None, weights=None, verbose=0):
-    """
-    Gives the price of the geometric Asian call option in the rough Heston model. Uses Fourier inversion.
+    Gives the price or implied volatility of the geometric Asian call or put option in the rough Heston model.
+    Uses Fourier inversion.
     :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array
     :param H: Hurst parameter
@@ -451,21 +437,36 @@ def price_geom_asian_call(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="eu
     :param rel_tol: Required maximal relative error in the implied volatility
     :param nodes: Can specify the nodes directly
     :param weights: Can specify the weights directly
+    :param implied_vol: If True, computes the implied volatility, else computes the price
+    :param call: If True, uses the call option, else uses the put option
+    :param return_error: If True, also returns a relative maximal error estimate
     :param verbose: Determines how many intermediate results are printed to the console
     return: The implied volatility of the call option
     """
     if N >= 1 and (nodes is None or weights is None):
         nodes, weights = rk.quadrature_rule(H, N, np.array([T / 2, T]), mode)
-    return call(char_fun=lambda u, T_, N_: cf_avg_log_price(z=u, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta,
-                                                            V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes,
-                                                            weights=weights),
-                S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose, option='geometric asian', output='price')
+
+    def mgf(z, T_, N_):
+        return cf_avg_log_price(z=np.complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)
+
+    if implied_vol:
+        def compute(T_, K_, N_Riccati, L, N_Fourier, R):
+            return cf.iv_geom_asian_call_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), S_0=S_0, K=K_, T=T_,
+                                                 R=R, L=L, N=N_Fourier)
+    else:
+        def compute(T_, K_, N_Riccati, L, N_Fourier, R):
+            return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=0., R=R,
+                                                 L=L, N=N_Fourier, log_price=True, call=call)
+
+    return compute_Fourier_inversion(fun=compute, S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose,
+                                     return_error=return_error)
 
 
-def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
-                       weights=None, verbose=0):
+def price_avg_vol_call_put(K, lambda_, nu, theta, V_0, T, N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
+                           weights=None, call=True, return_error=False, verbose=0):
     """
-    Gives the price of the European call option on the average volatility in the rough Heston model.
+    Gives the price of the European call or put option on the average volatility in the rough Heston model.
     Uses Fourier inversion.
     :param H: Hurst parameter
     :param K: Strike price, assumed to be a numpy array
@@ -481,11 +482,21 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, N=0, mode="european", rel_
     :param rel_tol: Required maximal relative error in the implied volatility
     :param nodes: Can specify the nodes directly
     :param weights: Can specify the weights directly
+    :param call: If True, uses the call option, else uses the put option
+    :param return_error: If True, also returns a relative maximal error estimate
     :param verbose: Determines how many intermediate results are printed to the console
     return: The implied volatility of the call option
     """
     if N >= 1 and (nodes is None or weights is None):
         nodes, weights = rk.quadrature_rule(H, N, T, mode)
-    return call(char_fun=lambda u, T_, N_: cf_avg_vol(z=u, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T_,
-                                                      N_Riccati=N_, H=H, nodes=nodes, weights=weights),
-                S_0=V_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose, option='average volatility', output='price')
+
+    def mgf(z, T_, N_):
+        return cf_avg_vol(z=np.complex(0, -1) * z, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T_, N_Riccati=N_,
+                          H=H, nodes=nodes, weights=weights)
+
+    def compute(T_, K_, N_Riccati, L, N_Fourier, R):
+        return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=0., R=R,
+                                             L=L, N=N_Fourier, log_price=True, call=call)
+
+    return compute_Fourier_inversion(fun=compute, S_0=1., K=K, T=T, rel_tol=rel_tol, verbose=verbose,
+                                     return_error=return_error)

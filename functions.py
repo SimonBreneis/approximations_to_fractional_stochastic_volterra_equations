@@ -314,11 +314,11 @@ def rHestonFourier_price_geom_asian_call(params, N=0, mode=None, nodes=None, wei
     if load and exists(filename):
         return np.load(filename)
     try:
-        result = rHestonFourier.price_geom_asian_call(S_0=params['S'], K=params['K'], H=params['H'],
-                                                      lambda_=params['lambda'], rho=params['rho'], nu=params['nu'],
-                                                      theta=params['theta'], V_0=params['V_0'], T=params['T'],
-                                                      rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
-                                                      weights=weights, verbose=verbose)
+        result = rHestonFourier.geom_asian_call_put(S_0=params['S'], K=params['K'], H=params['H'],
+                                                    lambda_=params['lambda'], rho=params['rho'], nu=params['nu'],
+                                                    theta=params['theta'], V_0=params['V_0'], T=params['T'],
+                                                    rel_tol=params['rel_tol'], N=N, mode=mode, nodes=nodes,
+                                                    weights=weights, verbose=verbose)
     except RuntimeError:
         print('Did not converge in given time')
         if isinstance(params['T'], np.ndarray):
@@ -351,10 +351,10 @@ def rHestonFourier_price_avg_vol_call(params, N=0, mode=None, nodes=None, weight
     if load and exists(filename):
         return np.load(filename)
     try:
-        result = rHestonFourier.price_avg_vol_call(K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                                   nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                                   T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode,
-                                                   nodes=nodes, weights=weights, verbose=verbose)
+        result = rHestonFourier.price_avg_vol_call_put(K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                                       nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                                       T=params['T'], rel_tol=params['rel_tol'], N=N, mode=mode,
+                                                       nodes=nodes, weights=weights, verbose=verbose)
     except RuntimeError:
         print('Did not converge in given time')
         if isinstance(params['T'], np.ndarray):
@@ -930,8 +930,9 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                             samples = np.load(get_filename(kind=kind, N=Ns[i], mode=modes[j], euler=euler[k_1],
                                                            antithetic=antithetic[k_2], N_time=N_times[m], params=params,
                                                            truth=False, markov=False))
-                            vol, low, upp = cf.iv_eur_call_MC(S_0=params['S'], K=params['K'], T=params['T'],
-                                                              samples=samples[0, :], antithetic=antithetic)
+                            vol, low, upp = cf.eur_MC(S_0=params['S'], K=params['K'], T=params['T'],
+                                                      samples=samples[0, :], antithetic=antithetic, r=params['r'],
+                                                      implied_vol=True)
                         elif option == 'geometric asian call':
                             kind = 'sample paths'
                             samples = np.load(get_filename(kind=kind, N=Ns[i], mode=modes[j], euler=euler[k_1],

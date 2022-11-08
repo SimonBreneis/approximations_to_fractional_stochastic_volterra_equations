@@ -335,9 +335,9 @@ def fourier_payoff_call_put_logarithmic(K, u):
     return np.exp(np.log(K) * (1 + u)) / (u * (1 + u))
 
 
-def price_call_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True):
+def price_eur_call_put_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True, call=True):
     """
-    Computes the option price of a call option using Fourier inversion.
+    Computes the option price of a European call or put option using Fourier inversion.
     :param mgf: The moment generating function of the log-variable that should be priced (e.g. the final log-price, or
         the final log-average), a function of the Fourier argument only
     :param R: The (dampening) shift that we use
@@ -348,8 +348,13 @@ def price_call_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :param log_price: If True, assumes that the mgf is the mgf of the log-price. If False, assumes it is the mgf of the
         price (without the logarithm)
+    :param call: If True, returns the call price. Else, returns the put price
     :return: The estimate of the option price
     """
+    if call:
+        R = np.abs(R)
+    else:
+        R = - np.abs(R)
     x = np.linspace(0, L, N + 1)
     y = np.zeros(N+1)
     y[:N] = x[1:] - x[:-1]
@@ -377,9 +382,9 @@ def price_call_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True):
     return np.exp(-r * T) / np.pi * np.real(fourier_payoff @ (mgf_output * y))
 
 
-def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
+def iv_eur_call_put_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     """
-    Computes the implied volatility of an European call option using Fourier inversion.
+    Computes the implied volatility of an European call or put (iv is the same for them) option using Fourier inversion.
     :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
     :param S_0: Initial stock price
     :param T: Maturity
@@ -390,8 +395,8 @@ def iv_eur_call_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    return iv_eur(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, r=r, T=T, R=R, L=L, N=N), r=r,
-                  payoff='call')
+    return iv_eur(S_0=S_0, K=K, T=T, price=price_eur_call_put_fourier(mgf=mgf, K=K, r=r, T=T, R=R, L=L, N=N, call=True),
+                  r=r, payoff='call')
 
 
 def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):
@@ -406,7 +411,7 @@ def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
     :return: The estimate of the option price
     """
-    return iv_geom_asian_call(S_0=S_0, K=K, T=T, price=price_call_fourier(mgf=mgf, K=K, R=R, L=L, N=N))
+    return iv_geom_asian_call(S_0=S_0, K=K, T=T, price=price_eur_call_put_fourier(mgf=mgf, K=K, R=R, L=L, N=N))
 
 
 def price_am(K, T, r, samples, payoff, N_features=3, antithetic=False):
