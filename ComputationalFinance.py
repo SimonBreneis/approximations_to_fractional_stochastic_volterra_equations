@@ -414,18 +414,19 @@ def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):
     return iv_geom_asian_call(S_0=S_0, K=K, T=T, price=price_eur_call_put_fourier(mgf=mgf, K=K, R=R, L=L, N=N))
 
 
-def price_am(K, T, r, samples, payoff, N_features=3, antithetic=False):
+def price_am(T, r, samples, payoff, features, antithetic=False, varying_initial_conditions=False):
     """
     Prices American options.
-    :param K: Strike price
     :param T: Maturity
     :param r: Interest rate
     :param samples: Numpy array of shape (d, m, N + 1), where N is the number of time steps, m the number of samples,
         and d is the dimension of the Markovian process. It is assumed that the first dimension is the stock price
         process
-    :param payoff: The payoff function, either 'call' or 'put' or a function of S (sample values) and K (strike price)
-    :param N_features: Integer, scales the number of features that should be used (higher is more features)
+    :param payoff: The payoff function, a function of S (sample values) only
+    :param features: A function turning samples at a specific time step into features
     :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param varying_initial_conditions: If True, assumes that the initial condition varies with samples. Otherwise,
+        assumes that the initial condition is the same for all samples
     :return: The price of the American option, a list of the models for each exercise time that approximate the
         future payoff, and the function computing the features of the samples
     """
@@ -433,50 +434,13 @@ def price_am(K, T, r, samples, payoff, N_features=3, antithetic=False):
     m = samples.shape[1]
     dt = T / N_time
     d = samples.shape[0]
-    if payoff == 'call':
-        payoff = payoff_call
-    elif payoff == 'put':
-        payoff = payoff_put
-
-    def features(x):
-        n_samples = x.shape[-1]
-        x_transformed = x.copy()
-        x_transformed[0, :] = (x_transformed[0, :] - K) / K
-        if N_features == 1:
-            res = x_transformed.T
-        elif N_features == 2:
-            res = np.empty((x.shape[1], d + 1))
-            res[:, :d] = x_transformed.T
-            res[:, -1] = x_transformed[0, :] ** 2
-        elif N_features == 3:
-            res = np.empty((x.shape[1], d + d ** 2 + 1))
-            res[:, :d] = x_transformed.T
-            res[:, d:d + d ** 2] = \
-                ((x_transformed[:, None, :] * x_transformed[None, :, :]).reshape(d ** 2, n_samples)).T
-            res[:, d + d ** 2] = x_transformed[0, :] ** 3
-        elif N_features == 4:
-            res = np.empty((x.shape[1], d + d ** 2 + 2))
-            res[:, :d] = x_transformed.T
-            res[:, d:d + d ** 2] = \
-                ((x_transformed[:, None, :] * x_transformed[None, :, :]).reshape(d ** 2, n_samples)).T
-            res[:, d + d ** 2] = x_transformed[0, :] ** 3
-            res[:, d + d ** 2 + 1] = x_transformed[0, :] ** 4
-        else:  # N_features >= 5
-            res = np.empty((x.shape[1], d + d ** 2 + d ** 3 + N_features - 3))
-            res[:, :d] = x_transformed.T
-            temp = (x_transformed[:, None, :] * x_transformed[None, :, :]).reshape((d ** 2, n_samples))
-            res[:, d:d + d ** 2] = temp.T
-            res[:, d + d ** 2:d + d ** 2 + d ** 3] = \
-                ((temp[:, None, :] * x_transformed[None, :, :]).reshape((d ** 3, n_samples))).T
-            res[:, d + d ** 2 + d ** 3:] = x_transformed[0, :, None] ** np.arange(4, N_features + 1)[None, :]
-        return res
 
     discount = np.exp(-r * dt)
     models = [LinearRegression() for _ in range(N_time)]
-    discounted_future_payoffs = payoff(S=samples[0, :, -1], K=K)
-    for i in range(N_time - 1, -1, -1):
+    discounted_future_payoffs = payoff(S=samples[0, :, -1])
+    for i in range(N_time - 1, -1 if varying_initial_conditions else 0, -1):
         discounted_future_payoffs = discount * discounted_future_payoffs
-        current_payoff = payoff(S=samples[0, :, i], K=K)
+        current_payoff = payoff(S=samples[0, :, i])
         active_indices = current_payoff > 0
         if np.sum(active_indices) > 1:
             ft = features(samples[:, active_indices, i])
@@ -489,6 +453,52 @@ def price_am(K, T, r, samples, payoff, N_features=3, antithetic=False):
         else:
             ft = features(np.zeros((d, 1)))
             models[i] = models[i].fit(ft, np.array([0]))
+        # print(models[i].intercept_, models[i].coef_)
+    if not varying_initial_conditions:
+        discounted_future_payoffs = discount * discounted_future_payoffs
+        current_payoff = payoff(S=samples[0, :, 0])
+        average_discounted_future_payoffs = np.average(discounted_future_payoffs)
+        average_current_payoff = np.average(current_payoff)
+        ft = features(samples[:, :1, 0])
+        models[0].fit(ft, np.array([average_discounted_future_payoffs]))
+        if average_current_payoff >= average_discounted_future_payoffs:
+            discounted_future_payoffs = average_current_payoff * np.ones(m)
+        # print(models[0].intercept_, models[0].coef_)
     if antithetic:
         discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:] + discounted_future_payoffs[:m // 2])
     return MC(discounted_future_payoffs), models, features
+
+
+def price_am_forward(T, r, samples, payoff, models, features, antithetic=False):
+    """
+    Prices American options.
+    :param T: Maturity
+    :param r: Interest rate
+    :param samples: Numpy array of shape (d, m, N + 1), where N is the number of time steps, m the number of samples,
+        and d is the dimension of the Markovian process. It is assumed that the first dimension is the stock price
+        process
+    :param payoff: The payoff function, a function of S (sample values) only
+    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :return: The price of the American option, a list of the models for each exercise time that approximate the
+        future payoff, and the function computing the features of the samples
+    """
+    N_time = samples.shape[-1] - 1
+    m = samples.shape[1]
+    dt = T / N_time
+
+    discount = np.exp(-r * dt)
+    discounted_future_payoffs = payoff(S=samples[0, :, -1])
+    for i in range(N_time - 1, -1, -1):
+        discounted_future_payoffs = discount * discounted_future_payoffs
+        current_payoff = payoff(S=samples[0, :, i])
+        active_indices = current_payoff > 0
+        if np.sum(active_indices) > 0:
+            ft = features(samples[:, active_indices, i])
+            predicted_future_payoffs = np.ones(m)  # the indices where the current payoff is 0 do not matter and are
+            # certainly excluded in the following code if we just set the predicted future payoff 1
+            predicted_future_payoffs[active_indices] = models[i].predict(ft)
+            execute_now = current_payoff > predicted_future_payoffs
+            discounted_future_payoffs[execute_now] = current_payoff[execute_now]
+    if antithetic:
+        discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:] + discounted_future_payoffs[:m // 2])
+    return MC(discounted_future_payoffs)
