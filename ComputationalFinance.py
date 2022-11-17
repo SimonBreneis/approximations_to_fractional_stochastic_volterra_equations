@@ -427,8 +427,8 @@ def price_am(T, r, samples, payoff, features, antithetic=False, varying_initial_
     :param antithetic: If True, uses antithetic variates to reduce the MC error
     :param varying_initial_conditions: If True, assumes that the initial condition varies with samples. Otherwise,
         assumes that the initial condition is the same for all samples
-    :return: The price of the American option, a list of the models for each exercise time that approximate the
-        future payoff, and the function computing the features of the samples
+    :return: The price of the American option and a list of the models for each exercise time that approximate the
+        future payoff
     """
     N_time = samples.shape[-1] - 1
     m = samples.shape[1]
@@ -466,7 +466,7 @@ def price_am(T, r, samples, payoff, features, antithetic=False, varying_initial_
         # print(models[0].intercept_, models[0].coef_)
     if antithetic:
         discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:] + discounted_future_payoffs[:m // 2])
-    return MC(discounted_future_payoffs), models, features
+    return MC(discounted_future_payoffs), models
 
 
 def price_am_forward(T, r, samples, payoff, models, features, antithetic=False):

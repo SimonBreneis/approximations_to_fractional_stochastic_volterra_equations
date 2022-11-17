@@ -354,6 +354,10 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
             return cf.payoff_put(S=S, K=K)
     if N_dates is None:
         N_dates = N_time
+
+    def features(x):
+        return am_features(x=x, degree=feature_degree, K=K)
+
     ex_times = np.linspace(0, T, N_dates + 1)
     samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
                        S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
@@ -362,11 +366,9 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
     preprocessed_samples[0, :, :] = samples_[0, :, :]
     preprocessed_samples[1:, :, :] = weights[:, None, None] * samples_[2:, :, :]
     preprocessed_samples[1:, :, :] = preprocessed_samples[1:, :, :] - preprocessed_samples[1:, :, :1]
-    (biased_est, biased_stat), models, features = cf.price_am(T=T, r=r, samples=preprocessed_samples,
-                                                              antithetic=antithetic, payoff=payoff,
-                                                              features=lambda x: am_features(x=x, degree=feature_degree,
-                                                                                             K=K))
-    print(biased_est, biased_stat)
+    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=preprocessed_samples, antithetic=antithetic,
+                                                    payoff=payoff, features=features)
+    # print(biased_est, biased_stat)
     if not unbiased:
         return biased_est, biased_stat, models, features
     samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
