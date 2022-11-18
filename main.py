@@ -12,63 +12,60 @@ import rHestonMarkovSamplePaths
 # import rHestonMomentMatching
 
 
-# Parameters for the rough Heston model. Note that the volatility process is parametrized as
-# V_t = V_0 + int_0^t K(t-s) (theta - lambda_ V_s) ds + int_0^t nu sqrt(V_s) dW_s
-S_0, V_0, T, lambda_, theta, nu, rho, H, N, N_time, m = 1., 0.02, 1., 0.3, 0.02, 0.3, -0.7, 0.1, 3, 200, 100000
-rel_tol = 1e-05
-K = S_0 * np.exp(np.linspace(-0.3, 0.15, 101))
-
-# Get good nodes and weights for the Markovian approximation. If one is interested in standard Heston, set
-# nodes = np.array([0]), weights = np.array([1])
+H = 0.05
+N = 10
+T = 1.
+tol = 1e-10
 nodes, weights = rk.quadrature_rule(H=H, N=N, T=T)
+real_error = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='intersections', tol=tol)[0]
+print(real_error)
+for tol in 10. ** (-np.arange(0, 10)):
+    tic = time.perf_counter()
+    res = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='intersections', tol=tol)
+    print(tol, 'intersections', np.abs(res[0] - real_error) / real_error, res[1], 1000 * (time.perf_counter() - tic))
+    tic = time.perf_counter()
+    # res = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='exact - trapezoidal', tol=tol)
+    print(tol, 'exact - trapezoidal', np.abs(res[0] - real_error) / real_error, res[1], 1000 * (time.perf_counter() - tic))
+    if tol > 2e-03:
+        tic = time.perf_counter()
+        # res = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='trapezoidal', tol=tol)
+        print(tol, 'trapezoidal', np.abs(res[0] - real_error) / real_error, res[1], 1000 * (time.perf_counter() - tic))
 
-# To get samples, use the following function:
-# samples = rHestonMarkovSamplePaths.samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes,
-# weights=weights, rho=rho, S_0=S_0, m=m, N_time=N_time)
-# The result will be an array of the shape (N+2, m), where m is the number of samples. The first component of the result
-# is the final stock price, the second the final volatility, and the remaining N components are the components of the
-# Markovian approximation of the volatility process.
-# If one wants sample paths instead of only final sample values, one can set the optional parameter sample_paths in the
-# above function to True. The result will then be of shape (N+2, m, N_time+1)
-
-# We now give an example of computing implied volatility smiles.
-# Compute the implied volatility smile for a European call option with MC and Mackevicius, including a MC confidence
-# interval
-(iv_MC, iv_MC_lower, iv_MC_upper) = rHestonMarkovSamplePaths.eur(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta,
-                                                                 V_0=V_0, S_0=S_0, T=T, nodes=nodes, weights=weights,
-                                                                 m=m, N_time=N_time, payoff='call', implied_vol=True)
-
-# Compute the implied volatility smile using Fourier inversion for the Markovian approximation (hence, no MC and
-# discretization errors)
-iv_Markov = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
-                                        rel_tol=rel_tol, nodes=nodes, weights=weights, implied_vol=True, call=True)
-
-# Compute the implied volatility smile using Fourier inversion for the non-approximated rough Heston model. Note that
-# we do not supply the nodes and weights here, but rather the Hurst parameter H
-iv_true = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
-                                      rel_tol=rel_tol, H=H, implied_vol=True, call=True)
-
-plt.plot(np.log(K / S_0), iv_true, 'k-', label='True smile')
-plt.plot(np.log(K / S_0), iv_Markov, 'b-', label='True Markovian approximation')
-plt.plot(np.log(K / S_0), iv_MC, 'r-', label='Markovian simulation')
-plt.plot(np.log(K / S_0), iv_MC_lower, 'r--')
-plt.plot(np.log(K / S_0), iv_MC_upper, 'r--')
-plt.xlabel('log-moneyness')
-plt.ylabel('implied volatility')
-plt.legend(loc='best')
-plt.show()
+tic = time.perf_counter()
+print(rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='intersections', tol=tol))
+print(time.perf_counter() - tic)
 time.sleep(36000)
 
-
-# ----------------------------------------------------------------------------------------------------
-
-
-
-
-N = np.arange(1, 101)
+N = np.linspace(0.5, 100, 1001)
 H = np.linspace(0.0001, 0.5, 101)
 beta = 0.4275
 alpha = 1.06418
+q = 10
+r = 0.3
+gamma = 0.86
+print(np.sqrt(11))
+plt.plot(N, np.sqrt(11) * 7 * N ** (-0.0009) * N ** (1 / (4 * beta * np.sqrt(N))))
+plt.show()
+plt.plot(H, ((0.75 - H/2) * (H + 0.5)) / (2 * beta + 1/2 - H))
+plt.show()
+x = np.linspace(1, 10, 101)
+print(0.173 * 0.75)
+plt.plot(x, np.log(x) / np.sqrt(x))
+plt.show()
+print(-3*beta * (1 - np.exp(-alpha*beta)) / (4 * (1 - np.exp(-alpha*beta) + 2 * gamma * beta ** 2)))
+print(2 * 122 ** 0.25)
+print(3 / 100 / 121 ** 0.75)
+print(np.exp(2*gamma-2))
+print((1-np.exp(-alpha*beta) - gamma*beta) / (2*(1-np.exp(-alpha*beta)+2*gamma*beta)))
+print(3 * beta * (1 - np.exp(-alpha * beta)) / (4 * (1 - np.exp(-alpha*beta) + beta**2)))
+print(3 * beta * (1 - np.exp(-alpha * beta)) / (4 * (1 - np.exp(-alpha*beta) + 2*beta**2)))
+plt.plot(N, (N / 122) ** (- (3 * beta * (1 - np.exp(-alpha*beta))) / (4 * (1 - np.exp(-alpha*beta) + 2 * beta ** 2))) + (N / 122) ** (1 / np.sqrt(N)))
+plt.show()
+plt.plot(N, (N / 122) ** ((2 * r - 1) * beta / 2) * (N / 122) ** (1 / np.sqrt(N)))
+plt.show()
+plt.plot(N, (N / 122) ** ((4 * q + 3) / (8 * N)))
+plt.show()
+print(np.sqrt(2/122) * 5/200)
 print(5 * 2 ** (-1.5) / 200 / 122 ** 0.25)
 print(6 * beta)
 print(beta ** 2 * np.exp(alpha * beta) / (np.exp(alpha * beta) - 1))

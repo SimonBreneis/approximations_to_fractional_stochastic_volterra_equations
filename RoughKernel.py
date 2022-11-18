@@ -18,6 +18,27 @@ def sort(a, b):
     return a[perm], b[perm]
 
 
+def rel_err(x, x_approx):
+    """
+    ...vaeaer
+    """
+    return np.abs((x - x_approx) / x)
+
+
+def single_param_search(f, rel_tol=1e-03, n=100, factor=2):
+    """
+    WTF ddddd
+    """
+    int_calc = isinstance(n, int)
+    approx_res, reusable = f(n=n // factor if int_calc else n / factor, reusable=None)
+    current_res, reusable = f(n=n, reusable=reusable)
+    while rel_err(current_res, approx_res) > rel_tol:
+        n = int(factor * n) if int_calc else factor * n
+        approx_res = current_res
+        current_res, reusable = f(n=n, reusable=reusable)
+    return current_res, n, reusable
+
+
 def mp_to_np(x):
     """
     Converts a mpmath matrix to a numpy array.
@@ -345,6 +366,125 @@ def error(H, nodes, weights, T, output='error'):
         forth_summands = nodes ** (-(H + 1 / 2)) * gamma_ints
         grad[N:] = 2 * third_summands - 2 * forth_summands
     return err, grad
+
+
+def error_l1(H, nodes, weights, T, method, tol=1e-03):
+    """
+    Blabla
+    """
+    if method == 'trapezoidal':
+        def error_(n, reusable):
+            t = np.linspace(0, T, n + 1)[1:]
+            if reusable is None:
+                reusable = np.abs(fractional_kernel(H, t) - fractional_kernel_approximation(H, t, nodes, weights))
+            else:
+                error_t_1 = np.empty(n)
+                error_t_1[1::2] = reusable
+                error_t_1[::2] = np.abs(fractional_kernel(H, t[1::2]) - fractional_kernel_approximation(H, t[1::2], nodes, weights))
+                reusable = error_t_1
+            total_error = np.trapz(reusable, dx=T / n)
+            return total_error + np.abs(fractional_kernel(H, T / (2 * n))
+                                        - fractional_kernel_approximation(H, T / (2 * n), nodes, weights)) * T / n, \
+                reusable
+        return single_param_search(f=error_, rel_tol=tol, n=100, factor=2)[0:2]
+    elif method == 'exact - trapezoidal':
+        gamma_ = gamma(H + 0.5)
+
+        def find_first_intersection():
+            current_error_ = 10.
+            current_t = 0.
+            current_kernel_approximation = fractional_kernel_approximation(H=H, t=current_t, nodes=nodes,
+                                                                           weights=weights)
+            while current_error_ > tol and current_t < T:
+                current_t = (current_kernel_approximation * gamma_) ** (1 / (H - 0.5))
+                current_kernel_approximation = fractional_kernel_approximation(H=H, t=current_t, nodes=nodes,
+                                                                               weights=weights)
+                current_kernel = fractional_kernel(H=H, t=current_t)
+                current_error_ = rel_err(current_kernel, current_kernel_approximation)
+            return np.fmin(current_t, T)
+
+        def error_(n, reusable):
+            t = np.linspace(t_0, T, n + 1)
+            if reusable is None:
+                reusable = np.abs(fractional_kernel(H, t) - fractional_kernel_approximation(H, t, nodes, weights))
+            else:
+                error_t_1 = np.empty(n + 1)
+                error_t_1[::2] = reusable
+                error_t_1[1::2] = np.abs(fractional_kernel(H, t[1::2]) - fractional_kernel_approximation(H, t[1::2], nodes, weights))
+                reusable = error_t_1
+            total_error = np.trapz(reusable, dx=(T - t_0) / n)
+            return error_to_t_0 + total_error, reusable
+
+        t_0 = find_first_intersection()
+        error_to_t_0 = t_0 ** (H + 0.5) / (gamma_ * (H + 0.5)) \
+            - np.sum(weights / nodes * (1 - exp_underflow(nodes * t_0)))
+        if t_0 == T:
+            return error_to_t_0
+        return single_param_search(f=error_, rel_tol=tol, n=100, factor=2)[0:2]
+    elif method == 'upper bound':
+        gamma_ = gamma(H + 0.5)
+        gamma_2 = gamma(1.5 - H)
+        l2_norm = T ** H / (gamma_ * np.sqrt(2 * H))
+        nm = nodes[:, None] + nodes[None, :]
+        err = T - 2 * gamma_ * np.sum(weights / nodes ** (1.5 - H) * gamma_2 * gammainc(1.5 - H, nodes * T)) \
+            + gamma_ ** 2 * np.sum(weights[:, None] * weights[None, :] / nm ** (2 - 2 * H) * gamma_2 * gammainc(1.5 - H, nm * T))
+        return l2_norm * np.sqrt(err)
+    elif method == 'intersections':
+        gamma_1 = gamma(H + 0.5)
+
+        def step(t_, ker_, ker_approx_):
+            nonlocal n_steps
+            n_steps = n_steps + 1
+            ker_larger = ker_ > ker_approx_
+            rel_err_ = rel_err(ker_, ker_approx_)
+            if rel_err_ > tol:
+                d_ker = (H - 0.5) / gamma_1 * t_ ** (H - 1.5)
+                d_ker_approx = - np.sum(weights * nodes * exp_underflow(nodes * t_))
+                if ker_larger:
+                    dd_ker_approx = np.sum(weights * nodes ** 2 * exp_underflow(nodes * t_))
+                    # return (ker_approx_ * gamma_1) ** (1 / (H - 0.5))
+                    return t_ + (d_ker - d_ker_approx + np.sqrt((d_ker - d_ker_approx) ** 2 - 2 * dd_ker_approx * (ker_approx_ - ker_))) / dd_ker_approx
+                else:
+                    dd_ker = (H - 0.5) * (H - 1.5) / gamma_1 * t_ ** (H - 2.5)
+                    return t_ + (d_ker_approx - d_ker + np.sqrt((d_ker - d_ker_approx) ** 2 - 2 * dd_ker * (ker_ - ker_approx_))) / dd_ker
+                    # return t_ + (ker_approx_ - ker_) / np.sum(weights * nodes * exp_underflow(nodes * t_))
+            else:
+                '''
+                t_ker = t_ + t_ * tol * (0.5 - H)
+                t_ker_approx = t_ + tol * ker_approx / np.sum(weights * nodes * exp_underflow(nodes * t_))
+                return np.fmin(t_ker, t_ker_approx)
+                '''
+                t_1 = t_ + tol * ker_ / np.sum(weights * nodes * exp_underflow(nodes * t_))
+                t_2 = t_ + tol * ker_ ** 2 / (tol * ker_ + ker_approx_) * gamma_1 / (0.5 - H) * t_ ** (1.5 - H)
+                return np.fmin(t_1, t_2)
+
+        def find_next_intersection(t_):
+            ker_ = fractional_kernel(H=H, t=t_)
+            ker_approx_ = fractional_kernel_approximation(H=H, t=t_, nodes=nodes, weights=weights)
+            ker_larger = ker_ > ker_approx_
+            t_old = t_
+            while (ker_ > ker_approx_) == ker_larger and t_ < T:
+                t_old = t_
+                t_ = step(t_=t_, ker_=ker_, ker_approx_=ker_approx_)
+                ker_ = fractional_kernel(H=H, t=t_)
+                ker_approx_ = fractional_kernel_approximation(H=H, t=t_, nodes=nodes, weights=weights)
+            return t_old, np.fmin(t_, T)
+
+        n_steps = 0
+        err = 0
+        ker_approx = fractional_kernel_approximation(H=H, t=0, nodes=nodes, weights=weights)
+        last_t = 0
+        while last_t < T:
+            t_left, t_right = find_next_intersection(t_=(ker_approx * gamma_1) ** (1 / (H - 0.5))
+                                                     if last_t == 0 else last_t)
+            this_t = (t_left + t_right) / 2 if t_right < T else T
+            err = err + np.abs((this_t ** (H + 0.5) - last_t ** (H + 0.5)) / (gamma_1 * (H + 0.5))
+                               - np.sum(weights / nodes * exp_underflow(last_t * nodes)
+                                        * (1 - exp_underflow((this_t - last_t) * nodes))))
+            last_t = this_t
+        return err, n_steps
+    else:
+        raise NotImplementedError(f'The method {method} for computing the L^1 kernel error has not been implemented.')
 
 
 def error_optimal_weights(H, T, nodes, output='error'):
