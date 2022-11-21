@@ -9,14 +9,88 @@ import rHestonFourier
 import rHestonMarkovSamplePaths
 # from functions import *
 # import rBergomiMarkov
-# import rHestonMomentMatching
+import rHestonMomentMatching
 
 
-H = 0.05
+H = 0.1
 N = 10
 T = 1.
-tol = 1e-10
+tol = 1e-8
+m, N_time, T, r, K, S_0 = 10000000, 256, 1., 0.06, 1.05, 1.
+H, lambda_, nu, theta, V_0, rel_tol, rho = 0.1, 0.3, 0.3, 0.02, 0.02, 1e-05, -0.7
+N_dates = N_time // 2
+K = np.exp(np.linspace(-0.3, 0.5, 11))
+
+# V_T = V_0 + int_0^T K(T-s) (theta - lambda V_s) ds + int_0^T nu sqrt(V_s) dW_s
+nodes, weights = rk.quadrature_rule(H=H, N=3, T=T, mode='european')
+print(rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=1e-04, H=H, digital=True, implied_vol=False, verbose=19))
+print(nodes, weights)
+print(np.amax(nodes))
+# nodes = np.array([0])
+# weights = np.array([1])
+moments = rHestonMomentMatching.first_five_moments_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0, dt=1/50)[0](V_0)
+print(moments)
+
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=H)
+a_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=0.49)
+print(np.amax(rk.rel_err(true_smile, a_smile)))
+for i in range(6):
+    nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='european')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='optimized')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    _, nodes, weights = rk.optimize_error_l1(H=H, N=i + 1, T=T)
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+time.sleep(36000)
+
+real_errors = np.empty(8)
+better_errors = np.empty(8)
+optimal_errors = np.empty(8)
+bound = np.empty(8)
+N_1 = np.array([1, 2, 3, 4, 5, 6, 7, 8])
+
+for i in range(8):
+    N = N_1[i]
+    nodes_1, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='theorem l1')
+    real_errors[i] = rk.error_l1(H=H, nodes=nodes_1, weights=weights, T=T, method='intersections', tol=tol)[0]
+    nodes_2, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='observation l1')
+    better_errors[i] = rk.error_l1(H=H, nodes=nodes_2, weights=weights, T=T, method='intersections', tol=tol)[0]
+    # optimal_errors[i], nodes_3, weights = rk.optimize_error_l1(H=H, N=N, T=T)
+    N_ = (H + 0.5) * N
+    bound[i] = rk.c_H(H) * T ** (0.5 + H) * (0.03 / (0.5 - H) * (122 / N_) ** (0.4275 * np.sqrt(N_) - 0.5) + 8 * N_ ** ((1 - H) / 2) + 2) * np.exp(-1.06418 * np.sqrt(N_))
+    real_errors[i] = real_errors[i] * scipy.special.gamma(H + 0.5) * (H + 0.5) / T ** (H + 0.5)
+    better_errors[i] = better_errors[i] * scipy.special.gamma(H + 0.5) * (H + 0.5) / T ** (H + 0.5)
+    bound[i] = bound[i] * scipy.special.gamma(H + 0.5) * (H + 0.5) / T ** (H + 0.5)
+    print(N, np.amax(nodes_1), np.amax(nodes_2), bound[i], real_errors[i], better_errors[i], optimal_errors[i])
+
+optimal_errors = np.array([0.16354500061182706, 0.05735152942398583, 0.023932298883270593, 0.011125617233409565,
+                           0.0055713939772209006, 0.002948648444794344, 0.0016297948110116681, 0.0009332303490519119])
+plt.loglog(N_1, real_errors, label='Theorem')
+plt.loglog(N_1, better_errors, label='Improved parameters')
+plt.loglog(N_1, optimal_errors, label='Optimal rule')
+plt.loglog(N_1, bound, label='Theorem bound')
+plt.xlabel('Number of dimensions N')
+plt.ylabel('Relative error')
+plt.legend(loc='best')
+plt.show()
+
+
+nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='theorem l1')
+print(nodes, weights)
+
 nodes, weights = rk.quadrature_rule(H=H, N=N, T=T)
+print(nodes, weights)
+for N in np.arange(1, 15):
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='theorem l1')
+    print('theorem l1', N, np.amax(nodes), rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='intersections', tol=tol)[0])
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T)
+    print('european', N, np.amax(nodes), rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='intersections', tol=tol)[0])
+
+
+time.sleep(36000)
 real_error = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='intersections', tol=tol)[0]
 print(real_error)
 for tol in 10. ** (-np.arange(0, 10)):

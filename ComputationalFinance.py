@@ -106,32 +106,28 @@ def BS_nodes(S_0, K, sigma, T, r=0., regularize=True):
     return d1, d2
 
 
-def BS_price_eur_call(S_0, K, sigma, T, r=0.):
+def BS_price_eur_call_put(S_0, K, sigma, T, r=0., call=True, digital=False):
     """
-    Computes the price of a European call option under the Black-Scholes model.
+    Computes the price of a (digital or standard) European call or put option under the Black-Scholes model.
     :param S_0: Initial stock price
     :param K: Strike price
     :param sigma: Volatility
     :param r: Drift
     :param T: Final time
+    :param call: If True, prices a call option. Else prices a put option
+    :param digital: If True, prices a digital option. Else prices a standard option
     :return: The price of a call option
     """
+    if digital:
+        put_price = norm.cdf((np.log(K / S_0) + sigma ** 2 * T / 2 - r * T) / (sigma * np.sqrt(T)))
+        if call:
+            return 1 - put_price
+        else:
+            return put_price
     d1, d2 = BS_nodes(S_0=S_0, K=K, sigma=sigma, T=T, r=r, regularize=True)
-    return S_0 * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-
-
-def BS_price_eur_put(S_0, K, sigma, T, r=0.):
-    """
-    Computes the price of a European put option under the Black-Scholes model.
-    :param S_0: Initial stock price
-    :param K: Strike price
-    :param sigma: Volatility
-    :param r: Drift
-    :param T: Final time
-    :return: The price of a put option
-    """
-    d1, d2 = BS_nodes(S_0=S_0, K=K, sigma=sigma, T=T, r=r, regularize=True)
-    return - S_0 * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
+    if call:
+        return S_0 * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    - S_0 * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
 
 
 def BS_price_geom_asian_call(S_0, K, sigma, T):
@@ -143,7 +139,8 @@ def BS_price_geom_asian_call(S_0, K, sigma, T):
     :param T: Final time
     :return: The price of a call option
     """
-    return BS_price_eur_call(S_0=S_0 * np.exp(-sigma ** 2 * T / 12), K=K, sigma=sigma / np.sqrt(3), T=T, r=0.)
+    return BS_price_eur_call_put(S_0=S_0 * np.exp(-sigma ** 2 * T / 12), K=K, sigma=sigma / np.sqrt(3), T=T, r=0.,
+                                 call=True, digital=False)
 
 
 def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
@@ -180,10 +177,16 @@ def iv_eur(S_0, K, T, price, payoff, r=0.):
     """
     if payoff == 'call' or payoff == payoff_call:
         def price_fun(s):
-            return BS_price_eur_call(S_0=S_0, K=K, sigma=s, r=r, T=T)
+            return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=True, digital=False)
+    elif payoff == 'digital call':
+        def price_fun(s):
+            return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=True, digital=True)
     elif payoff == 'put' or payoff == payoff_put:
         def price_fun(s):
-            return BS_price_eur_put(S_0=S_0, K=K, sigma=s, r=r, T=T)
+            return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=False, digital=False)
+    elif payoff == 'digital put':
+        def price_fun(s):
+            return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=False, digital=True)
     else:
         normal_rv = np.random.normal(0, np.sqrt(T), 1000000)
 
@@ -308,36 +311,40 @@ def price_avg_vol_call_MC(K, samples, antithetic=False):
     return price_estimate, price_estimate - price_stat, price_estimate + price_stat
 
 
-def fourier_payoff_call_put(K, u):
+def fourier_payoff_call_put(K, u, call=True, digital=False, logarithmic=True):
     """
-    Returns the value of the Fourier transform of the payoff of a put or call option (same Fourier transform).
+    Returns the value of the Fourier transform of the payoff of a (digital or standard) put or call option.
     Is a complex number.
     :param K: Strike price, may also be a numpy array
     :param u: Argument of the Fourier transform
-    :return: hat(f)(u) (or hat(f)(K, u) if K is a numpy array)
-    """
-    if isinstance(K, np.ndarray):
-        return - np.exp(np.multiply.outer(K, complex(0, 1) * u)) / u ** 2
-    return - np.exp(K * complex(0, 1) * u) / u ** 2
-
-
-def fourier_payoff_call_put_logarithmic(K, u):
-    """
-    Returns the value of the Fourier transform of the payoff of a put or call option (same Fourier transform).
-    Is a complex number.
-    :param K: Strike price, may also be a numpy array
-    :param u: Argument of the Fourier transform
+    :param call: If True, returns the Fourier transform of a call option. If False, of a put option
+    :param digital: If True, returns the Fourier transform of a digital option. If False, of a standard option
+    :param logarithmic: If True, assumes that the payoff is a function of the log-stock price. If False, assumes it is
+        a function of the (normal) stock price
     :return: hat(f)(u) (or hat(f)(K, u) if K is a numpy array)
     """
     u = complex(0, 1) * u
+    if digital:
+        sign = -1 if call else 1
+        if logarithmic:
+            if isinstance(K, np.ndarray):
+                return sign * np.exp(np.multiply.outer(np.log(K), u)) / u
+            return sign * np.exp(np.log(K) * u) / u
+        if isinstance(K, np.ndarray):
+            return sign * np.exp(np.multiply.outer(K, u)) / u
+        return sign * np.exp(K * u) / u
+    if logarithmic:
+        if isinstance(K, np.ndarray):
+            return np.exp(np.multiply.outer(np.log(K), 1 + u)) / (u * (1 + u))
+        return np.exp(np.log(K) * (1 + u)) / (u * (1 + u))
     if isinstance(K, np.ndarray):
-        return np.exp(np.multiply.outer(np.log(K), 1 + u)) / (u * (1 + u))
-    return np.exp(np.log(K) * (1 + u)) / (u * (1 + u))
+        return np.exp(np.multiply.outer(K, u)) / u ** 2
+    return np.exp(K * u) / u ** 2
 
 
-def price_eur_call_put_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True, call=True):
+def price_eur_call_put_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price=True, call=True, digital=False):
     """
-    Computes the option price of a European call or put option using Fourier inversion.
+    Computes the option price of a (digital or standard) European call or put option using Fourier inversion.
     :param mgf: The moment generating function of the log-variable that should be priced (e.g. the final log-price, or
         the final log-average), a function of the Fourier argument only
     :param R: The (dampening) shift that we use
@@ -349,6 +356,7 @@ def price_eur_call_put_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price
     :param log_price: If True, assumes that the mgf is the mgf of the log-price. If False, assumes it is the mgf of the
         price (without the logarithm)
     :param call: If True, returns the call price. Else, returns the put price
+    :param digital: If True, computes the price of a digital option. Else, of a standard option
     :return: The estimate of the option price
     """
     if call:
@@ -375,16 +383,14 @@ def price_eur_call_put_fourier(mgf, K, r=0., T=1., R=2., L=50., N=300, log_price
             else:
                 raise MemoryError('Not enough memory to carry out Fourier inversion.')
         current_round = current_round + 1
-    if log_price:
-        fourier_payoff = fourier_payoff_call_put_logarithmic(K, x + complex(0, 1) * R)
-    else:
-        fourier_payoff = fourier_payoff_call_put(K, x + complex(0, 1) * R)
+    fourier_payoff = fourier_payoff_call_put(K=K, u=x + complex(0, 1) * R, call=call, digital=digital,
+                                             logarithmic=log_price)
     return np.exp(-r * T) / np.pi * np.real(fourier_payoff @ (mgf_output * y))
 
 
-def iv_eur_call_put_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
+def iv_eur_call_put_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300, call=True, digital=False):
     """
-    Computes the implied volatility of an European call or put (iv is the same for them) option using Fourier inversion.
+    Computes the implied volatility of a (digital or standard) European call or put option using Fourier inversion.
     :param mgf: The moment generating function of the final log-price, a function of the Fourier argument only
     :param S_0: Initial stock price
     :param T: Maturity
@@ -393,10 +399,18 @@ def iv_eur_call_put_fourier(mgf, S_0, K, T, r=0., R=2., L=50., N=300):
     :param K: The strike prices, assumed to be a numpy array
     :param L: The value at which we cut off the integral, so we do not integrate over the reals, but only over [-L, L]
     :param N: The number of points used in the trapezoidal rule for the approximation of the integral
-    :return: The estimate of the option price
+    :param call: If True, computes the implied volatility of a call option. Else, of a put option
+    :param digital: If True, computes the implied volatility of a digital option. Else, of a standard option
+    :return: The estimate of the implied volatility
     """
+    payoff = 'call'
+    if digital:
+        if call:
+            payoff = 'digital call'
+        else:
+            payoff = 'digital put'
     return iv_eur(S_0=S_0, K=K, T=T, price=price_eur_call_put_fourier(mgf=mgf, K=K, r=r, T=T, R=R, L=L, N=N, call=True),
-                  r=r, payoff='call')
+                  r=r, payoff=payoff)
 
 
 def iv_geom_asian_call_fourier(mgf, S_0, K, T, R=2., L=50., N=300):

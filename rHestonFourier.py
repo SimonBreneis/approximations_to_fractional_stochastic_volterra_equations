@@ -275,9 +275,10 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
 
 
 def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
-                 weights=None, implied_vol=True, call=True, return_error=False, verbose=0):
+                 weights=None, implied_vol=True, call=True, digital=False, return_error=False, verbose=0):
     """
-    Computes the implied volatility or price of the European call or put option in the rough Heston model.
+    Computes the implied volatility or price of a (digital or standard) European call or put option in the rough Heston
+    model.
     Uses Fourier inversion.
     :param S_0: Initial stock price
     :param K: Strike price, assumed to be a numpy array
@@ -298,6 +299,7 @@ def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="europ
     :param weights: Can specify the weights directly
     :param implied_vol: If True, computes the implied volatility, else computes the price
     :param call: If True, uses the call option, else uses the put option
+    :param digital: If True, uses a digital option, else uses a standard option
     :param return_error: If True, also returns a relative maximal error estimate
     :param verbose: Determines how many intermediate results are printed to the console
     return: The implied volatility of the call option
@@ -312,11 +314,11 @@ def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="europ
     if implied_vol:
         def compute(T_, K_, N_Riccati, L, N_Fourier, R):
             return cf.iv_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), S_0=S_0, K=K_, T=T_, r=r,
-                                              R=R, L=L, N=N_Fourier)
+                                              R=R, L=L, N=N_Fourier, digital=digital)
     else:
         def compute(T_, K_, N_Riccati, L, N_Fourier, R):
             return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=r, R=R, L=L,
-                                                 N=N_Fourier, log_price=True, call=call)
+                                                 N=N_Fourier, log_price=True, call=call, digital=digital)
 
     return compute_Fourier_inversion(fun=compute, S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose,
                                      return_error=return_error)
