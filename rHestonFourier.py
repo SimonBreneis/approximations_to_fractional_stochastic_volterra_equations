@@ -162,7 +162,7 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq)
 
 
-def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_error=False):
+def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_error=False, H=None, nu=None):
     """
     Computes the Fourier inversion given a relative error tolerance by finding the appropriate parameters for
     solving the Riccati equations, and computing the inverse Fourier integral.
@@ -176,6 +176,8 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
     :param rel_tol: Required maximal relative error in the implied volatility
     :param verbose: Determines how many intermediate results are printed to the console
     :param return_error: If True, also returns a relative error estimate
+    :param H: Hurst parameter. Specifying may improve convergence speed
+    :param nu: Volatility of volatility. Specifying it may improve convergence speed
     return: The implied volatility of the call option
     """
     R = 2.  # The (dampening) shift that we use for the Fourier inversion
@@ -192,12 +194,13 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
         :param eps: Relative error tolerance
         return: The implied volatility of the call option
         """
-        N_Riccati = 250  # Number of time steps used in the solution of the fractional Riccati
-        # equation
+        N_Riccati = 250 * (1 if H is None else int(np.fmax(1, 0.1 / H))) \
+            * (1 if nu is None else int(np.fmax(1, nu / 0.3)))  # Number of time steps used in the solution of the
+        # fractional Riccati equation
         L = 120 / T_ ** 0.4  # The value at which we cut off the Fourier integral, so we do not integrate over the
         # reals, but only over [0, L]
-        N_Fourier = int(8 * L)  # The number of points used in the trapezoidal rule for the
-        # approximation of the Fourier integral
+        N_Fourier = int(8 * L)  # The number of points used in the trapezoidal rule for the approximation of the Fourier
+        # integral
         np.seterr(all='warn')
         tic = time.perf_counter()
         smile = compute(N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier)
@@ -229,7 +232,7 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
             if np.sum(np.isnan(smile)) > 0:
                 L = L * 1.6
                 N_Fourier = int(N_Fourier * 1.7)
-                N_Riccati = int(N_Riccati * 1.7)
+                N_Riccati = int(N_Riccati * 2.5)
             else:
                 L = L * 1.4
                 N_Fourier = int(N_Fourier * 1.4) if error_Fourier < eps / 2 else N_Fourier * 2
@@ -321,7 +324,7 @@ def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="europ
                                                  N=N_Fourier, log_price=True, call=call, digital=digital)
 
     return compute_Fourier_inversion(fun=compute, S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose,
-                                     return_error=return_error)
+                                     return_error=return_error, H=H, nu=nu)
 
 
 def skew_eur_call_put(lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
