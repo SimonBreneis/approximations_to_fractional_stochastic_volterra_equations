@@ -184,74 +184,90 @@ def AbiJaberElEuch_quadrature_rule(H, N, T):
 
 def Gaussian_parameters(H, N, T, mode):
     """
-    Returns the parameters m, n, a, b of the Gaussian quadrature rule.
+    Returns the parameters of the Gaussian quadrature rule.
     :param H: Hurst parameter
     :param N: Total number of nodes
     :param T: Final time
     :param mode: The kind of theorem or observation that should be used
-    :return: Quadrature level m, number of intervals n, left point a, right point b
+    :return: The partition of the middle part, and the quadrature level m
     """
+    if ' geometric ' in mode:
+        if mode == "old geometric theorem l2":
+            N = N - 1
+            A = np.sqrt(1 / H + 1 / (1.5 - H))
+            beta = 0.4275
+            alpha = 1.06418
+            gamma_ = np.exp(alpha * beta)
+            exponent = 1 / (3 * gamma_ / (8 * (gamma_ - 1)) + 6 * H - 4 * H * H)
+            temp_1 = ((9 - 6 * H) / (2 * H)) ** (gamma_ / (8 * (gamma_ - 1)))
+            temp_2 = 5 * np.pi ** 3 * gamma_ * (gamma_ - 1) * A ** (2 - 2 * H) * float(N) ** (1 - H) / (
+                        beta ** (2 - 2 * H))
+            base_0 = temp_1 * (temp_2 * (3 - 2 * H) / (768 * H)) ** (2 * H)
+            a = 1 / T * base_0 ** exponent * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N))
+            base_n = temp_1 * (temp_2 / 1152) ** (2 * H - 3)
+            b = 1 / T * base_n ** exponent * np.exp(alpha / (H * A) * np.sqrt(N))
+            m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
+            n = int(np.round(N / m))
+        elif mode == "old geometric observation l2":
+            N = N - 1
+            A = np.sqrt(1 / H + 1 / (1.5 - H))
+            beta = 0.9
+            alpha = 1.8
+            a = 0.65 * 1 / T * np.exp(3.1 * H) * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N))
+            b = 1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N))
+            m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
+            n = int(np.round(N / m))
+        elif mode == "old geometric theorem l1":
+            beta = 0.4275
+            alpha = 1.06418
+            gamma_ = np.exp(-alpha * beta)
+            N_ = (H + 0.5) * N
+            C = 1 / T * np.sqrt(N_ / 122) * N_ ** (-(3 - 2 * H) / (8 * beta * np.sqrt(N_) + 2 - 4 * H))
+            a = C
+            b = C * N_ ** (-3 * (1 - gamma_) / (2 + 4 * H) / (1 - gamma_ + 1.72 * beta ** 2))
+            a = 1 / T
+            b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
+            m = int(np.fmax(np.round(beta * np.sqrt(N_)), 1))
+            n = int(np.round(N / m)) - 1
+        elif mode == "old geometric observation l1":
+            beta = 1.0
+            alpha = 1.8
+            a = 3 / T
+            b = 0.5 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
+            m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
+            n = int(np.round(N / m)) - 1
+        elif mode == "new geometric theorem l1":
+            beta = 1
+            alpha = 1.762747
+            a = 1 / (3 * T)
+            b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
+            m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
+            n = int(np.round(N / m)) - 1
+        else:
+            raise NotImplementedError(f'The mode {mode} has not been implemented')
 
-    if mode == "old geometric theorem l2":
-        N = N - 1
-        A = np.sqrt(1 / H + 1 / (1.5 - H))
-        beta = 0.4275
-        alpha = 1.06418
-        gamma_ = np.exp(alpha * beta)
-        exponent = 1 / (3 * gamma_ / (8 * (gamma_ - 1)) + 6 * H - 4 * H * H)
-        temp_1 = ((9 - 6 * H) / (2 * H)) ** (gamma_ / (8 * (gamma_ - 1)))
-        temp_2 = 5 * np.pi ** 3 * gamma_ * (gamma_ - 1) * A ** (2 - 2 * H) * float(N) ** (1 - H) / (beta ** (2 - 2 * H))
-        base_0 = temp_1 * (temp_2 * (3 - 2 * H) / (768 * H)) ** (2 * H)
-        a = 1 / T * base_0 ** exponent * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N))
-        base_n = temp_1 * (temp_2 / 1152) ** (2 * H - 3)
-        b = 1 / T * base_n ** exponent * np.exp(alpha / (H * A) * np.sqrt(N))
-        m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
-    elif mode == "old geometric observation l2":
-        N = N - 1
-        A = np.sqrt(1 / H + 1 / (1.5 - H))
-        beta = 0.9
-        alpha = 1.8
-        a = 0.65 * 1 / T * np.exp(3.1 * H) * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N))
-        b = 1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N))
-        m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
-    elif mode == "old geometric theorem l1":
-        beta = 0.4275
-        alpha = 1.06418
-        gamma_ = np.exp(-alpha * beta)
-        N_ = (H + 0.5) * N
-        C = 1 / T * np.sqrt(N_ / 122) * N_ ** (-(3 - 2 * H) / (8 * beta * np.sqrt(N_) + 2 - 4 * H))
-        a = C
-        b = C * N_ ** (-3 * (1 - gamma_) / (2 + 4 * H) / (1 - gamma_ + 1.72 * beta ** 2))
-        a = 1 / T
-        b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
-        m = int(np.fmax(np.round(beta * np.sqrt(N_)), 1))
-    elif mode == "old geometric observation l1":
-        beta = 1.0
-        alpha = 1.8
-        a = 3 / T
-        b = 0.5 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
-        m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
-    elif mode == "old non-geometric theorem l1":
-        beta = 0.79606057
-        a = 3 / T
-        b = 1
-        m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
-    elif mode == "new geometric theorem l1":
-        beta = 1
-        alpha = 1.762747
-        a = 1 / (3 * T)
-        b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
-        m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
+        partition = np.exp(np.log(a) + np.log(b / a) * np.linspace(0, 1, n + 1))
     else:
-        raise NotImplementedError(f'The mode {mode} has not been implemented')
+        if mode == "old non-geometric theorem l1":
+            beta = 0.79606057
+            a = 3 / T
+            m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
+            c = 0.50246208
+            kappa = 1 / (2 * 0.79606057 ** 2)
+        else:
+            raise NotImplementedError(f'The mode {mode} has not been implemented')
 
-    n = int(np.round(N / m))
-    return m, n, a, b
+        n = int(np.round(N / m)) - 1
+        partition = np.empty(n + 1)
+        partition[0] = a
+        for i in range(n):
+            partition[i + 1] = partition[i] * (1 + 2 * c * partition[i] ** (kappa / (n + 1)))
+    return partition, m
 
 
 def Gaussian_interval(H, m, a, b, fractional_weight=True):
     """
-    Returns the nodes and weights of the Gauss quadrature rule level m on [a, b].
+    Returns the nodes and weights of the Gauss quadrature rule of level m on [a, b].
     :param H: Hurst parameter
     :param m: Level of the Gaussian quadrature
     :param a: Left end of interval
@@ -268,27 +284,26 @@ def Gaussian_interval(H, m, a, b, fractional_weight=True):
     return quadpy.tools.scheme_from_rc(alpha, beta, int_1)
 
 
-def Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True):
+def Gaussian_on_partition(H, m, partition, fractional_weight=True):
     """
-    Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
-    on n geometrically spaced subintervals.
+    Returns the nodes and weights of the Gaussian quadrature rule of level m on a partition.
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
-    :param n: Number of subintervals
-    :param a: a = Left end-point of the middle part
-    :param b: b = Right end-point of the middle part
-    :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight. If
-        False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H
+    :param partition: The partition, where the Gaussian quadrature rule is applied on each interval
+    :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight
+        function. If False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H, and
+        then multiplies the weights by nodes ** (-H - 1/2)
     :return: All the nodes and weights
     """
-    partition = np.exp(np.log(a) + np.log(b / a) * np.linspace(0, 1, n + 1))
-    nodes = np.empty(m * n)
-    weights = np.empty(m * n)
-    for i in range(n):
+    nodes = np.empty(m * (len(partition) - 1))
+    weights = np.empty(m * (len(partition) - 1))
+    for i in range(len(partition) - 1):
         new_nodes, new_weights = Gaussian_interval(H=H, m=m, a=partition[i], b=partition[i + 1],
                                                    fractional_weight=fractional_weight)
         nodes[m * i:m * (i + 1)] = new_nodes
         weights[m * i:m * (i + 1)] = new_weights
+    if not fractional_weight:
+        weights = weights * nodes ** (-H - 0.5)
     return nodes, weights
 
 
@@ -307,62 +322,34 @@ def Gaussian_optimal_zero_weight(H, T, nodes, weights):
     return (T ** (H + 0.5) / gamma(H + 1.5) - np.sum(weights / nodes * (1 - exp_underflow(nodes * T)))) / T
 
 
-def Gaussian_geometric(H, N, T, mode='observation'):
+def Gaussian_rule(H, N, T, mode):
     """
     Returns the nodes and weights of the Gaussian rule with roughly N nodes.
     :param H: Hurst parameter
     :param N: Number of nodes
     :param T: Final time
-    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-        parameters from the theorem
+    :param mode: The Gaussian parameters that should be used
     :return: The nodes and weights, ordered by the size of the nodes
     """
     if isinstance(T, np.ndarray):
         T = T[-1]
-    m, n, a, b = Gaussian_parameters(H, N, T, mode)
+    partition, m = Gaussian_parameters(H, N, T, mode)
 
     if mode == 'old geometric theorem l2' or mode == 'old geometric observation l2':
         if N == 1:
             w_0 = Gaussian_optimal_zero_weight(H=H, T=T, nodes=np.array([]), weights=np.array([]))
             nodes, weights = np.array([0.]), np.array([w_0])
         else:
-            nodes, weights = np.zeros(m * n + 1), np.empty(m * n + 1)
-            nodes[1:], weights[1:] = Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True)
+            nodes, weights = np.zeros(m * (len(partition) - 1) + 1), np.empty(m * (len(partition) - 1) + 1)
+            nodes[1:], weights[1:] = Gaussian_on_partition(H=H, m=m, partition=partition,
+                                                           fractional_weight=True)
             weights[0] = Gaussian_optimal_zero_weight(H=H, T=T, nodes=nodes[1:], weights=weights[1:])
     else:
-        nodes, weights = np.empty(m * n), np.empty(m * n)
-        nodes[:m], weights[:m] = Gaussian_interval(H=H, m=m, a=0, b=np.exp(-float(a)), fractional_weight=True)
-        if n > 1:
-            nodes[m:], weights[m:] = Gaussian_geometric_middle_part(H=H, m=m, n=n - 1, a=a, b=b,
-                                                                    fractional_weight='old' in mode)
-    return nodes, weights
-
-
-def Gaussian_rule_l1(H, N, T, mode='theorem l1'):
-    """
-    DEPRECATED - DO NOT USE!
-    Returns the nodes and weights of the Gaussian rule with roughly N nodes.
-    :param H: Hurst parameter
-    :param N: Number of nodes
-    :param T: Final time
-    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-        parameters from the theorem
-    :return: The nodes and weights, ordered by the size of the nodes
-    """
-    if isinstance(T, np.ndarray):
-        T = T[-1]
-    m, n, a, b = Gaussian_parameters(H, N, T, mode)
-    nodes = np.empty(m * n)
-    weights = np.empty(m * n)
-    nodes[:m], weights[:m] = Gaussian_interval(H, m, 0, a)
-    if mode == 'new theorem l1':
-        xi = a
-        c = 0.50246208
-        kappa = 1 / (2 * 0.79606057 ** 2)  # rate -1.0957535765682107
-        for i in range(n - 1):
-            nodes[m * (i + 1):m * (i + 2)], weights[m * (i + 1):m * (i + 2)] = \
-                Gaussian_interval(H, m, xi, xi * (1 + 2 * c * xi ** (kappa / n)))
-            xi = xi * (1 + 2 * c * xi ** (kappa / n))
+        nodes, weights = np.empty(m * len(partition)), np.empty(m * len(partition))
+        nodes[:m], weights[:m] = Gaussian_interval(H=H, m=m, a=0, b=partition[0], fractional_weight=True)
+        if len(partition) > 1:
+            nodes[m:], weights[m:] = Gaussian_on_partition(H=H, m=m, partition=partition,
+                                                           fractional_weight='old' in mode)
     return nodes, weights
 
 
@@ -1168,9 +1155,7 @@ def quadrature_rule(H, N, T, mode="european"):
     :param H: Hurst parameter
     :param N: Total number of nodes
     :param T: Final time
-    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-        parameters from the theorem. If optimized, optimizes over the nodes and weights directly. If european, chooses a
-        rule that is especially suitable for pricing European options. Appending old leads to using suboptimal weights
+    :param mode: The kind of quadrature rule that should be used
     :return: All the nodes and weights, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
     if isinstance(T, np.ndarray):
@@ -1200,5 +1185,5 @@ def quadrature_rule(H, N, T, mode="european"):
     if mode == "abi jaber":
         return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
     if mode == "paper":
-        return Gaussian_geometric(H=H, N=N, T=T, mode="old geometric observation l2")
-    return Gaussian_geometric(H=H, N=N, T=T, mode=mode)
+        return Gaussian_rule(H=H, N=N, T=T, mode="old geometric observation l2")
+    return Gaussian_rule(H=H, N=N, T=T, mode=mode)
