@@ -341,8 +341,7 @@ def Gaussian_rule(H, N, T, mode):
             nodes, weights = np.array([0.]), np.array([w_0])
         else:
             nodes, weights = np.zeros(m * (len(partition) - 1) + 1), np.empty(m * (len(partition) - 1) + 1)
-            nodes[1:], weights[1:] = Gaussian_on_partition(H=H, m=m, partition=partition,
-                                                           fractional_weight=True)
+            nodes[1:], weights[1:] = Gaussian_on_partition(H=H, m=m, partition=partition, fractional_weight=True)
             weights[0] = Gaussian_optimal_zero_weight(H=H, T=T, nodes=nodes[1:], weights=weights[1:])
     else:
         nodes, weights = np.empty(m * len(partition)), np.empty(m * len(partition))
@@ -728,8 +727,8 @@ def error_l2_optimal_weights(H, T, nodes, output='error'):
     return err, grad, hess, opt_weights
 
 
-def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False, post_processing=False,
-                      init_nodes=None, iterative=False):
+def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False, init_nodes=None,
+                      iterative=False):
     """
     Optimizes the L^2 error with N points for the fractional kernel. Always uses the best weights and only numerically
     optimizes over the nodes.
@@ -743,8 +742,6 @@ def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_o
         L-BFGS-B. If hessian, uses also the gradient and the Hessian of the error with respect to the nodes, and uses
         the optimizer trust-constr
     :param force_order: Forces the nodes to stay in order, i.e. not switch places. May improve numerical stability
-    :param post_processing: After optimizing the error, ensures that the results are reasonable and yield good results.
-        If this is not the case, may call this function, or other processes again to potentially achieve better results
     :param init_nodes: May specify a starting point for the nodes
     :param iterative: If True, starts with 1 node and iteratively solves the optimization problem before adding another
         node
@@ -756,18 +753,14 @@ def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_o
     if iterative and not init_nodes and N >= 2:
         all_errors = np.empty(N)
         init_nodes = np.empty(N)
-        res = optimize_error_l2(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
-                                force_order=force_order, post_processing=post_processing,
-                                init_nodes=None, iterative=iterative)[:2]
-        init_nodes[:-1] = res[1]
-        all_errors[:-1] = res[0]
+        all_errors[:-1], init_nodes[:-1], _ = optimize_error_l2(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
+                                                                force_order=force_order, init_nodes=None,
+                                                                iterative=iterative)
         init_nodes[:-1] = init_nodes[:N - 1] / 1.03 ** np.fmin(np.arange(1, N) ** 2, 100)
         if bound is not None:
             init_nodes[N - 1] = np.fmax(bound, 10 * init_nodes[N - 2])
         else:
             init_nodes[N - 1] = 5 * init_nodes[N - 2]
-
-    original_bound = bound
 
     # get starting value and bounds for the optimization problem
     if init_nodes is None:
@@ -843,54 +836,11 @@ def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_o
                 _, grad, hessian, _ = error_fun(H, T, np.exp(x), output='hessian')
                 return hessian * np.exp(x[None, :] + x[:, None]) + np.diag(grad * np.exp(x))
 
-            res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True, hess=hess,
-                           method='trust-constr')
+            res = minimize(func, np.log(nodes), tol=tol ** 2, bounds=bounds, jac=True, hess=hess, method='trust-constr')
 
     # post-processing, ensuring that the results are of good quality
     nodes = np.exp(res.x)
     err, weights = error_fun(H=H, T=T, nodes=nodes, output='error')
-    if post_processing:
-        if err < 0 or np.fmax(original_error, 1e-9) < err or err > kernel_norm(H, T) ** 2 \
-                or (N >= 3 and np.sqrt(nodes[-1]/nodes[-2]) > nodes[-2]/nodes[-3]) \
-                or (N >= 2 and bound >= 1e+51 and (np.amin(weights) < 0 or np.amin(nodes[1:]/nodes[:-1]) < 1.01)):
-            if force_order is False:
-                return optimize_error_l2(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
-                                         force_order=True, post_processing=True)
-            elif bound >= 1e+24:
-                return optimize_error_l2(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
-                                         force_order=True, post_processing=True)
-
-        factor = 3.
-        if N >= 2 and np.amin(weights) < 0:
-            if np.log(bound / lower_bound) < (N-1) * np.log(factor):
-                nodes = np.exp(np.linspace(np.log(lower_bound), np.log(bound), N))
-            elif np.log(bound / nodes[0]) < (N-1) * np.log(factor):
-                nodes = bound / factor ** (N-1) * factor ** np.arange(N)
-            elif np.log(nodes[-1]/lower_bound) < (N-1) * np.log(factor):
-                nodes = lower_bound * factor ** np.arange(N)
-            else:
-                nodes = np.fmax(nodes, lower_bound * factor ** np.arange(N))
-                nodes = np.fmin(nodes, bound / factor ** (N-1) * factor ** np.arange(N))
-                for i in range(N-1):
-                    nodes[i+1] = np.fmax(nodes[i] * factor, nodes[i+1])
-            err, weights = error_fun(H=H, T=T, nodes=nodes, output='error')
-
-        if err > 1e-9:
-            paper_nodes, paper_weights = quadrature_rule(H=H, N=N, T=T, mode='paper')
-            if np.amax(paper_nodes) <= bound:
-                paper_nodes = np.fmax(paper_nodes, lower_bound)
-                error_fun_2 = error_l2
-                paper_error = error_fun_2(H=H, nodes=paper_nodes, weights=paper_weights, T=T, output='error')
-                paper_opt_error, paper_opt_weights = error_fun(H=H, T=T, nodes=paper_nodes, output='error')
-                if paper_opt_error < paper_error and paper_opt_error < err:
-                    nodes = paper_nodes
-                    weights = paper_opt_weights
-                    err = paper_opt_error
-                elif paper_error < err:
-                    nodes = paper_nodes
-                    weights = paper_weights
-                    err = paper_error
-
     if err > 2 * np.fmax(original_error, 1e-9):
         return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
     all_errors[-1] = np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T)
@@ -967,8 +917,8 @@ def european_rule(H, N, T):
                 nod[:-1] = last_nodes
                 nod[-1] = bound_
         nod = nod / 1.03 ** np.fmin(np.arange(1, N_ + 1) ** 2, 100)
-        return optimize_error_l2(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
-                                 force_order=False, post_processing=False, init_nodes=nod)
+        return optimize_error_l2(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient', force_order=False,
+                                 init_nodes=nod)
 
     _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
     if N == 1:
