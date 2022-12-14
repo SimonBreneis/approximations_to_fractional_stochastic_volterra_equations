@@ -440,7 +440,7 @@ def kernel_errors(H, T, Ns=None, modes=None, verbose=0):
             duration[j, i] = time.perf_counter() - tic
             largest_nodes[j, i] = np.amax(nodes)
             kernel_errs[j, i] = np.amax(np.sqrt(np.fmax(
-                rk.error(H=H, nodes=nodes, weights=weights, T=T, output='error'), 0)) / ker_norm)
+                rk.error_l2(H=H, nodes=nodes, weights=weights, T=T, output='error'), 0)) / ker_norm)
             if verbose >= 1:
                 print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, error={100*kernel_errs[j, i]:.4}%, '
                       + f'time={duration[j, i]:.3}sec')
@@ -577,8 +577,8 @@ def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, 
             approx_smiles[j, i] = rHestonFourier_iv_eur_call(params=params, N=Ns[i], mode=modes[j], nodes=nodes,
                                                              weights=weights, verbose=verbose, load=load, save=save)
             largest_nodes[j, i] = np.amax(nodes)
-            kernel_errs[j, i] = np.amax(np.sqrt(rk.error(H=params['H'], nodes=nodes, weights=weights, T=params['T'],
-                                                         output='error')) / ker_norm)
+            kernel_errs[j, i] = np.amax(np.sqrt(rk.error_l2(H=params['H'], nodes=nodes, weights=weights, T=params['T'],
+                                                            output='error')) / ker_norm)
             smile_errs[j, i] = np.amax(np.abs(true_smile - approx_smiles[j, i]) / true_smile)
             print(f'N={Ns[i]}, mode={modes[j]}, node={largest_nodes[j, i]:.3}, kernel error='
                   + f'{100 * kernel_errs[j, i]:.4}%, smile error={100 * smile_errs[j, i]:.4}%')

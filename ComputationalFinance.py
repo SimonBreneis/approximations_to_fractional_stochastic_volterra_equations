@@ -236,7 +236,7 @@ def payoff_put(S, K):
     :param K: Strike price
     :return: The payoff.
     """
-    if isinstance(K, float) or isinstance(S, float):
+    if isinstance(K, float) or isinstance(S, float) or isinstance(K, int) or isinstance(S, int):
         return np.fmax(K - S, 0)
     if len(K.shape) == 1 and len(S.shape) == 1:
         return np.fmax(K[:, None] - S[None, :], 0)
@@ -516,3 +516,17 @@ def price_am_forward(T, r, samples, payoff, models, features, antithetic=False):
     if antithetic:
         discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:] + discounted_future_payoffs[:m // 2])
     return MC(discounted_future_payoffs)
+
+
+def price_am_BS(S_0, sigma, T, r, m, N, K, feature_degree, antithetic=False):
+    def features(x):
+        feat = np.empty((x.shape[1], feature_degree))
+        feat[:, 0] = x
+        for i in range(1, feature_degree):
+            feat[:, i] = feat[:, i-1] * x
+        return feat
+
+    samples = S_0 * BS_paths(sigma=sigma, T=T, n=N, m=m, r=r, antithetic=antithetic)
+    price, models = price_am(T=T, r=r, samples=samples[None, :, :], payoff=lambda S: payoff_put(S, K), features=features, antithetic=antithetic,
+                             varying_initial_conditions=False)
+    return price

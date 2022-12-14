@@ -3,15 +3,94 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.special
 # import Data
+import ComputationalFinance
 import RoughKernel as rk
 # import rBergomi
+import functions
 import rHestonFourier
 import rHestonMarkovSamplePaths
 # from functions import *
 # import rBergomiMarkov
 import rHestonMomentMatching
+import scipy.stats, scipy.optimize, scipy.integrate
 
 
+H, T = 0.1, 1.
+for N in range(1, 11):
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='paper')
+    err_paper = np.sqrt(rk.error_l2(H=H, nodes=nodes, weights=weights, T=T, output='error')) / rk.kernel_norm(H=H, T=T, p=2)
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='optimized l2')
+    err_optimized = np.sqrt(rk.error_l2(H=H, nodes=nodes, weights=weights, T=T, output='error')) / rk.kernel_norm(H=H, T=T, p=2)
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='european')
+    err_european = np.sqrt(rk.error_l2(H=H, nodes=nodes, weights=weights, T=T, output='error')) / rk.kernel_norm(H=H, T=T, p=2)
+    print(N, err_paper, err_optimized, err_european)
+time.sleep(36000)
+
+
+alpha = 1.76274717
+L = np.exp(alpha)
+a = 1/3
+print(17 ** 2)
+val = (L-1) / np.sqrt(a * L) * ((4*np.sqrt(L)-1) / (0.18*4*(L+2*np.sqrt(L)))) ** (-1.5) * ((L+2*np.sqrt(L))/(L-1)) ** 2 / (((L+2*np.sqrt(L))/(L-1)) ** 2 - 1)
+print(val * 72 / 35, 13/3)
+x = np.linspace(0, 1, 1001)
+H = np.linspace(0, 0.5, 1001)
+plt.plot(H, (a*L) ** (-0.5-H) * (0.18 * 4 * (L + 2 * np.sqrt(L)) / (4 * np.sqrt(L) - 1)) ** (H + 1.5))
+plt.show()
+plt.plot(H, (0.5-H)/(0.5+H) * a ** (-1/2-H))
+plt.show()
+plt.plot(x, 4 * (L + 2 * np.sqrt(L) + 1 - x) / (4 * np.sqrt(L) - x))
+plt.show()
+x = np.linspace(2, 10, 1001)
+print(0.5 * np.exp(1 + 1.5 * alpha))
+plt.plot(x, (a * L) ** 0.5 / (4 * np.sqrt(np.pi)) * 1/x * np.exp(2 * x * (1 + 1.5 * alpha + np.log(a) - np.log(2 * x))))
+plt.plot(x, np.exp(5-x))
+# plt.plot(x, 50000 * x - 90000)
+# plt.plot(x, -50000 * x + 550000)
+plt.yscale('log')
+plt.show()
+
+print(scipy.optimize.minimize(lambda x: -x[0], x0=np.array([0.5, 0.5]), constraints={'type': 'eq', 'fun': lambda x: x[0] - np.log((np.exp(x[0] * x[1]) + 2 * np.exp(x[0] * x[1] / 2) + 1) / (np.exp(x[0] * x[1]) - 1)) * 2 * x[1]}))
+
+L = 2.
+T = 1.
+a = 20.
+H = 0.1
+m = 3
+t_steps = 1000
+t = np.linspace(0, T * a, t_steps + 1)
+x_steps = 1000
+x = np.linspace(1, L, x_steps + 1)
+integrals = rk.c_H(H) * np.trapz(rk.exp_underflow(t[:, None] * x[None, :]) * x[None, :] ** (-H - 0.5), dx=(L - 1) / x_steps, axis=-1)
+nodes, weights = rk.Gaussian_interval(H=H, m=m, a=1, b=L, mp_output=False)
+print(nodes, weights)
+eps = 0.3
+sums = rk.exp_underflow(nodes[None, :] * t[:, None]) @ weights
+plt.plot(integrals - sums)
+plt.plot(np.pi ** 2 * rk.c_H(H) / (3 * 2 ** (2 * m) * scipy.special.gamma(2 * m + 1)) * t ** (2 * m) * rk.exp_underflow(t) * (L - 1) ** (2 * m + 1))
+plt.plot(32/15 * rk.c_H(H) * (L-1) * ((4*eps*np.sqrt(L)-eps**2)/(4*(L+2*np.sqrt(L)+1-eps))) ** (-H-0.5) * ((L+2*np.sqrt(L)+1-eps)/(L-1)) ** 2 / (((L+2*np.sqrt(L)+1-eps)/(L-1))**2-1) * np.exp(t * (-4*eps*np.sqrt(L)+eps**2)/(4*(L+2*np.sqrt(L)+1-eps))) * ((L+2*np.sqrt(L)+1-eps)/(L-1))**(-2*m))
+# plt.plot((integrals - sums) * x ** (0.5 - H))
+plt.show()
+
+
+def ODE_solution(c, beta):
+    def vec_field(t, x):
+        return np.log(1 + 2 * c * np.exp(x / (2 * beta ** 2)))
+
+    res = scipy.integrate.solve_ivp(fun=vec_field, t_span=(0, 1), y0=np.array([0.]))
+    print(c, beta, 2 * beta * np.log(c), - res.y[0, -1] / beta)
+    return res.y[0, -1]
+
+
+def constr(x):
+    return -2 * np.log(x[0]) * x[1] ** 2 - ODE_solution(x[0], x[1])
+
+res = scipy.optimize.minimize(lambda x: np.fmax(2 * x[1] * np.log(x[0]), -ODE_solution(x[0], x[1]) / x[1]), x0=np.array([0.5, 0.8]), bounds=((0.01, 1), (0, None)))
+#, constraints={'type': 'eq', 'fun': constr})
+print(res.x, res.fun, constr(res.x))
+print(2 * np.log(res.x[0]) * res.x[1])
+print(1.320950 - 0.917609 * 0.5 ** (0.160122))
+time.sleep(360000)
 H = 0.1
 N = 10
 T = 1.
@@ -19,21 +98,146 @@ tol = 1e-8
 m, N_time, T, r, K, S_0 = 10000000, 256, 1., 0.06, 1.05, 1.
 H, lambda_, nu, theta, V_0, rel_tol, rho = 0.1, 0.3, 0.3, 0.02, 0.02, 1e-05, -0.7
 N_dates = N_time // 2
-K = np.exp(np.linspace(-0.3, 0.5, 11))
+K = np.exp(np.linspace(-1, 0.5, 151))
+
+N = np.arange(1, 11)
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=H)
+# a_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=0.49)
+# print(np.amax(rk.rel_err(true_smile, a_smile)))
+for i in range(6):
+    nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='european')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    print(nodes, weights)
+    nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='optimized')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='theorem l1')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='new theorem l1')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    _, nodes, weights = rk.optimize_error_l1(H=H, N=i + 1, T=T)
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    print(i + 1, np.amax(rk.rel_err(true_smile, approx_smile)), np.amax(nodes))
+    print(nodes, weights)
+time.sleep(36000)
+
+
+time.sleep(36000)
+
+H = np.linspace(0.05, 0.45, 9)
+N = np.arange(1, 201)
+errors = np.empty((len(H), len(N)))
+for i in range(len(H)):
+    errors[i, :] = rk.optimize_error_l2_optimal_weights(H=H[i], N=200, T=1., iterative=True)[0]
+    '''
+    for j in range(len(N)):
+        nodes, weights = rk.quadrature_rule(H=H[i], N=N[j], T=1., mode='optimized')
+        errors[i, j] = np.sqrt(rk.error_optimal_weights(H=H[i], nodes=nodes, T=1.)[0]) / rk.kernel_norm(H=H[i], T=1., l2=True)
+        print(H[i], N[j], errors[i, j])'''
+print((errors,))
+errors = - np.log(errors)
+print((errors,))
+
+
+B = np.empty(len(H))
+C = np.empty(len(H))
+for i in range(len(H)):
+    print(scipy.stats.linregress(np.log(N), np.log(errors[i, :])))
+    B[i], C[i], _, _, _ = functions.log_linear_regression(N, errors[i, :])
+
+for j in range(len(N)):
+    plt.loglog(H, errors[:, j], color=functions.color(j, len(N)), label=f'N={N[j]}')
+plt.legend(loc='best')
+plt.xlabel('Hurst parameter H')
+plt.ylabel('Negative log-relative error')
+plt.show()
+for i in range(len(H)):
+    plt.loglog(N, (errors[i, :] - 0.5 * np.log(H[i]) + 0.5 * np.log(0.5 - H[i])) / np.sqrt(H[i] * N), color=functions.color(i, len(H)), label=f'H={H[i]:.3}')
+    # plt.loglog(N, C[i] * N ** B[i], '--', color=functions.color(i, len(H)))
+plt.legend(loc='best')
+plt.xlabel('Number of dimensions N')
+plt.ylabel('Negative log-relative error')
+plt.show()
+
+
+def fun_B(x):
+    a = x[0]
+    b = x[1]
+    c = x[2]
+    summands = a + b * H ** c - B
+    return np.sum(summands ** 2), np.array([2 * np.sum(summands), 2 * np.sum(H ** c * summands), 2 * np.sum(b * H ** c * np.log(H) * summands)])
+
+
+def fun_C(x):
+    summands = x * H - C
+    return np.sum(summands ** 2), np.array([2 * np.sum(H * summands)])
+
+
+def fun_C2(x):
+    a = x[0]
+    b = x[1]
+    c = x[2]
+    summands = a + b * H ** c - C
+    lam = 0.001
+    return np.sum(summands ** 2) + lam * (a ** 2 + b ** 2 + c ** 2), np.array([2 * np.sum(summands) + 2 * lam * a, 2 * np.sum(H ** c * summands) + 2 * lam * b, 2 * np.sum(b * H ** c * np.log(H) * summands) + 2 * lam * c])
+
+
+B = np.empty(len(H))
+C = np.empty(len(H))
+for i in range(len(H)):
+    print(scipy.stats.linregress(np.log(N), np.log(errors[i, :])))
+    B[i], C[i], _, _, _ = functions.log_linear_regression(N, errors[i, :])
+print(scipy.stats.linregress(np.log(H), np.log(B)))
+print(scipy.stats.linregress(H, C))
+a, b, _, _, _ = scipy.stats.linregress(H, C)
+res = scipy.optimize.minimize(fun_B, x0=np.array([1., 0, 0]), jac=True)
+a_B, b_B, c_B = res.x[0], res.x[1], res.x[2]
+print(a_B, b_B, c_B)
+res = scipy.optimize.minimize(fun_C, x0=np.array([0.]), jac=True)
+print(res.x)
+plt.plot(H, B, label='B(H)')
+plt.xlabel('Hurst parameter H')
+plt.legend(loc='best')
+plt.show()
+plt.plot(H, B, label='B(H)')
+plt.plot(H, B, label='Approximation')
+plt.xlabel('Hurst parameter H')
+plt.legend(loc='best')
+plt.show()
+plt.plot(H, C, label='C(H)')
+plt.xlabel('Hurst parameter H')
+plt.legend(loc='best')
+plt.show()
+plt.plot(H, C, label='C(H)')
+# plt.plot(H, a * H + b, label='Approximation')
+plt.plot(H, res.x * H, label='Approximation')
+plt.xlabel('Hurst parameter H')
+plt.legend(loc='best')
+plt.show()
+plt.loglog(H, B)
+plt.xlabel('Hurst parameter H')
+plt.ylabel('B(H)')
+plt.show()
+plt.loglog(H, C)
+plt.xlabel('Hurst parameter H')
+plt.ylabel('C(H)')
+plt.show()
 
 # V_T = V_0 + int_0^T K(T-s) (theta - lambda V_s) ds + int_0^T nu sqrt(V_s) dW_s
 nodes, weights = rk.quadrature_rule(H=H, N=3, T=T, mode='european')
-print(rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=1e-04, H=H, digital=True, implied_vol=False, verbose=19))
 print(nodes, weights)
 print(np.amax(nodes))
 # nodes = np.array([0])
 # weights = np.array([1])
-moments = rHestonMomentMatching.first_five_moments_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0, dt=1/50)[0](V_0)
-print(moments)
+# moments = rHestonMomentMatching.first_five_moments_V(nodes=nodes, weights=weights, lambda_=lambda_, theta=theta, nu=nu, V_0=V_0, dt=1/50)[0](V_0)
+# print(moments)
 
 true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=H)
-a_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=0.49)
-print(np.amax(rk.rel_err(true_smile, a_smile)))
+# a_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=0.49)
+# print(np.amax(rk.rel_err(true_smile, a_smile)))
 for i in range(6):
     nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='european')
     approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)

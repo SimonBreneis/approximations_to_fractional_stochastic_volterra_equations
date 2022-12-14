@@ -299,4 +299,13 @@ def first_five_moments_V(nodes, weights, lambda_, theta, nu, V_0, dt, rtol=1e-07
 
         return g_1, g_2, g_3, g_4, g_5
 
-    return moments_full, moments_1d
+    def moments_total(V):
+        m_1, m_2, m_3, m_4, m_5 = moments_full(V)
+        m_1_total = m_1 @ weights
+        m_2_total = m_2 @ weights @ weights
+        m_3_total = m_3 @ weights @ weights @ weights
+        m_4_total = m_4 @ weights @ weights @ weights @ weights
+        m_5_total = m_5 @ weights @ weights @ weights @ weights @ weights
+        return m_1_total, m_2_total, m_3_total, m_4_total, m_5_total
+
+    return moments_full, moments_1d, moments_total

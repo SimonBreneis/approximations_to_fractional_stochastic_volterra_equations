@@ -20,14 +20,29 @@ def sort(a, b):
 
 def rel_err(x, x_approx):
     """
-    ...vaeaer
+    Computes the absolute relative error of x_approx compared to x.
+    :param x: The true value
+    :param x_approx: The approximated value
+    :return: The absolute relative error
     """
     return np.abs((x - x_approx) / x)
 
 
 def single_param_search(f, rel_tol=1e-03, n=100, factor=2):
     """
-    WTF ddddd
+    Finds the optimal parameter n for approximating f.
+    :param f: A function having two inputs n and reusable. The input n is some discretization parameter. For example,
+        f might be the solution of an ODE and n is the number of time steps. The input reusable is used to supply
+        previously computed information, so that it does not have to be computed again. For example, if f is the
+        trapezoidal integral of some function, this may be an array of previously computed function values that can
+        be reused without needing to recompute them. If there is nothing sensible that could be reused, just leave it as
+        a dead parameter. The function gives two outputs a and b. The output a is the result (e.g. the final point of
+        the ODE solution), and the output b is the reusable information. In the next call of f, b will be given as the
+        parameter reusable.
+    :param rel_tol: Relative error tolerance of the result
+    :param n: Initial parameter n
+    :param factor: Factor by which we should multiply n if we need higher accuracy.
+    :return: The approximated result, the final parameter n that was used, and the reusable information
     """
     int_calc = isinstance(n, int)
     approx_res, reusable = f(n=n // factor if int_calc else n / factor, reusable=None)
@@ -61,7 +76,7 @@ def exp_underflow(x):
     :return: exp(-x)
     """
     if isinstance(x, np.ndarray):
-        if x.dtype == np.int:
+        if x.dtype == int:
             x = x.astype(np.float)
         eps = np.finfo(x.dtype).tiny
     else:
@@ -84,14 +99,15 @@ def fractional_kernel(H, t):
     return t ** (H - 0.5) / gamma(H + 0.5)
 
 
-def kernel_norm(H, T):
+def kernel_norm(H, T, p=2.):
     """
-    Returns the L^2-norm of the fractional kernel.
+    Returns the L^p-norm of the fractional kernel.
     :param H: Hurst parameter
     :param T: Final time
-    :return: The L^2-norm (square root has been taken) of the fractional kernel
+    :param p: The order of the norm
+    :return: The L^p-norm (root has been taken) of the fractional kernel
     """
-    return T ** H / (np.sqrt(2 * H) * gamma(H + 0.5))
+    return T ** (H - 0.5 + 1/p) / (gamma(0.5 + H) * (1 + p * H - p / 2) ** (1 / p))
 
 
 def c_H(H):
@@ -114,8 +130,8 @@ def fractional_kernel_laplace(H, t, nodes):
         nodes x time
     """
     if isinstance(t, np.ndarray) and isinstance(nodes, np.ndarray):
-        return c_H(H) * np.exp(-np.tensordot(nodes, t, axes=0))
-    return c_H(H) * np.exp(-nodes * t)
+        return c_H(H) * exp_underflow(np.tensordot(nodes, t, axes=0))
+    return c_H(H) * exp_underflow(nodes * t)
 
 
 def fractional_kernel_approximation(H, t, nodes, weights):
@@ -156,33 +172,29 @@ def AK_improved_rule(H, N, K=None, T=1):
 
     def error_func(A_):
         nodes_, weights_ = AK_initial_guess(A_[0])
-        return error(H, nodes_, weights_, T)
+        return error_l2(H, nodes_, weights_, T)
 
     res = minimize(fun=lambda A_: error_func(A_), x0=np.array([1.2]), bounds=((0, None),))
     A = res.x
     nodes, weights = AK_initial_guess(A[0])
 
-    res = minimize(fun=lambda x: error(H, nodes, x * weights, T), x0=np.array([1]), bounds=((0, None),))
+    res = minimize(fun=lambda x: error_l2(H, nodes, x * weights, T), x0=np.array([1]), bounds=((0, None),))
     return nodes, res.x * weights
 
 
 def Gaussian_parameters(H, N, T, mode):
     """
-    Returns the parameters m, n, a, b of the geometric quadrature rule.
+    Returns the parameters m, n, a, b of the Gaussian quadrature rule.
     :param H: Hurst parameter
     :param N: Total number of nodes
     :param T: Final time
-    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
-        parameters from the theorem
-    :return: Quadrature level m, number of intervals n, left point a, right point b
+    :param mode: The kind of theorem or observation that should be used
+    :return: Quadrature level m, number of intervals n, minus log-left point a, log-right point b
     """
-    N = N - 1
-    a = 0.
-    b = 0.
-    beta = 0.
-    A = mp.sqrt(1 / H + 1 / (1.5 - H))
 
-    if mode == "theorem":
+    if mode == "old geometric theorem l2":
+        N = N - 1
+        A = mp.sqrt(1 / H + 1 / (1.5 - H))
         beta = 0.4275
         alpha = 1.06418
         gamma_ = np.exp(alpha * beta)
@@ -193,88 +205,129 @@ def Gaussian_parameters(H, N, T, mode):
         a = -mp.log(T ** (-1) * base_0 ** exponent * mp.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
         base_n = temp_1 * (temp_2 / 1152) ** (2 * H - 3)
         b = mp.log(T ** (-1) * base_n ** exponent * mp.exp(alpha / (H * A) * np.sqrt(N)))
-    elif mode == "observation":
+        m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
+    elif mode == "old geometric observation l2":
+        N = N - 1
+        A = mp.sqrt(1 / H + 1 / (1.5 - H))
         beta = 0.9
         alpha = 1.8
         a = -mp.log(0.65 * 1 / T * mp.exp(3.1 * H) * mp.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
         b = mp.log(1 / T * mp.exp(3 * H ** (-0.4)) * mp.exp(alpha / (H * A) * np.sqrt(N)))
+        m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
+    elif mode == "old geometric theorem l1":
+        beta = 0.4275
+        alpha = 1.06418
+        gamma_ = np.exp(-alpha * beta)
+        N_ = (H + 0.5) * N
+        C = 1 / T * np.sqrt(N_ / 122) * N_ ** (-(3 - 2 * H) / (8 * beta * np.sqrt(N_) + 2 - 4 * H))
+        a = C
+        b = C * N_ ** (-3 * (1 - gamma_) / (2 + 4 * H) / (1 - gamma_ + 1.72 * beta ** 2))
+        a = 1 / T
+        b = 1 / T
+        a = - np.log(a)
+        b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
+        m = int(np.fmax(np.round(beta * np.sqrt(N_)), 1))
+    elif mode == "old geometric observation l1":
+        beta = 1.0
+        alpha = 1.8
+        a = 3 / T
+        b = 0.5 / T
+        a = - np.log(a)
+        b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
+        m = int(np.fmax(np.round(float(beta * np.sqrt((H + 0.5) * N))), 1))
+    elif mode == "old non-geometric theorem l1":
+        beta = 0.79606057
+        a = 3 / T
+        b = 1
+        a = - np.log(a)
+        m = int(np.fmax(np.round(float(beta * np.sqrt((H + 0.5) * N))), 1))
+    elif mode == "new geometric theorem l1":
+        beta = 1
+        alpha = 1.762747
+        a = 1 / (3 * T)
+        b = 1 / T
+        a = - np.log(a)
+        b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
+        m = int(np.fmax(np.round(float(beta * np.sqrt((H + 0.5) * N))), 1))
+    else:
+        raise NotImplementedError(f'The mode {mode} has not been implemented')
 
-    m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
     n = int(np.round(N / m))
     return m, n, a, b
 
 
-def Gaussian_no_zero_node(H, m, n, a, b):
+def Gaussian_interval(H, m, a, b, fractional_weight=True, mp_output=True):
+    """
+    Returns the nodes and weights of the Gauss quadrature rule level m on [a, b].
+    :param H: Hurst parameter
+    :param m: Level of the Gaussian quadrature
+    :param a: Left end of interval
+    :param b: Right end of interval
+    :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight. If
+        False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H
+    :param mp_output: If True, returns mpmath matrices. Else, returns numpy arrays
+    :return: The nodes and weights
+    """
+    c = mp.mpf(c_H(float(H)))
+    if fractional_weight:
+        moments = np.array([mp.mpf(c / (mp.mpf(k) + mp.mpf(0.5) - H)
+                                   * (b ** (mp.mpf(k) + mp.mpf(0.5) - H) - a ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in
+                            range(2 * m)])
+    else:
+        moments = np.array([mp.mpf(c / mp.mpf(k + 1)) * (b ** mp.mpf(k + 1) - a ** mp.mpf(k + 1)) for k in
+                            range(2 * m)])
+    alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
+    points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
+    if mp_output:
+        return mp.matrix(points.tolist()), mp.matrix(weights.tolist())
+    return mp_to_np(points), mp_to_np(weights)
+
+
+def Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True, mp_output=True):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
-    on n geometrically spaced subintervals. The result is two instances of mp.matrix with mp.mpf entries. Does not
-    contain a node at 0.
+    on n geometrically spaced subintervals. The result is two instances of mp.matrix with mp.mpf entries.
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
     :param n: Number of subintervals
     :param a: a = - log(xi_0)
     :param b: b = log(xi_n)
+    :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight. If
+        False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H
+    :param mp_output: If True, returns mpmath matrices. Else, returns numpy arrays
     :return: All the nodes and weights
     """
-
-    def quadrature_rule_interval_Gaussian(y, z):
-        """
-        Returns the nodes and weights of the Gauss quadrature rule level m for the fractional weight function on [y, z].
-        :param y: Left end of interval
-        :param z: Right end of interval
-        :return: The nodes and weights
-        """
-        c = mp.mpf(c_H(float(H)))
-        moments = np.array(
-            [mp.mpf(c / (mp.mpf(k) + mp.mpf(0.5) - H) * (
-                    z ** (mp.mpf(k) + mp.mpf(0.5) - H) - y ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in
-             range(2 * m)])
-        alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
-        points, weights_ = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
-        return mp.matrix(points.tolist()), mp.matrix(weights_.tolist())
-
     mp.mp.dps = int(np.fmax(a + b + 50, 50))
     partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(n + 1)])
     nodes = mp.matrix(m * n, 1)
     weights = mp.matrix(m * n, 1)
     for i in range(n):
-        new_nodes, new_weights = quadrature_rule_interval_Gaussian(partition[i], partition[i + 1])
+        new_nodes, new_weights = Gaussian_interval(H=H, m=m, a=partition[i], b=partition[i + 1],
+                                                   fractional_weight=fractional_weight,
+                                                   mp_output=True)
         nodes[m * i:m * (i + 1), 0] = new_nodes
         weights[m * i:m * (i + 1), 0] = new_weights
+    if not mp_output:
+        nodes, weights = mp_to_np(nodes), mp_to_np(weights)
     return nodes, weights
 
 
-def Gaussian_error_and_zero_weight(H, m, n, a, b, T):
+def Gaussian_optimal_zero_weight(H, T, nodes, weights):
     """
-    Computes an error estimate of the L^2-norm of the difference between the rough kernel and its approximation
-    on [0, T]. The approximation contains a constant/Brownian term.
+    Computes the optimal weight in the L^2-approximation of an additional node at 0 given that we are already using the
+    specified nodes and weights.
     :param H: Hurst parameter
-    :param m: Level of the quadrature rule
-    :param n: Number of quadrature intervals
-    :param a: xi_0 = e^(-a)
-    :param b: xi_n = e^b
     :param T: Final time
-    :return: An error estimate and the optimal weight for the constant term: error, weight
+    :param nodes: The nodes of the Markovian approximation, a numpy array
+    :param weights: The weights of the Markovian approximation, a numpy array
+    :return: The optimal weight in the L^2-sense of an additional node at 0
     """
-    if n * m == 0:
-        c = T ** (2 * H) / (2 * H * gamma(H + 0.5) ** 2)
-        b = - 2 * T ** (H + 0.5) / gamma(H + 1.5)
-        a = T
-        w_0 = -b / (2 * a)
-        return np.sqrt(np.fmax(a * w_0 * w_0 + b * w_0 + c, 0.)), w_0
-
-    nodes, weights = Gaussian_no_zero_node(H, m, n, mp.mpf(a), mp.mpf(b))
-    nodes, weights = mp_to_np(nodes), mp_to_np(weights)
-    c = error(H, nodes, weights, T)
-    b = np.sum(weights / nodes * (1-np.exp(-np.fmin(nodes * T, 300))))
-    b -= T ** (H + 0.5) / gamma(H + 1.5)
-    b *= 2
-    a = T
-    w_0 = -b / (2 * a)
-    return np.sqrt(np.fmax(a * w_0 * w_0 + b * w_0 + c, 0.)), w_0
+    if len(nodes) == 0:
+        return T ** (H - 0.5) / gamma(H + 1.5)
+    return (T ** (H + 0.5) / gamma(H + 1.5) - np.sum(weights / nodes * (1 - exp_underflow(nodes * T)))) / T
 
 
-def Gaussian_rule(H, N, T, mode='observation', optimal_weights=False):
+def Gaussian_geometric(H, N, T, mode='observation'):
     """
     Returns the nodes and weights of the Gaussian rule with roughly N nodes.
     :param H: Hurst parameter
@@ -282,31 +335,65 @@ def Gaussian_rule(H, N, T, mode='observation', optimal_weights=False):
     :param T: Final time
     :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
         parameters from the theorem
-    :param optimal_weights: If True, uses the optimal weights for the kernel error
     :return: The nodes and weights, ordered by the size of the nodes
     """
     if isinstance(T, np.ndarray):
         T = T[-1]
-    if N == 1:
-        w_0 = Gaussian_error_and_zero_weight(H, 0, 0, 0, 0, T)[1]
-        return np.array([0]), np.array([w_0])
-
     m, n, a, b = Gaussian_parameters(H, N, T, mode)
-    w_0 = Gaussian_error_and_zero_weight(H, m, n, a, b, T)[1]
-    nodes = mp.matrix(m * n + 1, 1)
-    weights = mp.matrix(m * n + 1, 1)
-    nodes[0, 0] = mp.mpf(0)
-    weights[0, 0] = mp.mpf(w_0)
-    nodes_, weights_ = Gaussian_no_zero_node(H, m, n, a, b)
-    nodes[1:, 0] = nodes_
-    weights[1:, 0] = weights_
-    nodes, weights = mp_to_np(nodes), mp_to_np(weights)
-    if optimal_weights:
-        weights = error_optimal_weights(H=H, T=T, nodes=nodes, output='error')[1]
+
+    if mode == 'old geometric theorem l2' or mode == 'old geometric observation l2':
+        if N == 1:
+            w_0 = Gaussian_optimal_zero_weight(H=H, T=T, nodes=np.array([]), weights=np.array([]))
+            nodes, weights = np.array([0.]), np.array([w_0])
+        else:
+            nodes, weights = np.zeros(m * n + 1), np.empty(m * n + 1)
+            nodes[1:], weights[1:] = Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True,
+                                                                    mp_output=False)
+            weights[0] = Gaussian_optimal_zero_weight(H=H, T=T, nodes=nodes[1:], weights=weights[1:])
+    else:
+        nodes, weights = np.empty(m * n), np.empty(m * n)
+        nodes[:m], weights[:m] = Gaussian_interval(H=H, m=m, a=0, b=np.exp(-float(a)), fractional_weight=True,
+                                                   mp_output=False)
+        if n > 1:
+            nodes[m:], weights[m:] = Gaussian_geometric_middle_part(H=H, m=m, n=n - 1, a=a, b=b,
+                                                                    fractional_weight='old' in mode, mp_output=False)
     return nodes, weights
 
 
-def error(H, nodes, weights, T, output='error'):
+def Gaussian_rule_l1(H, N, T, mode='theorem l1'):
+    """
+    DEPRECATED - DO NOT USE!
+    Returns the nodes and weights of the Gaussian rule with roughly N nodes.
+    :param H: Hurst parameter
+    :param N: Number of nodes
+    :param T: Final time
+    :param mode: If observation, uses the parameters from the interpolated numerical optimum. If theorem, uses the
+        parameters from the theorem
+    :return: The nodes and weights, ordered by the size of the nodes
+    """
+    if isinstance(T, np.ndarray):
+        T = T[-1]
+
+    m, n, a, b = Gaussian_parameters(H, N, T, mode)
+    nodes = mp.matrix(m * n, 1)
+    weights = mp.matrix(m * n, 1)
+    nodes_, weights_ = Gaussian_interval(H, m, 0, np.exp(-a))
+    nodes[:m, 0] = nodes_
+    weights[:m, 0] = weights_
+    if mode == 'new theorem l1':
+        xi = np.exp(-a)
+        c = 0.50246208
+        kappa = 1 / (2 * 0.79606057 ** 2)  # rate -1.0957535765682107
+        for i in range(n - 1):
+            nodes_, weights_ = Gaussian_interval(H, m, xi, xi * (1 + 2 * c * xi ** (kappa / n)))
+            xi = xi * (1 + 2 * c * xi ** (kappa / n))
+            nodes[m * (i + 1):m * (i + 2)] = nodes_
+            weights[m * (i + 1):m * (i + 2)] = weights_
+    nodes, weights = mp_to_np(nodes), mp_to_np(weights)
+    return nodes, weights
+
+
+def error_l2(H, nodes, weights, T, output='error'):
     """
     Computes an error estimate of the squared L^2-norm of the difference between the rough kernel and its approximation
     on [0, T].
@@ -368,9 +455,17 @@ def error(H, nodes, weights, T, output='error'):
     return err, grad
 
 
-def error_l1(H, nodes, weights, T, method, tol=1e-03):
+def error_l1(H, nodes, weights, T, method='intersections', tol=1e-08):
     """
-    Blabla
+    Computes an error estimate of the L^1-norm of the difference between the rough kernel and its approximation
+    on [0, T].
+    :param H: Hurst parameter
+    :param nodes: The nodes of the approximation. Assumed that they are all non-zero
+    :param weights: The weights of the approximation
+    :param T: Final time, may also be a numpy array
+    :param method: Method for computing the error
+    :param tol: Relative error tolerance with which the error should be computed (relative error of the error)
+    :return: An error estimate
     """
     if method == 'trapezoidal':
         def error_(n, reusable):
@@ -380,7 +475,8 @@ def error_l1(H, nodes, weights, T, method, tol=1e-03):
             else:
                 error_t_1 = np.empty(n)
                 error_t_1[1::2] = reusable
-                error_t_1[::2] = np.abs(fractional_kernel(H, t[1::2]) - fractional_kernel_approximation(H, t[1::2], nodes, weights))
+                error_t_1[::2] = np.abs(fractional_kernel(H, t[1::2])
+                                        - fractional_kernel_approximation(H, t[1::2], nodes, weights))
                 reusable = error_t_1
             total_error = np.trapz(reusable, dx=T / n)
             return total_error + np.abs(fractional_kernel(H, T / (2 * n))
@@ -410,7 +506,8 @@ def error_l1(H, nodes, weights, T, method, tol=1e-03):
             else:
                 error_t_1 = np.empty(n + 1)
                 error_t_1[::2] = reusable
-                error_t_1[1::2] = np.abs(fractional_kernel(H, t[1::2]) - fractional_kernel_approximation(H, t[1::2], nodes, weights))
+                error_t_1[1::2] = np.abs(fractional_kernel(H, t[1::2])
+                                         - fractional_kernel_approximation(H, t[1::2], nodes, weights))
                 reusable = error_t_1
             total_error = np.trapz(reusable, dx=(T - t_0) / n)
             return error_to_t_0 + total_error, reusable
@@ -423,12 +520,11 @@ def error_l1(H, nodes, weights, T, method, tol=1e-03):
         return single_param_search(f=error_, rel_tol=tol, n=100, factor=2)[0:2]
     elif method == 'upper bound':
         gamma_ = gamma(H + 0.5)
-        gamma_2 = gamma(1.5 - H)
-        l2_norm = T ** H / (gamma_ * np.sqrt(2 * H))
         nm = nodes[:, None] + nodes[None, :]
-        err = T - 2 * gamma_ * np.sum(weights / nodes ** (1.5 - H) * gamma_2 * gammainc(1.5 - H, nodes * T)) \
-            + gamma_ ** 2 * np.sum(weights[:, None] * weights[None, :] / nm ** (2 - 2 * H) * gamma_2 * gammainc(1.5 - H, nm * T))
-        return l2_norm * np.sqrt(err)
+        wm = weights[:, None] * weights[None, :]
+        err = - 2 * gamma_ * gamma(1.5 + H) * np.sum(weights / nodes ** (1.5 + H) * gammainc(1.5 + H, nodes * T))\
+            + gamma_ ** 2 * gamma(2) * np.sum(wm / nm ** 2 * gammainc(2, nm * T))
+        return err, 0
     elif method == 'intersections':
         gamma_1 = gamma(H + 0.5)
 
@@ -442,18 +538,14 @@ def error_l1(H, nodes, weights, T, method, tol=1e-03):
                 d_ker_approx = - np.sum(weights * nodes * exp_underflow(nodes * t_))
                 if ker_larger:
                     dd_ker_approx = np.sum(weights * nodes ** 2 * exp_underflow(nodes * t_))
-                    # return (ker_approx_ * gamma_1) ** (1 / (H - 0.5))
-                    return t_ + (d_ker - d_ker_approx + np.sqrt((d_ker - d_ker_approx) ** 2 - 2 * dd_ker_approx * (ker_approx_ - ker_))) / dd_ker_approx
+                    return t_ + (d_ker - d_ker_approx
+                                 + np.sqrt((d_ker - d_ker_approx) ** 2 - 2 * dd_ker_approx * (ker_approx_ - ker_))) \
+                        / dd_ker_approx
                 else:
                     dd_ker = (H - 0.5) * (H - 1.5) / gamma_1 * t_ ** (H - 2.5)
-                    return t_ + (d_ker_approx - d_ker + np.sqrt((d_ker - d_ker_approx) ** 2 - 2 * dd_ker * (ker_ - ker_approx_))) / dd_ker
-                    # return t_ + (ker_approx_ - ker_) / np.sum(weights * nodes * exp_underflow(nodes * t_))
+                    return t_ + (d_ker_approx - d_ker + np.sqrt((d_ker - d_ker_approx) ** 2
+                                                                - 2 * dd_ker * (ker_ - ker_approx_))) / dd_ker
             else:
-                '''
-                t_ker = t_ + t_ * tol * (0.5 - H)
-                t_ker_approx = t_ + tol * ker_approx / np.sum(weights * nodes * exp_underflow(nodes * t_))
-                return np.fmin(t_ker, t_ker_approx)
-                '''
                 t_1 = t_ + tol * ker_ / np.sum(weights * nodes * exp_underflow(nodes * t_))
                 t_2 = t_ + tol * ker_ ** 2 / (tol * ker_ + ker_approx_) * gamma_1 / (0.5 - H) * t_ ** (1.5 - H)
                 return np.fmin(t_1, t_2)
@@ -487,7 +579,7 @@ def error_l1(H, nodes, weights, T, method, tol=1e-03):
         raise NotImplementedError(f'The method {method} for computing the L^1 kernel error has not been implemented.')
 
 
-def error_optimal_weights(H, T, nodes, output='error'):
+def error_l2_optimal_weights(H, T, nodes, output='error'):
     """
     Computes an error estimate of the squared L^2-norm of the difference between the rough kernel and its approximation
     on [0, T]. Uses the best possible weights given the nodes specified.
@@ -680,11 +772,11 @@ def error_optimal_weights(H, T, nodes, output='error'):
     return err, grad, hess, opt_weights
 
 
-def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False,
-                                   post_processing=True, init_nodes=None, iterative=False):
+def optimize_error_l2_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False,
+                                      post_processing=False, init_nodes=None, iterative=False):
     """
-    Optimizes the L^2 strong approximation error with N points for fBm. Always uses the best weights and only
-    numerically optimizes over the nodes.
+    Optimizes the L^2 error with N points for the fractional kernel. Always uses the best weights and only numerically
+    optimizes over the nodes.
     :param H: Hurst parameter
     :param N: Number of points
     :param T: Final time, may be a numpy array (only if grad is False and fast is True)
@@ -697,15 +789,22 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
     :param force_order: Forces the nodes to stay in order, i.e. not switch places. May improve numerical stability
     :param post_processing: After optimizing the error, ensures that the results are reasonable and yield good results.
         If this is not the case, may call this function, or other processes again to potentially achieve better results
+    :param init_nodes: May specify a starting point for the nodes
+    :param iterative: If True, starts with 1 node and iteratively solves the optimization problem before adding another
+        node
     :return: The minimal relative error together with the associated nodes and weights.
     """
-    error_fun = error_optimal_weights
+    error_fun = error_l2_optimal_weights
+    all_errors = np.empty(1)
 
     if iterative and not init_nodes and N >= 2:
+        all_errors = np.empty(N)
         init_nodes = np.empty(N)
-        init_nodes[:-1] = optimize_error_optimal_weights(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
-                                                         force_order=force_order, post_processing=post_processing,
-                                                         init_nodes=None, iterative=iterative)[1]
+        res = optimize_error_l2_optimal_weights(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
+                                                force_order=force_order, post_processing=post_processing,
+                                                init_nodes=None, iterative=iterative)[:2]
+        init_nodes[:-1] = res[1]
+        all_errors[:-1] = res[0]
         init_nodes[:-1] = init_nodes[:N - 1] / 1.03 ** np.fmin(np.arange(1, N) ** 2, 100)
         if bound is not None:
             init_nodes[N - 1] = np.fmax(bound, 10 * init_nodes[N - 2])
@@ -718,7 +817,7 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
     if init_nodes is None:
         if bound is None:
             bound = 1e+100
-            nodes_, w = quadrature_rule(H, N, T, mode='observation')
+            nodes_, w = quadrature_rule(H, N, T, mode='old geometric observation l2')
             if N == 2:
                 bound = np.fmax(bound, np.amax(nodes_))
             if len(nodes_) < N:
@@ -799,11 +898,11 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
                 or (N >= 3 and np.sqrt(nodes[-1]/nodes[-2]) > nodes[-2]/nodes[-3]) \
                 or (N >= 2 and bound >= 1e+51 and (np.amin(weights) < 0 or np.amin(nodes[1:]/nodes[:-1]) < 1.01)):
             if force_order is False:
-                return optimize_error_optimal_weights(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
-                                                      force_order=True, post_processing=True)
+                return optimize_error_l2_optimal_weights(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
+                                                         force_order=True, post_processing=True)
             elif bound >= 1e+24:
-                return optimize_error_optimal_weights(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
-                                                      force_order=True, post_processing=True)
+                return optimize_error_l2_optimal_weights(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
+                                                         force_order=True, post_processing=True)
 
         factor = 3.
         if N >= 2 and np.amin(weights) < 0:
@@ -824,7 +923,7 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
             paper_nodes, paper_weights = quadrature_rule(H=H, N=N, T=T, mode='paper')
             if np.amax(paper_nodes) <= bound:
                 paper_nodes = np.fmax(paper_nodes, lower_bound)
-                error_fun_2 = error
+                error_fun_2 = error_l2
                 paper_error = error_fun_2(H=H, nodes=paper_nodes, weights=paper_weights, T=T, output='error')
                 paper_opt_error, paper_opt_weights = error_fun(H=H, T=T, nodes=paper_nodes, output='error')
                 if paper_opt_error < paper_error and paper_opt_error < err:
@@ -838,14 +937,14 @@ def optimize_error_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradi
 
     if err > 2 * np.fmax(original_error, 1e-9):
         return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
+    all_errors[-1] = np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T)
+    return all_errors, nodes, weights
 
-    return np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T), nodes, weights
 
-
-def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
+def optimize_error_l2(H, N, T, tol=1e-08, bound=None, iterative=False):
     """
-    Optimizes the L^2 strong approximation error with N points for fBm. Uses the Nelder-Mead
-    optimizer as implemented in scipy.
+    Optimizes the L^2 error with N points for the fractional kernel. Uses the Nelder-Mead optimizer as implemented in
+    scipy.
     :param H: Hurst parameter
     :param N: Number of points
     :param T: Final time, may be a numpy array (only if grad is False and fast is True)
@@ -856,7 +955,7 @@ def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
     """
     if bound is None:
         bound = 1e+100
-    error_fun = error
+    error_fun = error_l2
 
     def optimize_error_given_rule(nodes_1, weights_1):
         N_ = len(nodes_1)
@@ -944,10 +1043,60 @@ def optimize_error(H, N, T, tol=1e-08, bound=None, iterative=False):
     return err, nodes, weights
 
 
-def optimized_rule(H, N, T, optimal_weights=False):
+def optimize_error_l1(H, N, T, iterative=False):
     """
-    Returns the optimal nodes and weights of the N-point quadrature rule for the fractional kernel with Hurst parameter
-    H.
+    Optimizes the L^1 error with N points for the fractional kernel.
+    :param H: Hurst parameter
+    :param N: Number of points
+    :param T: Final time, may be a numpy array (only if grad is False and fast is True)
+    :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
+    :return: The minimal relative error together with the associated nodes and weights.
+    """
+    def optimize_error_given_rule(nodes_1, weights_1):
+        N_ = len(nodes_1)
+        coefficient = 1 / kernel_norm(H=H, T=T, p=1.)
+        rule = np.log(np.concatenate((nodes_1, weights_1)))
+
+        def func(x):
+            err_, grad = error_l1(H, np.exp(x[:N_]), np.exp(x[N_:]), T, 'intersections')
+            err_ = coefficient * err_
+            return err_
+
+        res = minimize(func, rule)
+        nodes_1, weights_1 = sort(np.exp(res.x[:N_]), np.exp(res.x[N_:]))
+        return res.fun, nodes_1, weights_1
+
+    if not iterative:
+        nodes_, weights_ = quadrature_rule(H, N, T, mode='observation l1')
+        if len(nodes_) < N:
+            nodes = np.zeros(N)
+            weights = np.zeros(N)
+            nodes[:len(nodes_)] = nodes_
+            weights[:len(weights_)] = weights_
+            for i in range(len(nodes_), N):
+                nodes[i] = nodes_[-1] * 2 ** (i - len(nodes_) + 1)
+                weights[i] = weights_[-1]
+        else:
+            nodes = nodes_[:N]
+            weights = weights_[:N]
+
+        return optimize_error_given_rule(nodes, weights)
+
+    nodes, weights = quadrature_rule(H, 1, T, mode='observation l1')
+    err, nodes, weights = optimize_error_given_rule(nodes, weights)
+
+    while len(nodes) < N:
+        nodes = np.append(nodes, 2 * nodes[-1])
+        weights = np.append(weights, np.amax(weights))
+        err, nodes, weights = optimize_error_given_rule(nodes, weights)
+
+    return err, nodes, weights
+
+
+def optimized_rule_l2(H, N, T, optimal_weights=False):
+    """
+    Returns the optimal nodes and weights in the L^2-sense of the N-point quadrature rule for the fractional kernel with
+    Hurst parameter H.
     :param H: Hurst parameter
     :param N: Number of nodes
     :param T: Final time
@@ -955,10 +1104,10 @@ def optimized_rule(H, N, T, optimal_weights=False):
     :return: All the nodes and weights in increasing order, in the form [node1, node2, ...], [weight1, weight2, ...]
     """
     if optimal_weights:
-        _, nodes, weights = optimize_error_optimal_weights(H=H, N=N, T=T, bound=None, method='gradient',
-                                                           iterative=False)
+        _, nodes, weights = optimize_error_l2_optimal_weights(H=H, N=N, T=T, bound=None, method='gradient',
+                                                              iterative=False)
     else:
-        _, nodes, weights = optimize_error(H=H, N=N, T=T, bound=None, iterative=False)
+        _, nodes, weights = optimize_error_l2(H=H, N=N, T=T, bound=None, iterative=False)
     return nodes, weights
 
 
@@ -984,9 +1133,9 @@ def european_rule(H, N, T, optimal_weights=False):
                     nod[:-1] = last_nodes
                     nod[-1] = bound_
             nod = nod / 1.03 ** np.fmin(np.arange(1, N_ + 1) ** 2, 100)
-            return optimize_error_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
-                                                  force_order=False, post_processing=False, init_nodes=nod)
-        return optimize_error(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
+            return optimize_error_l2_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
+                                                     force_order=False, post_processing=False, init_nodes=nod)
+        return optimize_error_l2(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
 
     _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
     if N == 1:
@@ -1044,6 +1193,14 @@ def european_rule(H, N, T, optimal_weights=False):
 
 
 def AbiJaberElEuch_quadrature_rule(H, N, T):
+    """
+    Computes the quadrature as suggested in "Multi-factor approximation of rough volatility models" by Abi Jaber and
+    El Euch.
+    :param H: Hurst parameter
+    :param N: Number of quadrature nodes
+    :param T: Maturity / Final time
+    :return: The nodes and weights, two numpy arrays
+    """
     pi_n = N ** (-0.2) / T * (np.sqrt(10) * (1 - 2 * H) / (5 - 2 * H)) ** 0.4
     eta = pi_n * np.arange(N + 1)
     c_vec = (eta[1:] ** (0.5 - H) - eta[:-1] ** (0.5 - H)) / (gamma(H + 0.5) * gamma(1.5 - H))
@@ -1079,21 +1236,16 @@ def quadrature_rule(H, N, T, mode="european"):
         else:
             T = np.amax(T)
 
-    if mode == "optimized":
-        return optimized_rule(H=H, N=N, T=T, optimal_weights=True)
+    if mode == "optimized l2":
+        return optimized_rule_l2(H=H, N=N, T=T, optimal_weights=True)
     if mode == "european":
         return european_rule(H=H, N=N, T=T, optimal_weights=True)
-    if mode == "optimized old":
-        return optimized_rule(H=H, N=N, T=T, optimal_weights=False)
+    if mode == "optimized l2 old":
+        return optimized_rule_l2(H=H, N=N, T=T, optimal_weights=False)
     if mode == "european old":
         return european_rule(H=H, N=N, T=T, optimal_weights=False)
-    if mode == "observation" or mode == "theorem":
-        return Gaussian_rule(H=H, N=N, T=T, mode=mode, optimal_weights=True)
-    if mode == "observation old" or mode == "paper":
-        return Gaussian_rule(H=H, N=N, T=T, mode="observation", optimal_weights=False)
     if mode == "abi jaber":
         return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
-    if mode == "bounded":
-        return optimize_error_optimal_weights(H=H, N=N, T=T, bound=4.5 ** np.sqrt(N / H) / (50 * T),
-                                              post_processing=False, force_order=True, method='error')[1:3]
-    return Gaussian_rule(H=H, N=N, T=T, mode="theorem", optimal_weights=False)
+    if mode == "paper":
+        return Gaussian_geometric(H=H, N=N, T=T, mode="old geometric observation l2")
+    return Gaussian_geometric(H=H, N=N, T=T, mode=mode)
