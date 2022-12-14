@@ -1,5 +1,4 @@
 import numpy as np
-import mpmath as mp
 import scipy.linalg
 from scipy.optimize import minimize
 from scipy.special import gamma, gammainc
@@ -52,21 +51,6 @@ def single_param_search(f, rel_tol=1e-03, n=100, factor=2):
         approx_res = current_res
         current_res, reusable = f(n=n, reusable=reusable)
     return current_res, n, reusable
-
-
-def mp_to_np(x):
-    """
-    Converts a mpmath matrix to a numpy array.
-    :param x: The mpmath matrix to convert
-    :return: The converted numpy array.
-    """
-    y = np.array(x.tolist())
-    shape = y.shape
-    y = y.flatten()
-    y = np.array([float(z) for z in y])
-    if len(shape) == 2 and (shape[0] == 1 or shape[1] == 1):
-        return y
-    return y.reshape(shape)
 
 
 def exp_underflow(x):
@@ -194,7 +178,7 @@ def Gaussian_parameters(H, N, T, mode):
 
     if mode == "old geometric theorem l2":
         N = N - 1
-        A = mp.sqrt(1 / H + 1 / (1.5 - H))
+        A = np.sqrt(1 / H + 1 / (1.5 - H))
         beta = 0.4275
         alpha = 1.06418
         gamma_ = np.exp(alpha * beta)
@@ -202,18 +186,18 @@ def Gaussian_parameters(H, N, T, mode):
         temp_1 = ((9 - 6 * H) / (2 * H)) ** (gamma_ / (8 * (gamma_ - 1)))
         temp_2 = 5 * np.pi ** 3 * gamma_ * (gamma_ - 1) * A ** (2 - 2 * H) * float(N) ** (1 - H) / (beta ** (2 - 2 * H))
         base_0 = temp_1 * (temp_2 * (3 - 2 * H) / (768 * H)) ** (2 * H)
-        a = -mp.log(T ** (-1) * base_0 ** exponent * mp.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
+        a = -np.log(T ** (-1) * base_0 ** exponent * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
         base_n = temp_1 * (temp_2 / 1152) ** (2 * H - 3)
-        b = mp.log(T ** (-1) * base_n ** exponent * mp.exp(alpha / (H * A) * np.sqrt(N)))
-        m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
+        b = np.log(T ** (-1) * base_n ** exponent * np.exp(alpha / (H * A) * np.sqrt(N)))
+        m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
     elif mode == "old geometric observation l2":
         N = N - 1
-        A = mp.sqrt(1 / H + 1 / (1.5 - H))
+        A = np.sqrt(1 / H + 1 / (1.5 - H))
         beta = 0.9
         alpha = 1.8
-        a = -mp.log(0.65 * 1 / T * mp.exp(3.1 * H) * mp.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
-        b = mp.log(1 / T * mp.exp(3 * H ** (-0.4)) * mp.exp(alpha / (H * A) * np.sqrt(N)))
-        m = int(np.fmax(np.round(float(beta / A * np.sqrt(N))), 1))
+        a = -np.log(0.65 * 1 / T * np.exp(3.1 * H) * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
+        b = np.log(1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N)))
+        m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
     elif mode == "old geometric theorem l1":
         beta = 0.4275
         alpha = 1.06418
@@ -234,13 +218,13 @@ def Gaussian_parameters(H, N, T, mode):
         b = 0.5 / T
         a = - np.log(a)
         b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
-        m = int(np.fmax(np.round(float(beta * np.sqrt((H + 0.5) * N))), 1))
+        m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
     elif mode == "old non-geometric theorem l1":
         beta = 0.79606057
         a = 3 / T
         b = 1
         a = - np.log(a)
-        m = int(np.fmax(np.round(float(beta * np.sqrt((H + 0.5) * N))), 1))
+        m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
     elif mode == "new geometric theorem l1":
         beta = 1
         alpha = 1.762747
@@ -248,7 +232,7 @@ def Gaussian_parameters(H, N, T, mode):
         b = 1 / T
         a = - np.log(a)
         b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
-        m = int(np.fmax(np.round(float(beta * np.sqrt((H + 0.5) * N))), 1))
+        m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
     else:
         raise NotImplementedError(f'The mode {mode} has not been implemented')
 
@@ -256,7 +240,7 @@ def Gaussian_parameters(H, N, T, mode):
     return m, n, a, b
 
 
-def Gaussian_interval(H, m, a, b, fractional_weight=True, mp_output=True):
+def Gaussian_interval(H, m, a, b, fractional_weight=True):
     """
     Returns the nodes and weights of the Gauss quadrature rule level m on [a, b].
     :param H: Hurst parameter
@@ -265,28 +249,20 @@ def Gaussian_interval(H, m, a, b, fractional_weight=True, mp_output=True):
     :param b: Right end of interval
     :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight. If
         False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H
-    :param mp_output: If True, returns mpmath matrices. Else, returns numpy arrays
     :return: The nodes and weights
     """
-    c = mp.mpf(c_H(float(H)))
     if fractional_weight:
-        moments = np.array([mp.mpf(c / (mp.mpf(k) + mp.mpf(0.5) - H)
-                                   * (b ** (mp.mpf(k) + mp.mpf(0.5) - H) - a ** (mp.mpf(k) + mp.mpf(0.5) - H))) for k in
-                            range(2 * m)])
+        k = np.arange(2 * m) + 0.5 - H
     else:
-        moments = np.array([mp.mpf(c / mp.mpf(k + 1)) * (b ** mp.mpf(k + 1) - a ** mp.mpf(k + 1)) for k in
-                            range(2 * m)])
-    alpha, beta, int_1 = orthopy.tools.chebyshev(moments)
-    points, weights = quadpy.tools.scheme_from_rc(alpha, beta, int_1, mode="mpmath")
-    if mp_output:
-        return mp.matrix(points.tolist()), mp.matrix(weights.tolist())
-    return mp_to_np(points), mp_to_np(weights)
+        k = np.arange(1, 2 * m + 1)
+    alpha, beta, int_1 = orthopy.tools.chebyshev(moments=c_H(H) / k * (b ** k - a ** k))
+    return quadpy.tools.scheme_from_rc(alpha, beta, int_1)
 
 
-def Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True, mp_output=True):
+def Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True):
     """
     Returns the nodes and weights of the m-point quadrature rule for the fractional kernel with Hurst parameter H
-    on n geometrically spaced subintervals. The result is two instances of mp.matrix with mp.mpf entries.
+    on n geometrically spaced subintervals.
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
     :param n: Number of subintervals
@@ -294,21 +270,16 @@ def Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True, mp_out
     :param b: b = log(xi_n)
     :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight. If
         False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H
-    :param mp_output: If True, returns mpmath matrices. Else, returns numpy arrays
     :return: All the nodes and weights
     """
-    mp.mp.dps = int(np.fmax(a + b + 50, 50))
-    partition = np.array([mp.exp(-a + (a + b) * (mp.mpf(i) / mp.mpf(n))) for i in range(n + 1)])
-    nodes = mp.matrix(m * n, 1)
-    weights = mp.matrix(m * n, 1)
+    partition = np.exp(-a + (a + b) * np.linspace(0, 1, n + 1))
+    nodes = np.empty(m * n)
+    weights = np.empty(m * n)
     for i in range(n):
         new_nodes, new_weights = Gaussian_interval(H=H, m=m, a=partition[i], b=partition[i + 1],
-                                                   fractional_weight=fractional_weight,
-                                                   mp_output=True)
-        nodes[m * i:m * (i + 1), 0] = new_nodes
-        weights[m * i:m * (i + 1), 0] = new_weights
-    if not mp_output:
-        nodes, weights = mp_to_np(nodes), mp_to_np(weights)
+                                                   fractional_weight=fractional_weight)
+        nodes[m * i:m * (i + 1)] = new_nodes
+        weights[m * i:m * (i + 1)] = new_weights
     return nodes, weights
 
 
@@ -347,16 +318,14 @@ def Gaussian_geometric(H, N, T, mode='observation'):
             nodes, weights = np.array([0.]), np.array([w_0])
         else:
             nodes, weights = np.zeros(m * n + 1), np.empty(m * n + 1)
-            nodes[1:], weights[1:] = Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True,
-                                                                    mp_output=False)
+            nodes[1:], weights[1:] = Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True)
             weights[0] = Gaussian_optimal_zero_weight(H=H, T=T, nodes=nodes[1:], weights=weights[1:])
     else:
         nodes, weights = np.empty(m * n), np.empty(m * n)
-        nodes[:m], weights[:m] = Gaussian_interval(H=H, m=m, a=0, b=np.exp(-float(a)), fractional_weight=True,
-                                                   mp_output=False)
+        nodes[:m], weights[:m] = Gaussian_interval(H=H, m=m, a=0, b=np.exp(-float(a)), fractional_weight=True)
         if n > 1:
             nodes[m:], weights[m:] = Gaussian_geometric_middle_part(H=H, m=m, n=n - 1, a=a, b=b,
-                                                                    fractional_weight='old' in mode, mp_output=False)
+                                                                    fractional_weight='old' in mode)
     return nodes, weights
 
 
@@ -375,11 +344,11 @@ def Gaussian_rule_l1(H, N, T, mode='theorem l1'):
         T = T[-1]
 
     m, n, a, b = Gaussian_parameters(H, N, T, mode)
-    nodes = mp.matrix(m * n, 1)
-    weights = mp.matrix(m * n, 1)
+    nodes = np.empty(m * n)
+    weights = np.empty(m * n)
     nodes_, weights_ = Gaussian_interval(H, m, 0, np.exp(-a))
-    nodes[:m, 0] = nodes_
-    weights[:m, 0] = weights_
+    nodes[:m] = nodes_
+    weights[:m] = weights_
     if mode == 'new theorem l1':
         xi = np.exp(-a)
         c = 0.50246208
@@ -389,7 +358,6 @@ def Gaussian_rule_l1(H, N, T, mode='theorem l1'):
             xi = xi * (1 + 2 * c * xi ** (kappa / n))
             nodes[m * (i + 1):m * (i + 2)] = nodes_
             weights[m * (i + 1):m * (i + 2)] = weights_
-    nodes, weights = mp_to_np(nodes), mp_to_np(weights)
     return nodes, weights
 
 

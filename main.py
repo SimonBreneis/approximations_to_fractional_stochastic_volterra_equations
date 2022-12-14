@@ -24,6 +24,10 @@ for N in range(1, 11):
     nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='european')
     err_european = np.sqrt(rk.error_l2(H=H, nodes=nodes, weights=weights, T=T, output='error')) / rk.kernel_norm(H=H, T=T, p=2)
     print(N, err_paper, err_optimized, err_european)
+for N in 2 ** np.arange(9):
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='paper')
+    err_paper = np.sqrt(rk.error_l2(H=H, nodes=nodes, weights=weights, T=T, output='error')) / rk.kernel_norm(H=H, T=T, p=2)
+    print(N, err_paper)
 time.sleep(36000)
 
 
