@@ -166,6 +166,22 @@ def AK_improved_rule(H, N, K=None, T=1):
     return nodes, res.x * weights
 
 
+def AbiJaberElEuch_quadrature_rule(H, N, T):
+    """
+    Computes the quadrature as suggested in "Multi-factor approximation of rough volatility models" by Abi Jaber and
+    El Euch.
+    :param H: Hurst parameter
+    :param N: Number of quadrature nodes
+    :param T: Maturity / Final time
+    :return: The nodes and weights, two numpy arrays
+    """
+    pi_n = N ** (-0.2) / T * (np.sqrt(10) * (1 - 2 * H) / (5 - 2 * H)) ** 0.4
+    eta = pi_n * np.arange(N + 1)
+    c_vec = (eta[1:] ** (0.5 - H) - eta[:-1] ** (0.5 - H)) / (gamma(H + 0.5) * gamma(1.5 - H))
+    gamma_vec = (eta[1:] ** (1.5 - H) - eta[:-1] ** (1.5 - H)) / ((1.5 - H) * gamma(H + 0.5) + gamma(0.5 - H)) / c_vec
+    return gamma_vec, c_vec
+
+
 def Gaussian_parameters(H, N, T, mode):
     """
     Returns the parameters m, n, a, b of the Gaussian quadrature rule.
@@ -173,7 +189,7 @@ def Gaussian_parameters(H, N, T, mode):
     :param N: Total number of nodes
     :param T: Final time
     :param mode: The kind of theorem or observation that should be used
-    :return: Quadrature level m, number of intervals n, minus log-left point a, log-right point b
+    :return: Quadrature level m, number of intervals n, left point a, right point b
     """
 
     if mode == "old geometric theorem l2":
@@ -186,17 +202,17 @@ def Gaussian_parameters(H, N, T, mode):
         temp_1 = ((9 - 6 * H) / (2 * H)) ** (gamma_ / (8 * (gamma_ - 1)))
         temp_2 = 5 * np.pi ** 3 * gamma_ * (gamma_ - 1) * A ** (2 - 2 * H) * float(N) ** (1 - H) / (beta ** (2 - 2 * H))
         base_0 = temp_1 * (temp_2 * (3 - 2 * H) / (768 * H)) ** (2 * H)
-        a = -np.log(T ** (-1) * base_0 ** exponent * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
+        a = 1 / T * base_0 ** exponent * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N))
         base_n = temp_1 * (temp_2 / 1152) ** (2 * H - 3)
-        b = np.log(T ** (-1) * base_n ** exponent * np.exp(alpha / (H * A) * np.sqrt(N)))
+        b = 1 / T * base_n ** exponent * np.exp(alpha / (H * A) * np.sqrt(N))
         m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
     elif mode == "old geometric observation l2":
         N = N - 1
         A = np.sqrt(1 / H + 1 / (1.5 - H))
         beta = 0.9
         alpha = 1.8
-        a = -np.log(0.65 * 1 / T * np.exp(3.1 * H) * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N)))
-        b = np.log(1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N)))
+        a = 0.65 * 1 / T * np.exp(3.1 * H) * np.exp(-alpha / ((1.5 - H) * A) * np.sqrt(N))
+        b = 1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N))
         m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
     elif mode == "old geometric theorem l1":
         beta = 0.4275
@@ -207,31 +223,24 @@ def Gaussian_parameters(H, N, T, mode):
         a = C
         b = C * N_ ** (-3 * (1 - gamma_) / (2 + 4 * H) / (1 - gamma_ + 1.72 * beta ** 2))
         a = 1 / T
-        b = 1 / T
-        a = - np.log(a)
-        b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
+        b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
         m = int(np.fmax(np.round(beta * np.sqrt(N_)), 1))
     elif mode == "old geometric observation l1":
         beta = 1.0
         alpha = 1.8
         a = 3 / T
-        b = 0.5 / T
-        a = - np.log(a)
-        b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
+        b = 0.5 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
         m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
     elif mode == "old non-geometric theorem l1":
         beta = 0.79606057
         a = 3 / T
         b = 1
-        a = - np.log(a)
         m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
     elif mode == "new geometric theorem l1":
         beta = 1
         alpha = 1.762747
         a = 1 / (3 * T)
-        b = 1 / T
-        a = - np.log(a)
-        b = np.log(b * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N)))
+        b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
         m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
     else:
         raise NotImplementedError(f'The mode {mode} has not been implemented')
@@ -266,13 +275,13 @@ def Gaussian_geometric_middle_part(H, m, n, a, b, fractional_weight=True):
     :param H: Hurst parameter
     :param m: Level of the quadrature rule
     :param n: Number of subintervals
-    :param a: a = - log(xi_0)
-    :param b: b = log(xi_n)
+    :param a: a = Left end-point of the middle part
+    :param b: b = Right end-point of the middle part
     :param fractional_weight: If True, computes the Gaussian quadrature rule with respect to the fractional weight. If
         False, computes the Gaussian quadrature with respect to the weight function w(x) = c_H
     :return: All the nodes and weights
     """
-    partition = np.exp(-a + (a + b) * np.linspace(0, 1, n + 1))
+    partition = np.exp(np.log(a) + np.log(b / a) * np.linspace(0, 1, n + 1))
     nodes = np.empty(m * n)
     weights = np.empty(m * n)
     for i in range(n):
@@ -342,22 +351,18 @@ def Gaussian_rule_l1(H, N, T, mode='theorem l1'):
     """
     if isinstance(T, np.ndarray):
         T = T[-1]
-
     m, n, a, b = Gaussian_parameters(H, N, T, mode)
     nodes = np.empty(m * n)
     weights = np.empty(m * n)
-    nodes_, weights_ = Gaussian_interval(H, m, 0, np.exp(-a))
-    nodes[:m] = nodes_
-    weights[:m] = weights_
+    nodes[:m], weights[:m] = Gaussian_interval(H, m, 0, a)
     if mode == 'new theorem l1':
-        xi = np.exp(-a)
+        xi = a
         c = 0.50246208
         kappa = 1 / (2 * 0.79606057 ** 2)  # rate -1.0957535765682107
         for i in range(n - 1):
-            nodes_, weights_ = Gaussian_interval(H, m, xi, xi * (1 + 2 * c * xi ** (kappa / n)))
+            nodes[m * (i + 1):m * (i + 2)], weights[m * (i + 1):m * (i + 2)] = \
+                Gaussian_interval(H, m, xi, xi * (1 + 2 * c * xi ** (kappa / n)))
             xi = xi * (1 + 2 * c * xi ** (kappa / n))
-            nodes[m * (i + 1):m * (i + 2)] = nodes_
-            weights[m * (i + 1):m * (i + 2)] = weights_
     return nodes, weights
 
 
@@ -372,10 +377,6 @@ def error_l2(H, nodes, weights, T, output='error'):
     :param output: If error, returns the error. If gradient, returns the error and the gradient of the error
     :return: An error estimate
     """
-    '''
-    if np.amin(nodes) < 0 or np.amin(weights) < 0:
-        return 1e+10
-    '''
     nodes = np.fmin(np.fmax(nodes, 1e-08), 1e+150)
     weights = np.fmin(weights, 1e+75)
     weight_matrix = np.outer(weights, weights)
@@ -1158,22 +1159,6 @@ def european_rule(H, N, T, optimal_weights=False):
     if error_5 <= error_6:
         return nodes_5, weights_5
     return nodes_6, weights_6
-
-
-def AbiJaberElEuch_quadrature_rule(H, N, T):
-    """
-    Computes the quadrature as suggested in "Multi-factor approximation of rough volatility models" by Abi Jaber and
-    El Euch.
-    :param H: Hurst parameter
-    :param N: Number of quadrature nodes
-    :param T: Maturity / Final time
-    :return: The nodes and weights, two numpy arrays
-    """
-    pi_n = N ** (-0.2) / T * (np.sqrt(10) * (1 - 2 * H) / (5 - 2 * H)) ** 0.4
-    eta = pi_n * np.arange(N + 1)
-    c_vec = (eta[1:] ** (0.5 - H) - eta[:-1] ** (0.5 - H)) / (gamma(H + 0.5) * gamma(1.5 - H))
-    gamma_vec = (eta[1:] ** (1.5 - H) - eta[:-1] ** (1.5 - H)) / ((1.5 - H) * gamma(H + 0.5) + gamma(0.5 - H)) / c_vec
-    return gamma_vec, c_vec
 
 
 def quadrature_rule(H, N, T, mode="european"):
