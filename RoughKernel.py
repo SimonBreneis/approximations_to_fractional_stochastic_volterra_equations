@@ -728,8 +728,8 @@ def error_l2_optimal_weights(H, T, nodes, output='error'):
     return err, grad, hess, opt_weights
 
 
-def optimize_error_l2_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False,
-                                      post_processing=False, init_nodes=None, iterative=False):
+def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_order=False, post_processing=False,
+                      init_nodes=None, iterative=False):
     """
     Optimizes the L^2 error with N points for the fractional kernel. Always uses the best weights and only numerically
     optimizes over the nodes.
@@ -756,9 +756,9 @@ def optimize_error_l2_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gr
     if iterative and not init_nodes and N >= 2:
         all_errors = np.empty(N)
         init_nodes = np.empty(N)
-        res = optimize_error_l2_optimal_weights(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
-                                                force_order=force_order, post_processing=post_processing,
-                                                init_nodes=None, iterative=iterative)[:2]
+        res = optimize_error_l2(H=H, N=N - 1, T=T, tol=tol, bound=bound, method=method,
+                                force_order=force_order, post_processing=post_processing,
+                                init_nodes=None, iterative=iterative)[:2]
         init_nodes[:-1] = res[1]
         all_errors[:-1] = res[0]
         init_nodes[:-1] = init_nodes[:N - 1] / 1.03 ** np.fmin(np.arange(1, N) ** 2, 100)
@@ -854,11 +854,11 @@ def optimize_error_l2_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gr
                 or (N >= 3 and np.sqrt(nodes[-1]/nodes[-2]) > nodes[-2]/nodes[-3]) \
                 or (N >= 2 and bound >= 1e+51 and (np.amin(weights) < 0 or np.amin(nodes[1:]/nodes[:-1]) < 1.01)):
             if force_order is False:
-                return optimize_error_l2_optimal_weights(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
-                                                         force_order=True, post_processing=True)
+                return optimize_error_l2(H=H, N=N, T=T, tol=tol, bound=original_bound, method=method,
+                                         force_order=True, post_processing=True)
             elif bound >= 1e+24:
-                return optimize_error_l2_optimal_weights(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
-                                                         force_order=True, post_processing=True)
+                return optimize_error_l2(H=H, N=N, T=T, tol=tol, bound=bound / 1e+5, method=method,
+                                         force_order=True, post_processing=True)
 
         factor = 3.
         if N >= 2 and np.amin(weights) < 0:
@@ -895,108 +895,6 @@ def optimize_error_l2_optimal_weights(H, N, T, tol=1e-08, bound=None, method='gr
         return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
     all_errors[-1] = np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T)
     return all_errors, nodes, weights
-
-
-def optimize_error_l2(H, N, T, tol=1e-08, bound=None, iterative=False):
-    """
-    Optimizes the L^2 error with N points for the fractional kernel. Uses the Nelder-Mead optimizer as implemented in
-    scipy.
-    :param H: Hurst parameter
-    :param N: Number of points
-    :param T: Final time, may be a numpy array (only if grad is False and fast is True)
-    :param tol: Error tolerance
-    :param bound: Upper bound on the nodes. If no upper bound is desired, use None
-    :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
-    :return: The minimal relative error together with the associated nodes and weights.
-    """
-    if bound is None:
-        bound = 1e+100
-    error_fun = error_l2
-
-    def optimize_error_given_rule(nodes_1, weights_1):
-        N_ = len(nodes_1)
-        coefficient = 1 / kernel_norm(H, T) ** 2
-
-        nodes_1 = np.fmin(np.fmax(nodes_1, 1e-02), bound / 2)
-        bounds = (((np.log(1 / (10 * N_ * np.amin(T))), np.log(bound)),) * N_) \
-            + (((np.log(0.1), np.log(np.fmax(bound, 1e+60))),) * N_)
-        rule = np.log(np.concatenate((nodes_1, weights_1)))
-
-        if isinstance(T, np.ndarray):
-
-            def func(x):
-                return np.amax(coefficient * error_fun(H, np.exp(x[:N_]), np.exp(x[N_:]), T, output='error'))
-
-            res = minimize(func, rule, tol=tol ** 2, bounds=bounds)
-        else:
-
-            def func(x):
-                err_, grad = error_fun(H, np.exp(x[:N_]), np.exp(x[N_:]), T, output='gradient')
-                err_ = np.amax(coefficient * err_)
-                grad = coefficient * np.exp(x) * grad
-                return err_, grad
-
-            res = minimize(func, rule, tol=tol ** 2, bounds=bounds, jac=True)
-
-        nodes_1, weights_1 = sort(np.exp(res.x[:N_]), np.exp(res.x[N_:]))
-        return np.sqrt(res.fun), nodes_1, weights_1
-
-    if not iterative:
-        if isinstance(T, np.ndarray):
-            nodes_, weights_ = quadrature_rule(H, N, (np.amin(T) + np.amax(T))/2, mode='optimized')
-        else:
-            nodes_, weights_ = quadrature_rule(H, N, T, mode='observation')
-        if len(nodes_) < N:
-            nodes = np.zeros(N)
-            weights = np.zeros(N)
-            nodes[:len(nodes_)] = nodes_
-            weights[:len(weights_)] = weights_
-            for i in range(len(nodes_), N):
-                nodes[i] = nodes_[-1] * 10 ** (i - len(nodes_) + 1)
-                weights[i] = weights_[-1]
-        else:
-            nodes = nodes_[:N]
-            weights = weights_[:N]
-
-        return optimize_error_given_rule(nodes, weights)
-
-    if isinstance(T, np.ndarray):
-        nodes, weights = quadrature_rule(H, 1, (np.amin(T) + np.amax(T)) / 2, mode='optimized')
-    else:
-        nodes, weights = quadrature_rule(H, 1, T, mode='observation')
-    err, nodes, weights = optimize_error_given_rule(nodes, weights)
-
-    while len(nodes) < N:
-        if bound is None:
-            nodes = np.append(nodes, 10 * nodes[-1])
-            weights = np.append(weights, np.amax(weights))
-        else:
-            if len(nodes) == 1:
-                if bound > 10 * nodes[0]:
-                    nodes = np.array([nodes[0], 10 * nodes[0]])
-                    weights = np.array([weights[0], weights[0]])
-                elif bound >= 2 * nodes[0]:
-                    nodes = np.array([nodes[0], bound])
-                    weights = np.array([weights[0], weights[0] / 2])
-                else:
-                    nodes = np.array([nodes[0] / 3, nodes[0]])
-                    weights = np.array([weights[0] / 3, weights[0] / 2])
-            else:
-                if bound > 10 * nodes[-1]:
-                    nodes = np.append(nodes, 10 * nodes[-1])
-                    weights = np.append(weights, np.amax(weights))
-                elif bound > 2 * nodes[-1] or bound / nodes[-1] > nodes[-1] / nodes[-2]:
-                    nodes = np.append(nodes, bound)
-                    weights = np.append(weights, np.amax(weights) / 2)
-                else:
-                    nodes = np.append(nodes, np.sqrt(nodes[-1] * nodes[-2]))
-                    weights[-1] = weights[-1] * 0.7
-                    weights[-2] = weights[-2] * 0.7
-                    weights = np.append(weights, np.fmin(weights[-1], weights[-2]))
-                    nodes, weights = sort(nodes, weights)
-        err, nodes, weights = optimize_error_given_rule(nodes, weights)
-
-    return err, nodes, weights
 
 
 def optimize_error_l1(H, N, T, iterative=False):
@@ -1049,49 +947,28 @@ def optimize_error_l1(H, N, T, iterative=False):
     return err, nodes, weights
 
 
-def optimized_rule_l2(H, N, T, optimal_weights=False):
-    """
-    Returns the optimal nodes and weights in the L^2-sense of the N-point quadrature rule for the fractional kernel with
-    Hurst parameter H.
-    :param H: Hurst parameter
-    :param N: Number of nodes
-    :param T: Final time
-    :param optimal_weights: If True, uses the optimal weights for the kernel error
-    :return: All the nodes and weights in increasing order, in the form [node1, node2, ...], [weight1, weight2, ...]
-    """
-    if optimal_weights:
-        _, nodes, weights = optimize_error_l2_optimal_weights(H=H, N=N, T=T, bound=None, method='gradient',
-                                                              iterative=False)
-    else:
-        _, nodes, weights = optimize_error_l2(H=H, N=N, T=T, bound=None, iterative=False)
-    return nodes, weights
-
-
-def european_rule(H, N, T, optimal_weights=False):
+def european_rule(H, N, T):
     """
     Returns a quadrature rule that is optimized for pricing European options under the rough Heston model.
     :param H: Hurst parameter
     :param N: Number of nodes
     :param T: Final time/Maturity
-    :param optimal_weights: If True, uses the optimal weights for the kernel error
     :return: Nodes and weights
     """
 
     def optimizing_func(N_, tol_, bound_):
-        if optimal_weights:
-            if N_ == 1:
-                nod = np.array([1 / T])
+        if N_ == 1:
+            nod = np.array([1 / T])
+        else:
+            nod = np.empty(N_)
+            if len(last_nodes) == N_:
+                nod = last_nodes
             else:
-                nod = np.empty(N_)
-                if len(last_nodes) == N_:
-                    nod = last_nodes
-                else:
-                    nod[:-1] = last_nodes
-                    nod[-1] = bound_
-            nod = nod / 1.03 ** np.fmin(np.arange(1, N_ + 1) ** 2, 100)
-            return optimize_error_l2_optimal_weights(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
-                                                     force_order=False, post_processing=False, init_nodes=nod)
-        return optimize_error_l2(H=H, N=N_, T=T, tol=tol_, bound=bound_, iterative=True)
+                nod[:-1] = last_nodes
+                nod[-1] = bound_
+        nod = nod / 1.03 ** np.fmin(np.arange(1, N_ + 1) ** 2, 100)
+        return optimize_error_l2(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient',
+                                 force_order=False, post_processing=False, init_nodes=nod)
 
     _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
     if N == 1:
@@ -1175,13 +1052,9 @@ def quadrature_rule(H, N, T, mode="european"):
             T = np.amax(T)
 
     if mode == "optimized l2":
-        return optimized_rule_l2(H=H, N=N, T=T, optimal_weights=True)
+        return optimize_error_l2(H=H, N=N, T=T)[1:3]
     if mode == "european":
-        return european_rule(H=H, N=N, T=T, optimal_weights=True)
-    if mode == "optimized l2 old":
-        return optimized_rule_l2(H=H, N=N, T=T, optimal_weights=False)
-    if mode == "european old":
-        return european_rule(H=H, N=N, T=T, optimal_weights=False)
+        return european_rule(H=H, N=N, T=T)
     if mode == "abi jaber":
         return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
     if mode == "paper":

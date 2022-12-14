@@ -135,7 +135,7 @@ H = np.linspace(0.05, 0.45, 9)
 N = np.arange(1, 201)
 errors = np.empty((len(H), len(N)))
 for i in range(len(H)):
-    errors[i, :] = rk.optimize_error_l2_optimal_weights(H=H[i], N=200, T=1., iterative=True)[0]
+    errors[i, :] = rk.optimize_error_l2(H=H[i], N=200, T=1., iterative=True)[0]
     '''
     for j in range(len(N)):
         nodes, weights = rk.quadrature_rule(H=H[i], N=N[j], T=1., mode='optimized')
