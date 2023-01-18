@@ -91,7 +91,7 @@ def kernel_norm(H, T, p=2.):
     :param p: The order of the norm
     :return: The L^p-norm (root has been taken) of the fractional kernel
     """
-    return T ** (H - 0.5 + 1/p) / (gamma(0.5 + H) * (1 + p * H - p / 2) ** (1 / p))
+    return T ** (H - 0.5 + 1 / p) / (gamma(0.5 + H) * (1 + p * H - p / 2) ** (1 / p))
 
 
 def c_H(H):
@@ -217,30 +217,11 @@ def Gaussian_parameters(H, N, T, mode):
             b = 1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N))
             m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
             n = int(np.round(N / m))
-        elif mode == "old geometric theorem l1":
-            beta = 0.4275
-            alpha = 1.06418
-            gamma_ = np.exp(-alpha * beta)
-            N_ = (H + 0.5) * N
-            C = 1 / T * np.sqrt(N_ / 122) * N_ ** (-(3 - 2 * H) / (8 * beta * np.sqrt(N_) + 2 - 4 * H))
-            a = C
-            b = C * N_ ** (-3 * (1 - gamma_) / (2 + 4 * H) / (1 - gamma_ + 1.72 * beta ** 2))
-            a = 1 / T
-            b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
-            m = int(np.fmax(np.round(beta * np.sqrt(N_)), 1))
-            n = int(np.round(N / m)) - 1
-        elif mode == "old geometric observation l1":
-            beta = 1.0
-            alpha = 1.8
-            a = 3 / T
-            b = 0.5 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
-            m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
-            n = int(np.round(N / m)) - 1
         elif mode == "new geometric theorem l1":
             beta = 1
-            alpha = 1.762747
-            a = 1 / (3 * T)
-            b = 1 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
+            alpha = np.log(3 + 2 * np.sqrt(2))
+            a = 4 / T
+            b = 1 / 2 / T * np.exp(alpha / np.sqrt(H + 0.5) * np.sqrt(N))
             m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
             n = int(np.round(N / m)) - 1
         else:
@@ -248,20 +229,21 @@ def Gaussian_parameters(H, N, T, mode):
 
         partition = np.exp(np.log(a) + np.log(b / a) * np.linspace(0, 1, n + 1))
     else:
-        if mode == "old non-geometric theorem l1":
-            beta = 0.79606057
+        if mode == 'non-geometric l1':
+            beta = 0.92993273
             a = 3 / T
             m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
-            c = 0.50246208
-            kappa = 1 / (2 * 0.79606057 ** 2)
+            c = 1 / 3.60585021
         else:
             raise NotImplementedError(f'The mode {mode} has not been implemented')
 
+        kappa = 1 / (2 * beta ** 2)
         n = int(np.round(N / m)) - 1
         partition = np.empty(n + 1)
         partition[0] = a
         for i in range(n):
-            partition[i + 1] = partition[i] * (1 + 2 * c * partition[i] ** (kappa / (n + 1)))
+            partition[i + 1] = partition[i] \
+                * ((1/c + partition[i] ** (kappa / (n+1))) / (1/c - partition[i] ** (kappa / (n+1)))) ** 2
     return partition, m
 
 
@@ -530,6 +512,27 @@ def error_l1(H, nodes, weights, T, method='intersections', tol=1e-08):
                                         * (1 - exp_underflow((this_t - last_t) * nodes))))
             last_t = this_t
         return err, n_steps
+    elif method == 'reparametrized trapezoidal':
+
+        def error_(n, reusable):
+            t = np.linspace(0, T ** (0.5 + H), n + 1)[1:] ** (1 / (0.5 + H))
+            if reusable is None:
+                reusable = np.empty(n + 1)
+                reusable[1:] = np.abs(1 / gamma(H + 1.5)
+                                      - t ** (0.5 - H) * fractional_kernel_approximation(H, t, nodes,
+                                                                                         weights) / (0.5 + H))
+                reusable[0] = 1 / gamma(H * 1.5)
+            else:
+                error_t_1 = np.empty(n + 1)
+                error_t_1[::2] = reusable
+                error_t_1[1::2] = np.abs(1 / gamma(H + 1.5)
+                                         - t[1::2] ** (0.5 - H) * fractional_kernel_approximation(H, t[1::2], nodes,
+                                                                                                  weights) / (0.5 + H))
+                reusable = error_t_1
+            total_error = np.trapz(reusable, dx=T ** (0.5 + H) / n)
+            return total_error, reusable
+
+        return single_param_search(f=error_, rel_tol=tol, n=100, factor=2)[0:2]
     else:
         raise NotImplementedError(f'The method {method} for computing the L^1 kernel error has not been implemented.')
 
@@ -847,13 +850,15 @@ def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_o
     return all_errors, nodes, weights
 
 
-def optimize_error_l1(H, N, T, iterative=False):
+def optimize_error_l1(H, N, T, iterative=False, init_nodes=None, init_weights=None):
     """
     Optimizes the L^1 error with N points for the fractional kernel.
     :param H: Hurst parameter
     :param N: Number of points
     :param T: Final time, may be a numpy array (only if grad is False and fast is True)
     :param iterative: If True, starts with one node and iteratively adds nodes, while always optimizing
+    :param init_nodes: May specify a starting point for the nodes
+    :param init_weights: May specify a starting point for the weights
     :return: The minimal relative error together with the associated nodes and weights.
     """
     def optimize_error_given_rule(nodes_1, weights_1):
@@ -862,16 +867,18 @@ def optimize_error_l1(H, N, T, iterative=False):
         rule = np.log(np.concatenate((nodes_1, weights_1)))
 
         def func(x):
-            err_, grad = error_l1(H, np.exp(x[:N_]), np.exp(x[N_:]), T, 'intersections')
-            err_ = coefficient * err_
-            return err_
+            err_, grad = error_l1(H=H, nodes=np.exp(x[:N_]), weights=np.exp(x[N_:]), T=T, method='intersections')
+            return coefficient * err_
 
-        res = minimize(func, rule)
+        res = minimize(func, rule, tol=1e-04)
         nodes_1, weights_1 = sort(np.exp(res.x[:N_]), np.exp(res.x[N_:]))
         return res.fun, nodes_1, weights_1
 
     if not iterative:
-        nodes_, weights_ = quadrature_rule(H, N, T, mode='observation l1')
+        if init_nodes is not None and init_weights is not None:
+            nodes_, weights_ = init_nodes, init_weights
+        else:
+            nodes_, weights_ = quadrature_rule(H=H, N=N, T=T, mode='non-geometric l1')
         if len(nodes_) < N:
             nodes = np.zeros(N)
             weights = np.zeros(N)
@@ -886,10 +893,11 @@ def optimize_error_l1(H, N, T, iterative=False):
 
         return optimize_error_given_rule(nodes, weights)
 
-    nodes, weights = quadrature_rule(H, 1, T, mode='observation l1')
+    nodes, weights = quadrature_rule(H=H, N=1, T=T, mode='non-geometric l1')
     err, nodes, weights = optimize_error_given_rule(nodes, weights)
 
     while len(nodes) < N:
+        print(len(nodes))
         nodes = np.append(nodes, 2 * nodes[-1])
         weights = np.append(weights, np.amax(weights))
         err, nodes, weights = optimize_error_given_rule(nodes, weights)
