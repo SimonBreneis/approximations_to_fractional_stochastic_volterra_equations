@@ -530,3 +530,83 @@ def price_am_BS(S_0, sigma, T, r, m, N, K, feature_degree, antithetic=False):
     price, models = price_am(T=T, r=r, samples=samples[None, :, :], payoff=lambda S: payoff_put(S, K), features=features, antithetic=antithetic,
                              varying_initial_conditions=False)
     return price
+
+
+def price_am_iso(T, r, samples, payoff, features, antithetic=False, varying_initial_conditions=False):
+    """
+    Prices American options.
+    :param T: Maturity
+    :param r: Interest rate
+    :param samples: Numpy array of shape (d, m, N + 1), where N is the number of time steps, m the number of samples,
+        and d is the dimension of the Markovian process
+    :param payoff: The vectorized payoff function taking as input an arbitrary numpy array of shape (d, ...) (is a
+        vectorized function of d variables)
+    :param features: A function turning samples at a specific time step into features
+    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param varying_initial_conditions: If True, assumes that the initial condition varies with samples. Otherwise,
+        assumes that the initial condition is the same for all samples
+    :return: The price of the American option and a list of the models for each exercise time that approximate the
+        future payoff
+    """
+    N_time = samples.shape[-1] - 1
+    m = samples.shape[1]
+    dt = T / N_time
+
+    discount = np.exp(-r * dt)
+    models = [LinearRegression() for _ in range(N_time)]
+    discounted_future_payoffs = payoff(samples[:, :, -1])
+    for i in range(N_time - 1, -1 if varying_initial_conditions else 0, -1):
+        discounted_future_payoffs = discount * discounted_future_payoffs
+        current_payoff = payoff(samples[:, :, i])
+        ft = features(samples[:, :, i])
+        models[i] = models[i].fit(ft, discounted_future_payoffs)
+        predicted_future_payoffs = models[i].predict(ft)
+        execute_now = current_payoff > predicted_future_payoffs
+        discounted_future_payoffs[execute_now] = current_payoff[execute_now]
+        # print(models[i].intercept_, models[i].coef_)
+    if not varying_initial_conditions:
+        discounted_future_payoffs = discount * discounted_future_payoffs
+        current_payoff = payoff(samples[:, :, 0])
+        average_discounted_future_payoffs = np.average(discounted_future_payoffs)
+        average_current_payoff = np.average(current_payoff)
+        ft = features(samples[:, :1, 0])
+        models[0].fit(ft, np.array([average_discounted_future_payoffs]))
+        if average_current_payoff >= average_discounted_future_payoffs:
+            discounted_future_payoffs = average_current_payoff * np.ones(m)
+        # print(models[0].intercept_, models[0].coef_)
+    if antithetic:
+        discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:2 * (m // 2)]
+                                           + discounted_future_payoffs[:m // 2])
+    return MC(discounted_future_payoffs), models
+
+
+def price_am_iso_forward(T, r, samples, payoff, models, features, antithetic=False):
+    """
+    Prices American options.
+    :param T: Maturity
+    :param r: Interest rate
+    :param samples: Numpy array of shape (d, m, N + 1), where N is the number of time steps, m the number of samples,
+        and d is the dimension of the Markovian process
+    :param payoff: The vectorized payoff function taking as input an arbitrary numpy array of shape (d, ...) (is a
+        vectorized function of d variables)
+    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :return: The price of the American option, a list of the models for each exercise time that approximate the
+        future payoff, and the function computing the features of the samples
+    """
+    N_time = samples.shape[-1] - 1
+    m = samples.shape[1]
+    dt = T / N_time
+
+    discount = np.exp(-r * dt)
+    discounted_future_payoffs = payoff(samples[:, :, -1])
+    for i in range(N_time - 1, -1, -1):
+        discounted_future_payoffs = discount * discounted_future_payoffs
+        current_payoff = payoff(samples[:, :, i])
+        ft = features(samples[:, :, i])
+        predicted_future_payoffs = models[i].predict(ft)
+        execute_now = current_payoff > predicted_future_payoffs
+        discounted_future_payoffs[execute_now] = current_payoff[execute_now]
+    if antithetic:
+        discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:2 * (m // 2)]
+                                           + discounted_future_payoffs[:m // 2])
+    return MC(discounted_future_payoffs)
