@@ -139,6 +139,9 @@ def AK_improved_rule(H, N, K=None, T=1):
     :param T: Final time
     :return: The quadrature rule in the form nodes, weights
     """
+    if N == 1:
+        return np.array([0.]), np.array([0.])
+
     N = N // 2
 
     if K is None:
@@ -191,7 +194,7 @@ def Gaussian_parameters(H, N, T, mode):
     :param mode: The kind of theorem or observation that should be used
     :return: The partition of the middle part, and the quadrature level m
     """
-    if ' geometric ' in mode:
+    if ' geometric ' in mode or mode == "OLD" or mode == "GG":
         if mode == "old geometric theorem l2":
             N = N - 1
             A = np.sqrt(1 / H + 1 / (1.5 - H))
@@ -208,7 +211,7 @@ def Gaussian_parameters(H, N, T, mode):
             b = 1 / T * base_n ** exponent * np.exp(alpha / (H * A) * np.sqrt(N))
             m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
             n = int(np.round(N / m))
-        elif mode == "old geometric observation l2":
+        elif mode == "old geometric observation l2" or mode == "OLD":
             N = N - 1
             A = np.sqrt(1 / H + 1 / (1.5 - H))
             beta = 0.9
@@ -217,7 +220,7 @@ def Gaussian_parameters(H, N, T, mode):
             b = 1 / T * np.exp(3 * H ** (-0.4)) * np.exp(alpha / (H * A) * np.sqrt(N))
             m = int(np.fmax(np.round(beta / A * np.sqrt(N)), 1))
             n = int(np.round(N / m))
-        elif mode == "new geometric theorem l1":
+        elif mode == "new geometric theorem l1" or mode == "GG":
             beta = 1
             alpha = np.log(3 + 2 * np.sqrt(2))
             a = 4 / T
@@ -229,11 +232,11 @@ def Gaussian_parameters(H, N, T, mode):
 
         partition = np.exp(np.log(a) + np.log(b / a) * np.linspace(0, 1, n + 1))
     else:
-        if mode == 'non-geometric l1':
+        if mode == 'non-geometric l1' or mode == "NGG":
             beta = 0.92993273
             a = 3 / T
             m = int(np.fmax(np.round(beta * np.sqrt((H + 0.5) * N)), 1))
-            c = 1 / 3.60585021
+            c = 3.60585021
         else:
             raise NotImplementedError(f'The mode {mode} has not been implemented')
 
@@ -243,7 +246,7 @@ def Gaussian_parameters(H, N, T, mode):
         partition[0] = a
         for i in range(n):
             partition[i + 1] = partition[i] \
-                * ((1/c + partition[i] ** (kappa / (n+1))) / (1/c - partition[i] ** (kappa / (n+1)))) ** 2
+                * ((c + partition[i] ** (kappa / (n + 1))) / (c - partition[i] ** (kappa / (n + 1)))) ** 2
     return partition, m
 
 
@@ -533,6 +536,8 @@ def error_l1(H, nodes, weights, T, method='intersections', tol=1e-08):
             return total_error, reusable
 
         return single_param_search(f=error_, rel_tol=tol, n=100, factor=2)[0:2]
+    elif method == 'gaussian':
+        return kernel_norm(H=H, T=T, p=1.) - np.sum(weights / nodes * (1 - exp_underflow(nodes * T)))
     else:
         raise NotImplementedError(f'The method {method} for computing the L^1 kernel error has not been implemented.')
 
@@ -893,8 +898,11 @@ def optimize_error_l1(H, N, T, iterative=False, init_nodes=None, init_weights=No
 
         return optimize_error_given_rule(nodes, weights)
 
-    nodes, weights = quadrature_rule(H=H, N=1, T=T, mode='non-geometric l1')
-    err, nodes, weights = optimize_error_given_rule(nodes, weights)
+    if init_nodes is None or init_weights is None:
+        nodes, weights = quadrature_rule(H=H, N=1, T=T, mode='non-geometric l1')
+        err, nodes, weights = optimize_error_given_rule(nodes, weights)
+    else:
+        err, nodes, weights = -1, init_nodes, init_weights
 
     while len(nodes) < N:
         print(len(nodes))
@@ -996,25 +1004,32 @@ def quadrature_rule(H, N, T, mode="european"):
     if isinstance(T, np.ndarray):
         if N == 1:
             T = np.amin(T) ** (3 / 5) * np.amax(T) ** (2 / 5)
-        if N == 2:
+        elif N == 2:
             T = np.amin(T) ** (1 / 2) * np.amax(T) ** (1 / 2)
-        if N == 3:
+        elif N == 3:
             T = np.amin(T) ** (1 / 3) * np.amax(T) ** (2 / 3)
-        if N == 4:
+        elif N == 4:
             T = np.amin(T) ** (1 / 4) * np.amax(T) ** (3 / 4)
-        if N == 5:
+        elif N == 5:
             T = np.amin(T) ** (1 / 6) * np.amax(T) ** (5 / 6)
-        if N == 6:
+        elif N == 6:
             T = np.amin(T) ** (1 / 10) * np.amax(T) ** (9 / 10)
         else:
             T = np.amax(T)
 
-    if mode == "optimized l2":
-        return optimize_error_l2(H=H, N=N, T=T)[1:3]
-    if mode == "european":
-        return european_rule(H=H, N=N, T=T)
-    if mode == "abi jaber":
-        return AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
-    if mode == "paper":
-        return Gaussian_rule(H=H, N=N, T=T, mode="old geometric observation l2")
-    return Gaussian_rule(H=H, N=N, T=T, mode=mode)
+    if mode == "optimized l2" or mode == "OL2":
+        nodes, weights = optimize_error_l2(H=H, N=N, T=T)[1:3]
+    elif mode == "optimized l1" or mode == "OL1":
+        nodes, weights = optimize_error_l1(H=H, N=N, T=T, iterative=True)[1:3]
+    elif mode == "european" or mode == "BL2":
+        nodes, weights = european_rule(H=H, N=N, T=T)
+    elif mode == "abi jaber" or mode == "AE":
+        nodes, weights = AbiJaberElEuch_quadrature_rule(H=H, N=N, T=T)
+    elif mode == "alfonsi" or mode == "AK":
+        nodes, weights = AK_improved_rule(H=H, N=N, T=T)
+    elif mode == "paper" or mode == "OLD":
+        nodes, weights = Gaussian_rule(H=H, N=N, T=T, mode="old geometric observation l2")
+    else:
+        nodes, weights = Gaussian_rule(H=H, N=N, T=T, mode=mode)
+    weights[np.logical_and(nodes < 1, np.abs(weights) > 100)] = 0
+    return sort(nodes, weights)
