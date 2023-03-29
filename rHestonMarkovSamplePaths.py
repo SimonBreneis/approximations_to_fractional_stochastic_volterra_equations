@@ -263,7 +263,7 @@ def am_features(x, degree=6, K=0.):
     n_samples = x.shape[-1]
     d = x.shape[0]
     normalized_stock = ((x[0, :] - K) / K) if np.abs(K) > 0.01 else x[0, :]
-    vol = (np.sum(x[1:, :], axis=0))
+    vol = np.sum(x[1:, :], axis=0)
     vol_factors = x[1:-1, :].T
     if degree == 1:
         dim = 1
