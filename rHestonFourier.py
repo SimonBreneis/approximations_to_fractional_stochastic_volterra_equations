@@ -194,10 +194,9 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
         :param eps: Relative error tolerance
         return: The implied volatility of the call option
         """
-        N_Riccati = 250 * (1 if H is None else int(np.fmax(1, 0.1 / H))) \
-            * (1 if nu is None else int(np.fmax(1, nu / 0.3)))  # Number of time steps used in the solution of the
-        # fractional Riccati equation
-        L = 120 / T_ ** 0.4  # The value at which we cut off the Fourier integral, so we do not integrate over the
+        N_Riccati = 600 * (1 if nu is None else int(np.fmax(1, nu / 0.3)))  # Number of time steps used in the solution
+        # of the fractional Riccati equation
+        L = 100 / T_ ** 0.5  # The value at which we cut off the Fourier integral, so we do not integrate over the
         # reals, but only over [0, L]
         N_Fourier = int(8 * L)  # The number of points used in the trapezoidal rule for the approximation of the Fourier
         # integral
@@ -356,13 +355,15 @@ def skew_eur_call_put(lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european
     def single_skew(T_):
 
         def compute_smile(eps_, h_):
+            if verbose >= 2:
+                print(f'Computing smile with {eps_} and {h_}')
             K = np.exp(np.linspace(-200 * h_, 200 * h_, 401))
             smile_, error_ = eur_call_put(S_0=1., K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T_, r=r,
                                           N=N, mode=mode, rel_tol=eps_, H=H, nodes=nodes, weights=weights,
                                           implied_vol=True, call=True, return_error=True, verbose=verbose - 2)
             return np.array([smile_[198], smile_[199], smile_[201], smile_[202]]), error_
 
-        eps = rel_tol / 5
+        eps = rel_tol / 2
         h = 0.0005 * np.sqrt(T_)
         smile, eps = compute_smile(eps_=eps, h_=h)
         skew_ = np.abs(smile[2] - smile[1]) / (2 * h)
