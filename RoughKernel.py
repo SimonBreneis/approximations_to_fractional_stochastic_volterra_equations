@@ -1033,3 +1033,148 @@ def quadrature_rule(H, N, T, mode="european"):
         nodes, weights = Gaussian_rule(H=H, N=N, T=T, mode=mode)
     weights[np.logical_and(nodes < 1, np.abs(weights) > 100)] = 0
     return sort(nodes, weights)
+
+#---------------------------------------------------------------------------------------
+
+# Functions taken from Christian
+
+import numpy as np
+from mlfr import mittag_leffler
+import scipy.integrate as integ
+
+
+class kernel_frac:
+    """Class representing the RL kernel."""
+
+    def __init__(self, H, eta):
+        self.H = H
+        self.eta = eta
+        self.eta_tilde = np.sqrt(2 * H) * eta
+
+    def K_diag(self, Delta, N):
+        """
+        Return the diagonal values of caligraphic K_{i,j} as defined by Jim.
+        Parameters
+        ----------
+        Delta : double
+            Time increment for the simulation scheme, Delta = T / N.
+        N : int
+            Number of time steps in the simulation scheme.
+        Returns
+        -------
+        numpy array
+            The values \mathcal{K}_{j,j}(Delta), j=0, ..., N-1. Size = N.
+        """
+        i = np.arange(N + 1)
+        # Hint: i[-N:] = (i[1],...,i[N]), i[:N] = (i[0],...,i[N-1])
+        return self.eta ** 2 * Delta ** (2 * self.H) * \
+               (i[-N:] ** (2 * self.H) - i[:N] ** (2 * self.H))
+
+    def K_0(self, Delta):
+        """
+        Return the value of caligraphic K_0 as defined by Jim.
+        Parameters
+        ----------
+        Delta : double
+            Time increment for the simulation scheme, Delta = T / N..
+        Returns
+        -------
+        double
+            The value \mathcal{K}_0(Delta).
+        """
+        return self.eta_tilde * Delta ** (self.H + 0.5) / (self.H + 0.5)
+
+
+class kernel_rheston:
+    """Kernel for the rHeston model, seen as a forward variance model.
+
+    The shape of the kernel is defined in the paper of Jim and Martin, 2019."""
+
+    def __init__(self, H, lam, zeta, eps=1e-3):
+        self.alpha = H + 0.5
+        self.H = H  # Is this really the "H"???
+        self.lam = lam
+        self.zeta = zeta
+        self.eps = eps
+
+    def _k(self, r):
+        """The kernel."""
+        return self.zeta * r ** (self.alpha - 1) * \
+               mittag_leffler(- self.lam * r ** self.alpha, self.alpha, self.alpha)
+
+    def K_0(self, Delta):
+        """
+        Return the value of caligraphic K_0 as defined by Jim. Computed by
+        computationally expensive numerical integration.
+        Parameters
+        ----------
+        Delta : double
+            Time increment for the simulation scheme, Delta = T / N..
+        Returns
+        -------
+        double
+            The value \mathcal{K}_0(Delta).
+        """
+        return integ.quad(lambda r: self._k(r), 0.0, Delta, epsabs=self.eps,
+                          epsrel=self.eps)[0]
+
+    def K_diag(self, Delta, N):
+        """
+        Return the diagonal values of caligraphic K_{i,j} as defined by Jim.
+        Computed by computationally expensive numerical integration.
+        Parameters
+        ----------
+        Delta : double
+            Time increment for the simulation scheme, Delta = T / N.
+        N : int
+            Number of time steps in the simulation scheme.
+        Returns
+        -------
+        numpy array
+            The values \mathcal{K}_{j,j}(Delta), j=0, ..., N-1. Size = N.
+        """
+        vals = [integ.quad(lambda r: self._k(r + i * Delta) ** 2, 0.0, Delta,
+                           epsabs=self.eps, epsrel=self.eps)[0] for i in
+                range(N)]
+        return np.array(vals)
+
+    def xi(self, t_grid, v0, lam, theta, eps=1e-6):
+        """
+        Compute the forward variance curve for the rough Heston model.
+
+        Note that the forward variance curve is a constant if v0 is equal
+        to theta.
+        Parameters
+        ----------
+        t_grid : numpy array or scalar.
+            Time grid or value, along which the forward variance curve is
+            requested. Assumed to be non-negative.
+        v0 : scalar.
+            Initial variance.
+        lam : scalar.
+            Speed of mean reversion.
+        theta : scalar
+            Long-term mean variance.
+        eps : postive scalar, optional
+            Accuracy target for the quadrature method. The default is 1e-6.
+        Returns
+        -------
+        Numpy array.
+            The forward variance curve.
+        """
+        if np.isclose(v0, theta, rtol=eps):
+            return np.full_like(t_grid, v0)
+
+        t = np.unique(np.append(0.0, t_grid))
+
+        # integrate between t_i and t_{i+1}
+        def f(i):
+            return integ.quad(self._k, t[i], t[i + 1], epsabs=eps, epsrel=eps)[0]
+
+        int_k = np.array([f(i) for i in range(len(t) - 1)])
+        if isinstance(t_grid, np.ndarray) and t_grid[0] == 0.0:
+            int_k = np.append(0.0, int_k)
+        elif t_grid == 0.0:
+            int_k = np.append(0.0, int_k)
+
+        return v0 + (theta - v0) * lam * np.cumsum(int_k)
