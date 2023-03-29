@@ -278,10 +278,11 @@ def rHestonFourier_iv_eur_call(params, N=0, mode=None, nodes=None, weights=None,
     if load and exists(filename):
         return np.load(filename)
     try:
-        result = rHestonFourier.iv_eur_call(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
-                                            rho=params['rho'], nu=params['nu'], theta=params['theta'],
-                                            V_0=params['V_0'], T=params['T'], r=params['r'], rel_tol=params['rel_tol'],
-                                            N=N, mode=mode, nodes=nodes, weights=weights, verbose=verbose)
+        result = rHestonFourier.eur_call_put(S_0=params['S'], K=params['K'], H=params['H'], lambda_=params['lambda'],
+                                             rho=params['rho'], nu=params['nu'], theta=params['theta'],
+                                             V_0=params['V_0'], T=params['T'], r=params['r'], rel_tol=params['rel_tol'],
+                                             N=N, mode=mode, nodes=nodes, weights=weights, verbose=verbose,
+                                             implied_vol=True)
     except RuntimeError:
         print('Did not converge in given time')
         if isinstance(params['T'], np.ndarray):
@@ -804,10 +805,10 @@ def plot_smile_errors_given_stock_prices(Ns, N_times, modes, euler, antithetic, 
                     kind = 'Euler' if euler[k] else 'Mackevicius'
                     kind = kind + (' antithetic' if antithetic[m] else '')
                     for i in range(len(Ns)):
-                        plt.loglog(N_times, total_errors[i, j, k, :], color=color(i, len(Ns)), label=f'N={Ns[i]}')
-                        plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(i, len(Ns)))
-                        plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(i, len(Ns)))
-                        plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(i, len(Ns)))
+                        plt.loglog(N_times, total_errors[i, j, k, m, :], color=color(i, len(Ns)), label=f'N={Ns[i]}')
+                        plt.loglog(N_times, lower_total_errors[i, j, k, m, :], '--', color=color(i, len(Ns)))
+                        plt.loglog(N_times, upper_total_errors[i, j, k, m, :], '--', color=color(i, len(Ns)))
+                        plt.loglog(N_times, discretization_errors[i, j, k, m, :], 'o-', color=color(i, len(Ns)))
                         plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'x-', color=color(i, len(Ns)))
                         node_line_plots(col=color(i, len(Ns)))
                     plt.title(f'Rough Heston with {modes[j]} quadrature rule\nand {kind}')
@@ -819,10 +820,10 @@ def plot_smile_errors_given_stock_prices(Ns, N_times, modes, euler, antithetic, 
                     kind = 'Euler' if euler[k] else 'Mackevicius'
                     kind = kind + (' antithetic' if antithetic[m] else '')
                     for j in range(len(modes)):
-                        plt.loglog(N_times, total_errors[i, j, k, :], color=color(j, len(modes)), label=modes[j])
-                        plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(j, len(modes)))
-                        plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(j, len(modes)))
-                        plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(j, len(modes)))
+                        plt.loglog(N_times, total_errors[i, j, k, m, :], color=color(j, len(modes)), label=modes[j])
+                        plt.loglog(N_times, lower_total_errors[i, j, k, m, :], '--', color=color(j, len(modes)))
+                        plt.loglog(N_times, upper_total_errors[i, j, k, m, :], '--', color=color(j, len(modes)))
+                        plt.loglog(N_times, discretization_errors[i, j, k, m, :], 'o-', color=color(j, len(modes)))
                         plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'x-',
                                    color=color(j, len(modes)))
                         node_line_plots(col=color(j, len(modes)))
@@ -835,11 +836,11 @@ def plot_smile_errors_given_stock_prices(Ns, N_times, modes, euler, antithetic, 
                     for m in range(len(antithetic)):
                         kind = 'Euler' if euler[k] else 'Mackevicius'
                         kind = kind + (' antithetic' if antithetic[m] else '')
-                        plt.loglog(N_times, total_errors[i, j, k, :], color=color(k, 4),
+                        plt.loglog(N_times, total_errors[i, j, k, m, :], color=color(k, 4),
                                    label=kind)
-                        plt.loglog(N_times, lower_total_errors[i, j, k, :], '--', color=color(k, 4))
-                        plt.loglog(N_times, upper_total_errors[i, j, k, :], '--', color=color(k, 4))
-                        plt.loglog(N_times, discretization_errors[i, j, k, :], 'o-', color=color(k, 4))
+                        plt.loglog(N_times, lower_total_errors[i, j, k, m, :], '--', color=color(k, 4))
+                        plt.loglog(N_times, upper_total_errors[i, j, k, m, :], '--', color=color(k, 4))
+                        plt.loglog(N_times, discretization_errors[i, j, k, m, :], 'o-', color=color(k, 4))
                         node_line_plots(col=color(k, 4))
                 plt.loglog(N_times, markov_errors[i, j] * np.ones(len(N_times)), 'k-', label='Markovian error')
                 plt.title(f'Rough Heston with {Ns[i]} nodes\nand {modes[j]} quadrature rule')
@@ -913,7 +914,7 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                 markov_smiles[i, j, :, :] = rHestonFourier_price_geom_asian_call(params=params, N=Ns[i], mode=modes[j],
                                                                                  nodes=nodes_, weights=weights)
 
-            if option == 'average volatility call':
+            elif option == 'average volatility call':
                 nodes_, weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=modes[j])
                 nodes[i][j, :] = nodes_
                 markov_smiles[i, j, :, :] = rHestonFourier_price_avg_vol_call(params=params, N=Ns[i], mode=modes[j],
@@ -1218,5 +1219,124 @@ def illustrate_Markovian_approximation(H=0.2, T=1., n=10000):
     plt.plot(time_vec, weights[0] * OU_1[0, :], 'b-', label='Slow component')
     plt.plot(time_vec, weights[-1] * OU_1[-1, :], 'r-', label='Fast component')
     # plt.plot(time_vec, BM, color='grey', label='Underlying Brownian motion')
+    plt.legend(loc='best')
+    plt.show()
+
+
+def comp_times_largest_nodes(H=None, N=None, T=1., mode=None):
+    H = set_array_default(H, np.array([0.001, 0.01, 0.1]))
+    N = set_array_default(N, np.arange(1, 11))
+    mode = set_list_default(mode, ["new geometric theorem l1", "non-geometric l1", "optimized l1", "paper",
+                                   "optimized l2", "european", "abi jaber", "alfonsi"])
+
+    for i in range(len(H)):
+        for j in range(len(mode)):
+            for k in range(len(N)):
+                tic = time.perf_counter()
+                nodes, weights = rk.quadrature_rule(H=H[i], N=N[k], T=T, mode=mode[j])
+                print(f'H={H[i]}, mode={mode[j]}, N={N[k]}, time={np.log10(time.perf_counter() - tic)}, '
+                      f'largest node={np.log10(np.amax(nodes))}')
+
+
+def compute_and_save_optimal_l1_rules(H=None, N=10):
+    H = set_array_default(H, np.array([0.001, 0.01, 0.1]))
+    quadrature_rules = np.zeros((2, len(H), N, N))
+    for j in range(len(H)):
+        nodes, weights = rk.quadrature_rule(H=H[j], N=1, T=1., mode='optimized l1')
+        quadrature_rules[0, j, 0, :1] = nodes
+        quadrature_rules[1, j, 0, :1] = weights
+        for i in range(1, N):
+            print(j, i)
+            err, nodes, weights = rk.optimize_error_l1(H=H[j], N=i + 1, T=1., iterative=True,
+                                                       init_nodes=quadrature_rules[0, j, i - 1, :i],
+                                                       init_weights=quadrature_rules[1, j, i - 1, :i])
+            quadrature_rules[0, j, i, :i + 1] = nodes
+            quadrature_rules[1, j, i, :i + 1] = weights
+    np.save(f'Optimal l1 nodes weights H in {H} N from 1 to {N}.npy', quadrature_rules)
+
+
+def plot_GG_NGG_and_error_bounds():
+    N = 173
+    H = 0.1
+    T = 1.
+
+    errors_GG = np.empty(N)
+    errors_NGG = np.empty(N)
+    error_bounds_GG = 2 * (np.sqrt(2) + 1) ** (-2 * np.sqrt((H + 0.5) * np.arange(1, N + 1)))
+    error_bounds_NGG = 60 * np.exp(-2.38 * np.sqrt((H +  0.5) * np.arange(1, N + 1)))
+
+    for i in range(N):
+        print(f"Computing {i + 1} of {N}.")
+        nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='GG')
+        errors_GG[i] = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='gaussian')
+        nodes, weights = rk.quadrature_rule(H=H, N=i + 1, T=T, mode='NGG')
+        errors_NGG[i] = rk.error_l1(H=H, nodes=nodes, weights=weights, T=T, method='gaussian')
+
+    errors_GG = errors_GG / rk.kernel_norm(H=H, T=T, p=1.)
+    errors_NGG = errors_NGG / rk.kernel_norm(H=H, T=T, p=1.)
+
+    plt.loglog(np.arange(1, N + 1), errors_GG, label='GG')
+    plt.loglog(np.arange(1, N + 1), errors_NGG, label='NGG')
+    plt.loglog(np.arange(1, N + 1), error_bounds_GG, label='GG rate')
+    plt.loglog(np.arange(1, N + 1), error_bounds_NGG, label='NGG rate')
+    plt.xlabel('Number of nodes N')
+    plt.ylabel('Relative error')
+    plt.title('Relative ' + r'$L^1$' + f'-error for GG and NGG,\nwith H={H} and T={T}, together with convergence rates')
+    plt.legend(loc='best')
+    plt.show()
+
+
+def plot_GG_varying_H():
+    N = 183
+    H = np.array([0.001, 0.01, 0.1])
+    T = 1.
+
+    errors_GG = np.empty((len(H), N))
+
+    for j in range(len(H)):
+        for i in range(N):
+            print(f"Computing {i + 1} of {N} for H={H[j]}.")
+            nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='GG')
+            errors_GG[j, i] = rk.error_l1(H=H[j], nodes=nodes, weights=weights, T=T, method='gaussian')
+
+    errors_GG = errors_GG / np.array([rk.kernel_norm(H=H[j], T=T, p=1.) for j in range(len(H))])[:, None]
+
+    for j in range(len(H)):
+        plt.loglog(np.arange(1, N + 1), errors_GG[j, :], label=f'H={H[j]}')
+    plt.xlabel('Number of nodes N')
+    plt.ylabel('Relative error')
+    plt.title('Relative ' + r'$L^1$' + f'-errors for GG')
+    plt.legend(loc='best')
+    plt.show()
+
+
+def plot_GG_OL1_varying_H():
+    N = 10
+    H = np.array([0.001, 0.01, 0.1])
+    T = 1.
+
+    errors_GG = np.empty((len(H), N))
+    errors_OL1 = np.empty((len(H), N))
+
+    quadrature_rules = np.load('Optimal l1 nodes weights H in 0001 001 01 N from 1 to 10.npy')
+
+    for j in range(len(H)):
+        for i in range(N):
+            print(f"Computing {i + 1} of {N} for H={H[j]}.")
+            nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='GG')
+            errors_GG[j, i] = rk.error_l1(H=H[j], nodes=nodes, weights=weights, T=T, method='gaussian')
+            # nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='OL1')
+            nodes, weights = quadrature_rules[0, j, i, :i + 1], quadrature_rules[1, j, i, :i + 1]
+            errors_OL1[j, i] = rk.error_l1(H=H[j], nodes=nodes, weights=weights, T=T, method='intersections')[0]
+
+    errors_GG = errors_GG / np.array([rk.kernel_norm(H=H[j], T=T, p=1.) for j in range(len(H))])[:, None]
+    errors_OL1 = errors_OL1 / np.array([rk.kernel_norm(H=H[j], T=T, p=1.) for j in range(len(H))])[:, None]
+
+    for j in range(len(H)):
+        plt.loglog(np.arange(1, N + 1), errors_OL1[j, :], color=color(j, len(H)), label=f'H={H[j]}')
+        plt.loglog(np.arange(1, N + 1), errors_GG[j, :], '--', color=color(j, len(H)))
+    plt.xlabel('Number of nodes N')
+    plt.ylabel('Relative error')
+    plt.title('Relative ' + r'$L^1$' + f'-errors for GG and OL1')
     plt.legend(loc='best')
     plt.show()
