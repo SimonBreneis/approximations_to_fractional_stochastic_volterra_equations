@@ -7,9 +7,8 @@ Created on Sun Jul 31 20:46:00 2022
 
 Jim's RSQE and HQE schemes.
 """
-
+import time
 import numpy as np
-import pickle
 import multiprocessing as mp
 from qe import psi_QE
 
@@ -206,7 +205,7 @@ def bivariate_QE(xi_hat, v_bar, Delta, beta, gamma, rng):
 
 
 def _hqe_step(xi, kernel, rho, rho_bar, j, Delta, eps, b_star, v_old,
-              chi_old, X_old, rng, M, beta, gamma):
+              chi_old, X_old, rng, M, beta, gamma, r=0.):
     xi_hat = np.maximum(eps, xi(j * Delta) +
                         discrete_convolution(b_star[1:j], chi_old))
     assert np.all(xi_hat > 0.0), f"xi_hat fails positivity, xihat = {xi_hat}."
@@ -220,11 +219,11 @@ def _hqe_step(xi, kernel, rho, rho_bar, j, Delta, eps, b_star, v_old,
     Z_orthogonal = rng.standard_normal(M)
     v_mean = 0.5 * (v_old + v_new)
     X_new = X_old - 0.5 * v_mean * Delta + \
-            rho_bar * np.sqrt(v_mean * Delta) * Z_orthogonal + rho * chi_new
+            rho_bar * np.sqrt(v_mean * Delta) * Z_orthogonal + rho * chi_new + r * Delta
     return X_new, v_new, chi_new
 
 
-def hqe(xi, kernel, rho, X0, t_final, N, M, eps, rng=None):
+def hqe(xi, kernel, rho, X0, t_final, N, M, eps, rng=None, r=0.):
     """
     Jim's HQE algorithm for sampling from the rough Heston method.
 
@@ -248,6 +247,8 @@ def hqe(xi, kernel, rho, X0, t_final, N, M, eps, rng=None):
         Cutoff tolerance at 0.
     rng : numpy.random.rng, optional.
         RNG. If None, an RNG is generated.
+    r : double
+        Interest rate
 
     Returns
     -------
@@ -276,14 +277,14 @@ def hqe(xi, kernel, rho, X0, t_final, N, M, eps, rng=None):
         X_new, v_new, chi_new = _hqe_step(xi, kernel, rho, rho_bar, j, Delta,
                                           eps, b_star, v[:, j - 1],
                                           chi[:, :(j - 1)], X[:, j - 1], rng, M,
-                                          beta, gamma)
+                                          beta, gamma, r=r)
         X[:, j] = X_new
         v[:, j] = v_new
         chi[:, j - 1] = chi_new
     return X, v
 
 
-def hqe_batch(xi, kernel, rho, X0, t_final, N, M, num_batch, eps, rng=None):
+def hqe_batch(xi, kernel, rho, X0, t_final, N, M, num_batch, eps, rng=None, sample_paths=False, r=0., verbose=0):
     """
     Batched version of Jim's HQE algorithm for sampling from the rough Heston
     method. Only the terminal value of log-price and variance are returned.
@@ -313,30 +314,47 @@ def hqe_batch(xi, kernel, rho, X0, t_final, N, M, num_batch, eps, rng=None):
         Cutoff tolerance at 0.
     rng : numpy.random.rng, optional
         RNG. If not present, will be generated.
+    sample_paths : bool
+        If True, returns the sample paths that were generated. If False, only returns the final values
+    r : double
+        Interest rate
+    verbose: int
+        Determines the number of intermediary results printed to the console
 
     Returns
     -------
     X : numpy array.
-        log-price samples, array of dimension (M).
+        log-price samples, array of dimension (M, N+1) if sample_paths is True, else dimension (M).
     v : numpy array.
-        variance samples, array of dimension (M).
+        variance samples, array of dimension (M, N+1) if sample_paths is False, else dimension (M).
 
     """
     if rng is None:
         rng = np.random.default_rng()
     # set up the algorithm
     Delta = t_final / N
+    tic = time.perf_counter()
     b_star = _b_star(kernel, Delta, N)
     beta = kernel.K_0(Delta) / Delta
+    print(f'Other precomputations took {time.perf_counter() - tic} seconds.')
     gamma = Delta * b_star[0] ** 2 - kernel.K_0(Delta) ** 2 / Delta
     assert gamma > 0.0, f"gamma fails positivity, gamma = {gamma}."
     rho_bar = np.sqrt(1 - rho ** 2)
     M_batch = int(np.ceil(M / num_batch))  # number of samples per batch
     # allocate memory
-    v = np.zeros(M_batch * num_batch)
-    X = np.zeros(M_batch * num_batch)
+    if sample_paths:
+        v = np.zeros((M_batch * num_batch, N + 1))
+        X = np.zeros((M_batch * num_batch, N + 1))
+        v[:, 0] = xi(0)
+        X[:, 0] = X0
+    else:
+        v = np.zeros(M_batch * num_batch)
+        X = np.zeros(M_batch * num_batch)
     # the stepping over the number of batches
+    tic = time.perf_counter()
     for n in range(num_batch):
+        if verbose >= 1:
+            print(f'Simulating batch {n + 1} of {num_batch}.')
         v_old = np.full(M_batch, xi(0))
         X_old = np.zeros(M_batch)
         X_old = X0
@@ -346,13 +364,19 @@ def hqe_batch(xi, kernel, rho, X0, t_final, N, M, num_batch, eps, rng=None):
             X_new, v_new, chi_new = _hqe_step(xi, kernel, rho, rho_bar, j,
                                               Delta, eps, b_star, v_old,
                                               chi[:, :(j - 1)], X_old, rng,
-                                              M_batch, beta, gamma)
+                                              M_batch, beta, gamma, r=r)
             X_old = X_new
             v_old = v_new
             chi[:, j - 1] = chi_new
-        v[(n * M_batch):((n + 1) * M_batch)] = v_new
-        X[(n * M_batch):((n + 1) * M_batch)] = X_new
-    return X[:M], v[:M]  # discard those values which were unnecessarily generated
+            if sample_paths:
+                v[(n * M_batch):((n + 1) * M_batch), j] = v_new
+                X[(n * M_batch):((n + 1) * M_batch), j] = X_new
+        if not sample_paths:
+            v[(n * M_batch):((n + 1) * M_batch)] = v_new
+            X[(n * M_batch):((n + 1) * M_batch)] = X_new
+    if verbose >= 1:
+        print(f'Simulation took {time.perf_counter() - tic} seconds')
+    return X[:M, ...], v[:M, ...]  # discard those values which were unnecessarily generated
 
 
 def hqe_par(xi, kernel, rho, X0, t_final, N, M, num_batch, num_threads, eps):
@@ -411,7 +435,3 @@ def hqe_par(xi, kernel, rho, X0, t_final, N, M, num_batch, num_threads, eps):
     X = np.array(XV[0]).ravel()
     v = np.array(XV[1]).ravel()
     return X[:M], v[:M]
-
-
-if __name__ == '__main__':
-    pass

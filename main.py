@@ -15,17 +15,84 @@ import rHestonMomentMatching
 import scipy.stats, scipy.optimize, scipy.integrate, scipy.linalg, scipy.special
 
 
+S_0, lambda_, rho, nu, theta, V_0, T, rel_tol = 1., 0.3, -0.7, 0.3, 0.02, 0.02, 0.04, 1e-04
+k_vec = np.linspace(-1., 0.5, 61) * np.sqrt(T)
+K = np.exp(k_vec)
+'''
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
+                                              H=0.001, verbose=2, rel_tol=rel_tol)
+nodes, weights = rk.quadrature_rule(H=0.001, T=T, N=8, mode='paper')
+l2_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                    T=T, nodes=nodes, weights=weights, verbose=2, rel_tol=rel_tol)
+nodes, weights = rk.quadrature_rule(H=0.001, T=T, N=8, mode='GG')
+l1_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                    T=T, nodes=nodes, weights=weights, verbose=2, rel_tol=rel_tol)
+plt.plot(k_vec, true_smile, 'k-', label='True smile')
+plt.plot(k_vec, l2_smile, label=r'$L^2$-quadrature rule')
+plt.plot(k_vec, l1_smile, label=r'$L^1$-quadrature rule')
+plt.xlabel('Log-moneyness')
+plt.ylabel('Implied volatility')
+plt.title('Implied volatility smiles using\n' + r'$L^1$- or $L^2$-quadrature rules for $H=0.001$ and $N=8$')
+plt.legend(loc='best')
+plt.show()
+'''
+'''
+H_vec = [0.1, 0.01, 0.001]
+N_vec = [1, 2, 4, 8, 16, 32]
+errors = np.empty((len(H_vec), len(N_vec)))
+
+for i in range(len(H_vec)):
+    # true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
+    #                                          H=H_vec[i], verbose=2, rel_tol=rel_tol)
+    for j in range(len(N_vec)):
+        nodes, weights = rk.quadrature_rule(H=H_vec[i], N=N_vec[j], T=1., mode='GG')
+        print(H_vec[i], N_vec[j], np.amax(nodes))
+        # approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+        #                                            T=T, nodes=nodes, weights=weights, verbose=2, rel_tol=rel_tol)
+        # errors[i, j] = np.amax(np.abs(approx_smile - true_smile) / true_smile)
+        # print(H_vec[i], N_vec[j], errors[i, j])
+
+print(errors)
+
+for i in range(len(H_vec)):
+    plt.loglog(N_vec, errors[i, :], label=f'H={H_vec[i]}')
+plt.legend(loc='best')
+plt.xlabel('Dimension N')
+plt.ylabel('Maximal relative error')
+plt.title('Relative errors in European implied volatility smiles')
+plt.show()
+'''
+
+
 H = 0.1
 lambda_, rho, nu, theta, V_0, S_0, T, rel_tol, verbose = 0.3, -0.7, 0.3, 0.02, 0.02, 1., 1., 1e-05, 2
 N = 2
 k = np.linspace(-0.1, 0.05, 16)
 K = np.exp(k)
+
+for N_time in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]:
+    print(N_time)
+    rHestonMarkovSamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, r=0.,
+                                              m=20_000_000, N_time=N_time, sample_paths=False, verbose=2)
+print('Finished')
+time.sleep(360000)
+
 nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode="BL2")
 print(nodes, weights)
 true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
                                          rel_tol=rel_tol, verbose=verbose, H=H)
-markov_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
-                                           rel_tol=rel_tol, verbose=verbose, nodes=nodes, weights=weights)
+# markov_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
+#                                            rel_tol=rel_tol, verbose=verbose, nodes=nodes, weights=weights)
+
+samples = rHestonMarkovSamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, r=0.,
+                                              m=100000, N_time=200, sample_paths=False, verbose=2)
+middle, lower, upper = cf.eur_MC(S_0=S_0, K=K, T=T, samples=samples[0, :], r=0., payoff='call', antithetic=False,
+                                 implied_vol=True)
+plt.plot(k, true_smile, 'k-')
+plt.plot(k, middle, 'r-')
+plt.plot(k, lower, 'r--')
+plt.plot(k, upper, 'r--')
+plt.show()
 
 params = {'S': 1., 'K': np.exp(np.linspace(-0.1, 0.05, 16)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
                      'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05, 'r': 0.}
@@ -40,25 +107,31 @@ compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=np.ar
                                   modes=['BL2'], antithetic=[True])
 time.sleep(360000)
 
-'''
+
 k = np.linspace(-0.5, 0.5, 51)
 K = np.exp(k)
+nodes, weights = rk.quadrature_rule(H=H, N=2, T=T, mode='european')
+'''
 euler_smile, euler_smile_lower, euler_smile_upper = \
     rHestonMarkovSamplePaths.eur(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, nodes=nodes,
                                  weights=weights, T=T, S_0=S_0, N_time=25, m=1000000, euler=True, implied_vol=True)
 weak_smile, weak_smile_lower, weak_smile_upper = \
     rHestonMarkovSamplePaths.eur(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, nodes=nodes,
                                  weights=weights, T=T, S_0=S_0, N_time=25, m=1000000, euler=False, implied_vol=True)
-
+'''
+'''
 true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
                                          rel_tol=rel_tol, verbose=verbose, H=H)
 markov_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
                                            rel_tol=rel_tol, verbose=verbose, nodes=nodes, weights=weights)
-samples_ = np.load('rHeston samples 3 dim BL2 euler antithetic 32 time steps, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1.0.npy')
+samples_ = np.load('rHeston samples 2 dim BL2 euler antithetic 32 time steps, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1.0.npy')
 euler_smile, euler_smile_lower, euler_smile_upper = cf.eur_MC(S_0=S_0, K=K, T=T, r=0., samples=samples_[0, :], payoff='call', antithetic=True,
                      implied_vol=True)
-samples_ = np.load('rHeston samples 3 dim BL2 mackevicius antithetic 32 time steps, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1.0.npy')
+samples_ = np.load('rHeston samples 2 dim BL2 mackevicius antithetic 32 time steps, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1.0.npy')
 weak_smile, weak_smile_lower, weak_smile_upper = cf.eur_MC(S_0=S_0, K=K, T=T, r=0., samples=samples_[0, :], payoff='call', antithetic=True,
+                     implied_vol=True)
+samples_ = np.load('rHeston samples HQE 32 time steps, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1.0.npy')
+QE_smile, QE_smile_lower, QE_smile_upper = cf.eur_MC(S_0=S_0, K=K, T=T, r=0., samples=samples_[0, :], payoff='call', antithetic=True,
                      implied_vol=True)
 
 plt.plot(k, true_smile, 'k-', label='True smile')
@@ -69,12 +142,16 @@ plt.plot(k, euler_smile_upper, 'b--')
 plt.plot(k, weak_smile, 'r-', label='Weak smile')
 plt.plot(k, weak_smile_lower, 'r--')
 plt.plot(k, weak_smile_upper, 'r--')
+plt.plot(k, QE_smile, 'g-', label='QE smile')
+plt.plot(k, QE_smile_lower, 'g--')
+plt.plot(k, QE_smile_upper, 'g--')
 plt.legend(loc='best')
 plt.xlabel('Log-moneyness')
 plt.ylabel('Implied volatility')
 plt.title('Implied volatility for European call options')
 plt.show()
 time.sleep(36000)
+'''
 '''
 modes = ['GG', 'NGG', 'OL1', 'OLD', 'OL2', 'BL2', 'AE', 'AK']
 N = np.arange(1, 11)
@@ -162,3 +239,4 @@ def plot_smiles_eur_call_markov_samples():
 print(rHestonMarkovSamplePaths.price_am(K=1.0, lambda_=0., rho=-0.7, nu=0.3, theta=0.0, V_0=0.01, S_0=1., T=1.,
                                         nodes=nodes, weights=weights, payoff='put', r=0.05, m=100000, N_time=120))
 time.sleep(36000)
+'''

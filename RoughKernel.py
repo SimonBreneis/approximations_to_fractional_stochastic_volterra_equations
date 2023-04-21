@@ -1,4 +1,3 @@
-import numpy as np
 import scipy.linalg
 from scipy.optimize import minimize
 from scipy.special import gamma, gammainc
@@ -1034,7 +1033,7 @@ def quadrature_rule(H, N, T, mode="european"):
     weights[np.logical_and(nodes < 1, np.abs(weights) > 100)] = 0
     return sort(nodes, weights)
 
-#---------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
 
 # Functions taken from Christian
 
@@ -1053,7 +1052,7 @@ class kernel_frac:
 
     def K_diag(self, Delta, N):
         """
-        Return the diagonal values of caligraphic K_{i,j} as defined by Jim.
+        Return the diagonal values of calligraphic K_{i,j} as defined by Jim.
         Parameters
         ----------
         Delta : double
@@ -1067,12 +1066,11 @@ class kernel_frac:
         """
         i = np.arange(N + 1)
         # Hint: i[-N:] = (i[1],...,i[N]), i[:N] = (i[0],...,i[N-1])
-        return self.eta ** 2 * Delta ** (2 * self.H) * \
-               (i[-N:] ** (2 * self.H) - i[:N] ** (2 * self.H))
+        return self.eta ** 2 * Delta ** (2 * self.H) * (i[-N:] ** (2 * self.H) - i[:N] ** (2 * self.H))
 
     def K_0(self, Delta):
         """
-        Return the value of caligraphic K_0 as defined by Jim.
+        Return the value of calligraphic K_0 as defined by Jim.
         Parameters
         ----------
         Delta : double
@@ -1099,12 +1097,11 @@ class kernel_rheston:
 
     def _k(self, r):
         """The kernel."""
-        return self.zeta * r ** (self.alpha - 1) * \
-               mittag_leffler(- self.lam * r ** self.alpha, self.alpha, self.alpha)
+        return self.zeta * r ** (self.alpha - 1) * mittag_leffler(- self.lam * r ** self.alpha, self.alpha, self.alpha)
 
     def K_0(self, Delta):
         """
-        Return the value of caligraphic K_0 as defined by Jim. Computed by
+        Return the value of calligraphic K_0 as defined by Jim. Computed by
         computationally expensive numerical integration.
         Parameters
         ----------
@@ -1115,12 +1112,11 @@ class kernel_rheston:
         double
             The value \mathcal{K}_0(Delta).
         """
-        return integ.quad(lambda r: self._k(r), 0.0, Delta, epsabs=self.eps,
-                          epsrel=self.eps)[0]
+        return integ.quad(lambda r: self._k(r), 0.0, Delta, epsabs=self.eps, epsrel=self.eps)[0]
 
     def K_diag(self, Delta, N):
         """
-        Return the diagonal values of caligraphic K_{i,j} as defined by Jim.
+        Return the diagonal values of calligraphic K_{i,j} as defined by Jim.
         Computed by computationally expensive numerical integration.
         Parameters
         ----------
@@ -1133,10 +1129,8 @@ class kernel_rheston:
         numpy array
             The values \mathcal{K}_{j,j}(Delta), j=0, ..., N-1. Size = N.
         """
-        vals = [integ.quad(lambda r: self._k(r + i * Delta) ** 2, 0.0, Delta,
-                           epsabs=self.eps, epsrel=self.eps)[0] for i in
-                range(N)]
-        return np.array(vals)
+        return np.array([integ.quad(lambda r: self._k(r + i * Delta) ** 2, 0.0, Delta,
+                                    epsabs=self.eps, epsrel=self.eps)[0] for i in range(N)])
 
     def xi(self, t_grid, v0, lam, theta, eps=1e-6):
         """
@@ -1155,7 +1149,7 @@ class kernel_rheston:
             Speed of mean reversion.
         theta : scalar
             Long-term mean variance.
-        eps : postive scalar, optional
+        eps : positive scalar, optional
             Accuracy target for the quadrature method. The default is 1e-6.
         Returns
         -------
@@ -1177,4 +1171,5 @@ class kernel_rheston:
         elif t_grid == 0.0:
             int_k = np.append(0.0, int_k)
 
-        return v0 + (theta - v0) * lam * np.cumsum(int_k)
+        # Note that the forward variance curve uses the kernel without zeta.
+        return v0 + self.lam * (theta - v0) * np.cumsum(int_k) / self.zeta
