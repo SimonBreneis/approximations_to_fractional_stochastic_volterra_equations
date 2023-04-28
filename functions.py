@@ -448,93 +448,6 @@ def kernel_errors(H, T, Ns=None, modes=None, verbose=0):
     return largest_nodes, kernel_errs, duration
 
 
-def kernel_errors_parallelized_testing(H=None, T=None, N=None, mode=None, num_threads=5):
-    """
-    Parallelization of the function kernel_errors for testing purposes.
-    :param H: Numpy array of Hurst parameters. Default is np.exp(np.linspace(np.log(0.01), np.log(0.49), 300))
-    :param T: Numpy array of final times. Default is np.exp(np.linspace(np.log(0.0001), np.log(10), 300))
-    :param N: Numpy array of values for N. Default is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    :param mode: List of modes of the quadrature rule. Default is ['paper', 'optimized old', 'optimized']
-    :param num_threads: Number of parallel threads
-    :return: Numpy arrays containing the largest nodes, relative errors and computational times, of
-        shape (len(H), len(T), 3, len(mode), len(N)). The three represents the three kinds of information (nodes,
-        errors, times) present
-    """
-    H = set_array_default(H, log_linspace(0.01, 0.2, 300))
-    T = set_array_default(T, log_linspace(0.001, 2., 300))
-    H_grid, T_grid = flat_mesh(H, T)
-    N = set_array_default(N, np.arange(1, 11))
-    mode = set_list_default(mode, ['paper', 'optimized'])
-
-    with mp.Pool(processes=num_threads) as pool:
-        result = pool.starmap(kernel_errors, zip(H_grid, T_grid, itertools.repeat(N), itertools.repeat(mode)))
-    result = np.asarray(result)
-    result = result.reshape((len(H), len(T)) + result.shape[1:])
-    largest_nodes = result[:, :, 0, :, :]
-    errors = result[:, :, 1, :, :]
-    largest_nodes_paper = largest_nodes[:, :, 0, :]
-    largest_nodes_optimized = largest_nodes[:, :, 1, :]
-    errors_paper = errors[:, :, 0, :]
-    errors_optimized = errors[:, :, 1, :]
-    for i in range(len(N)):
-        print(f'Results for N={N[i]}')
-        print(f'The highest error in the kernel using paper quadrature is {100 * np.amax(errors_paper[..., i]):.4}%, '
-              f'which is attained at H={H[arr_argmax(errors_paper[..., i])[0]]:.3} and '
-              f'T={T[arr_argmax(errors_paper[..., i])[1]]:.3}.')
-        print(f'The lowest error in the kernel using paper quadrature is {100 * np.amin(errors_paper[..., i]):.4}%, '
-              f'which is attained at H={H[arr_argmin(errors_paper[..., i])[0]]:.3} and '
-              f'T={T[arr_argmin(errors_paper[..., i])[1]]:.3}.')
-        print(f'The geometric average error in the kernel using paper quadrature is '
-              f'{100 * geometric_average(errors_paper[..., i]):.4}%.')
-        print(f'The median error in the kernel using paper quadrature is {100 * np.median(errors_paper[..., i]):.4}%.')
-        print(f'The highest error in the kernel using optimized quadrature is '
-              f'{100 * np.amax(errors_optimized[..., i]):.4}%, which is attained at '
-              f'H={H[arr_argmax(errors_optimized[..., i])[0]]:.3} and '
-              f'T={T[arr_argmax(errors_optimized[..., i])[1]]:.3}.')
-        print(f'The lowest error in the kernel using optimized quadrature is '
-              f'{100 * np.amin(errors_optimized[..., i]):.4}%, which is attained at '
-              f'H={H[arr_argmin(errors_optimized[..., i])[0]]:.3} and '
-              f'T={T[arr_argmin(errors_optimized[..., i])[1]]:.3}.')
-        print(f'The geometric average error in the kernel using optimized quadrature is '
-              + f'{100 * geometric_average(errors_optimized[..., i]):.4}%.')
-        print(f'The median error in the kernel using optimized quadrature is '
-              + f'{100 * np.median(errors_optimized[..., i]):.4}%.')
-        keo_flat = errors_optimized[..., i].flatten()
-        kep_flat = errors_paper[..., i].flatten()
-        faulty_ind = np.logical_or(kep_flat < 1e-6, keo_flat < 1e-6)
-        keo_flat, kep_flat = keo_flat[~faulty_ind], kep_flat[~faulty_ind]
-        error_improvements = keo_flat / kep_flat
-        print(f'The smallest improvement of the error in the kernel using optimized quadrature instead of paper '
-              f'quadrature is attaining an error equal to {100 * np.amax(error_improvements):.4}% of the original '
-              f'error.')
-        print(f'The biggest improvement of the error in the kernel using optimized quadrature instead of paper '
-              f'quadrature is attaining an error equal to {100 * np.amin(error_improvements):.4}% of the original '
-              f'error.')
-        print(f'The geometric average improvement of the error in the kernel using optimized quadrature instead of '
-              f'paper quadrature is attaining an error equal to {100 * geometric_average(error_improvements):.4}% of '
-              f'the original error.')
-        print(f'The median improvement of the error in the kernel using optimized quadrature instead of '
-              f'paper quadrature is attaining an error equal to {100 * np.median(error_improvements):.4}% of the '
-              f'original error.')
-        if N[i] >= 2:
-            node_improvements = largest_nodes_optimized[..., i] / largest_nodes_paper[..., i]
-            print(f'The largest increase of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is a node equal to {np.amax(node_improvements):.4} times of the original node, which '
-                  f'is attained at H={H[arr_argmax(node_improvements)[0]]:.3} and '
-                  f'T={T[arr_argmax(node_improvements)[1]]:.3}.')
-            print(f'The largest decrease of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is a node equal to {np.amin(node_improvements):.4} times of the original node, which '
-                  f'is attained at H={H[arr_argmin(node_improvements)[0]]:.3} and '
-                  f'T={T[arr_argmin(node_improvements)[1]]:.3}.')
-            print(f'The geometric average increase of the largest node when using optimized quadrature instead of '
-                  f'paper quadrature is a node equal to {geometric_average(node_improvements):.4} times of the'
-                  f'original node.')
-            print(f'The median increase of the largest node when using optimized quadrature instead of paper '
-                  f'quadrature is a node equal to {np.median(node_improvements):.4} times of the original node.')
-        print('-----------------------------------------------------------------------')
-    return result
-
-
 def smile_errors(params=None, Ns=None, modes=None, true_smile=None, plot=False, load=True, save=False, verbose=0,
                  parallelizable_output=False):
     """
@@ -757,7 +670,10 @@ def compute_rHeston_samples(params, Ns=None, N_times=None, modes=None, euler=Fal
                 print(f'Now simulating {filename}')
                 if recompute or not exists(filename):
                     nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode=mode)
-                    result = rHeston_samples(params=params, m=m, N_time=N_time, nodes=nodes, weights=weights,
+                    params_ = params.copy()
+                    if isinstance(params['T'], np.ndarray):
+                        params_['T'] = params['T'][-1]
+                    result = rHeston_samples(params=params_, m=m, N_time=N_time, nodes=nodes, weights=weights,
                                              sample_paths=sample_paths, return_times=return_times,
                                              vol_only=vol_only, euler=euler, antithetic=antithetic)
                     np.save(filename, result)
@@ -1058,6 +974,328 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
                                          discretization_errors=discretization_errors, plot=plot)
 
     return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_errors, total_errors, \
+        lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
+        upper_discretization_errors
+
+
+def smile_errors_weak_Euler_QE(params, N, N_times):
+    """
+    Computes the implied volatility smiles given the final stock prices
+    :param params: Parameters of the rough Heston model
+    :param N: Number of dimensions of the Markovian approximation
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(11)
+    :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
+        the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
+        MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
+        discretization errors and the upper MC discretization errors
+    """
+    params = rHeston_params(params)
+    if isinstance(params['T'], np.ndarray):
+        params['T'] = params['T'][0]
+    true_smile = rHestonFourier_iv_eur_call(params)
+
+    total_errors = np.empty((3, len(N_times)))  # first component is 0 for weak scheme, 1 for Euler scheme and 2 for QE
+    discretization_errors = np.empty((2, len(N_times)))
+    lower_total_errors = np.empty((3, len(N_times)))
+    lower_discretization_errors = np.empty((2, len(N_times)))
+    upper_total_errors = np.empty((3, len(N_times)))
+    upper_discretization_errors = np.empty((2, len(N_times)))
+    MC_errors = np.empty((3, len(N_times)))
+    approx_smiles = np.empty((3, len(N_times), len(params['K'])))
+    lower_smiles = np.empty((3, len(N_times), len(params['K'])))
+    upper_smiles = np.empty((3, len(N_times), len(params['K'])))
+
+    nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode='european')
+    markov_smiles = rHestonFourier_iv_eur_call(params=params, nodes=nodes, weights=weights)
+    markov_error = np.amax(np.abs(markov_smiles - true_smile)/true_smile)
+    print(f'Markovian error={100 * markov_error:.4}%')
+
+    for m in range(len(N_times)):
+        for i in range(2):
+            kind = 'samples'
+            samples = np.load(get_filename(kind=kind, N=N, mode='BL2', euler=i == 1, antithetic=True,
+                                           N_time=N_times[m], params=params, truth=False, markov=False))
+            vol, low, upp = cf.eur_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=samples[0, :],
+                                      antithetic=True, r=params['r'], implied_vol=True)
+            approx_smiles[i, m, :] = vol
+            lower_smiles[i, m, :] = low
+            upper_smiles[i, m, :] = upp
+            total_errors[i, m], lower_total_errors[i, m], upper_total_errors[i, m], MC_errors[i, m] = \
+                max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
+            discretization_errors[i, m], lower_discretization_errors[i, m], \
+                upper_discretization_errors[i, m], MC_errors[i, m] = \
+                max_errors_MC(truth=markov_smiles, estimate=vol, lower=low, upper=upp)
+            kind_here = 'Euler' if i == 1 else 'Weak'
+            kind_here = kind_here + ' antithetic'
+            print(f'N={N}, {kind_here}, N_time={N_times[m]}: total error={100 * total_errors[i, m]:.4}%, '
+                  f'discretization error={100 * discretization_errors[i, m]:.4}%, '
+                  f'MC error={100 * MC_errors[i, m]:.4}%, excess error={100 * lower_discretization_errors[i, m]:.4}%'
+                  + ('' if m == 0 else
+                     f' improvement factor={discretization_errors[i, m - 1] / discretization_errors[i, m]:.3}, '
+                     f'{upper_discretization_errors[i, m - 1] / lower_discretization_errors[i, m]:.3}, '
+                     f'{lower_discretization_errors[i, m - 1] / upper_discretization_errors[i, m]:.3}'))
+
+        H, lambda_, rho, nu, theta, V_0, T_string = params['H'], params['lambda'], params['rho'], params['nu'], \
+            params['theta'], params['V_0'], params['T']
+        samples = np.load(f'rHeston samples HQE {N_times[m]} time steps, H={H:.3}, lambda={lambda_:.3}, '
+                          f'rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, T={T_string:.3}.npy')
+        vol, low, upp = cf.eur_MC(S_0=params['S'], K=params['K'], T=params['T'], samples=samples[0, :],
+                                  antithetic=True, r=params['r'], implied_vol=True)
+        approx_smiles[2, m, :] = vol
+        lower_smiles[2, m, :] = low
+        upper_smiles[2, m, :] = upp
+        total_errors[2, m], lower_total_errors[2, m], upper_total_errors[2, m], MC_errors[2, m] = \
+            max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
+        kind_here = 'QE'
+        print(f'{kind_here}, N_time={N_times[m]}: total error={100 * total_errors[2, m]:.4}%, MC error='
+              f'{100 * MC_errors[2, m]:.4}%, excess error={100 * lower_total_errors[2, m]:.4}%'
+              + ('' if m == 0 else f' improvement factor={total_errors[2, m - 1] / total_errors[2, m]:.3}, '
+                 f'{upper_total_errors[2, m - 1] / lower_total_errors[2, m]:.3}, '
+                 f'{lower_total_errors[2, m - 1] / upper_total_errors[2, m]:.3}'))
+
+    plt.loglog(N_times, total_errors[1, :], 'b-', label=f'Euler')
+    plt.loglog(N_times, lower_total_errors[1, :], 'b--')
+    plt.loglog(N_times, upper_total_errors[1, :], 'b--')
+    plt.loglog(N_times, discretization_errors[1, :], 'o-', color='b')
+    plt.loglog(N_times, total_errors[0, :], 'r-', label=f'Weak')
+    plt.loglog(N_times, lower_total_errors[0, :], 'r--')
+    plt.loglog(N_times, upper_total_errors[0, :], 'r--')
+    plt.loglog(N_times, discretization_errors[0, :], 'o-', color='r')
+    plt.loglog(N_times, total_errors[2, :], 'g-', label=f'QE')
+    plt.loglog(N_times, lower_total_errors[2, :], 'g--')
+    plt.loglog(N_times, upper_total_errors[2, :], 'g--')
+    plt.loglog(N_times, markov_error * np.ones(len(N_times)), 'k-', label='Markov')
+    min_val = np.fmin(np.fmin(np.amin(lower_total_errors), np.amin(discretization_errors)), markov_error)
+    max_val = np.fmax(np.fmax(np.amax(upper_total_errors), np.amax(discretization_errors)), markov_error)
+    for node in nodes:
+        if node >= 1:
+            plt.loglog(np.array([node, node]), np.array([min_val, max_val]), 'k-')
+    plt.title(f'Maximal relative errors for European call smiles with N={N}')
+    plt.xlabel('Number of time steps')
+    plt.ylabel('Maximal relative error')
+    plt.legend(loc='best')
+    plt.show()
+
+    return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_error, total_errors, \
+        lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
+        upper_discretization_errors
+
+
+def surface_errors_weak_Euler_QE(params, N, N_times):
+    """
+    Computes the implied volatility smiles given the final stock prices
+    :param params: Parameters of the rough Heston model
+    :param N: Number of dimensions of the Markovian approximation
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(11)
+    :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
+        the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
+        MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
+        discretization errors and the upper MC discretization errors
+    """
+    params = rHeston_params(params)
+    true_smile = rHestonFourier_iv_eur_call(params)
+    T = params['T']
+
+    total_errors = np.empty((3, len(N_times)))  # first component is 0 for weak scheme, 1 for Euler scheme and 2 for QE
+    discretization_errors = np.empty((2, len(N_times)))
+    lower_total_errors = np.empty((3, len(N_times)))
+    lower_discretization_errors = np.empty((2, len(N_times)))
+    upper_total_errors = np.empty((3, len(N_times)))
+    upper_discretization_errors = np.empty((2, len(N_times)))
+    MC_errors = np.empty((3, len(N_times)))
+    approx_smiles = np.empty((3, len(N_times), len(T), len(params['K'])))
+    lower_smiles = np.empty((3, len(N_times), len(T), len(params['K'])))
+    upper_smiles = np.empty((3, len(N_times), len(T), len(params['K'])))
+
+    nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode='european')
+    print(nodes, weights)
+    markov_smiles = rHestonFourier_iv_eur_call(params=params, nodes=nodes, weights=weights)
+    markov_error = np.amax(np.abs(markov_smiles - true_smile)/true_smile)
+    print(f'Markovian error={100 * markov_error:.4}%')
+
+    for m in range(len(N_times)):
+        for i in range(2):
+            kind = 'sample paths'
+            samples = np.load(get_filename(kind=kind, N=N, mode='BL2', euler=i == 1, antithetic=True,
+                                           N_time=N_times[m], params=params, truth=False, markov=False))
+            samples = samples[0, ...]
+            samples = samples[:, ::samples.shape[-1] // len(T)]
+            samples = samples[:, 1:]
+            for j in range(len(T)):
+                vol, low, upp = cf.eur_MC(S_0=params['S'], K=np.exp(np.log(params['K']) * np.sqrt(params['T'][j])),
+                                          T=params['T'][j], samples=samples[:, j], antithetic=True, r=params['r'],
+                                          implied_vol=True)
+                approx_smiles[i, m, j, :] = vol
+                lower_smiles[i, m, j, :] = low
+                upper_smiles[i, m, j, :] = upp
+            total_errors[i, m], lower_total_errors[i, m], upper_total_errors[i, m], MC_errors[i, m] = \
+                max_errors_MC(truth=true_smile, estimate=approx_smiles[i, m, :, :], lower=lower_smiles[i, m, :, :],
+                              upper=upper_smiles[i, m, :, :])
+            discretization_errors[i, m], lower_discretization_errors[i, m], \
+                upper_discretization_errors[i, m], MC_errors[i, m] = \
+                max_errors_MC(truth=markov_smiles, estimate=approx_smiles[i, m, :, :], lower=lower_smiles[i, m, :, :],
+                              upper=upper_smiles[i, m, :, :])
+            kind_here = 'Euler' if i == 1 else 'Weak'
+            kind_here = kind_here + ' antithetic'
+            print(f'N={N}, {kind_here}, N_time={N_times[m]}: total error={100 * total_errors[i, m]:.4}%, '
+                  f'discretization error={100 * discretization_errors[i, m]:.4}%, '
+                  f'MC error={100 * MC_errors[i, m]:.4}%, excess error={100 * lower_discretization_errors[i, m]:.4}%'
+                  + ('' if m == 0 else
+                     f' improvement factor={discretization_errors[i, m - 1] / discretization_errors[i, m]:.3}, '
+                     f'{upper_discretization_errors[i, m - 1] / lower_discretization_errors[i, m]:.3}, '
+                     f'{lower_discretization_errors[i, m - 1] / upper_discretization_errors[i, m]:.3}'))
+
+        H, lambda_, rho, nu, theta, V_0, T_string = params['H'], params['lambda'], params['rho'], params['nu'], \
+            params['theta'], params['V_0'], params['T'][-1]
+        sam = np.load(f'rHeston sample paths HQE {N_times[m]} time steps, H={H:.3}, lambda={lambda_:.3}, '
+                          f'rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, T={T_string:.3}.npy')
+        samples = np.empty((sam.shape[1], sam.shape[2] + 1))
+        samples[:, 1:] = sam[0, :, :]
+        samples = samples[:, ::samples.shape[-1] // len(T)]
+        samples = samples[:, 1:]
+        for j in range(len(T)):
+            vol, low, upp = cf.eur_MC(S_0=params['S'], K=np.exp(np.log(params['K']) * np.sqrt(params['T'][j])),
+                                      T=params['T'][j], samples=samples[:, j], antithetic=True, r=params['r'],
+                                      implied_vol=True)
+            approx_smiles[2, m, j, :] = vol
+            lower_smiles[2, m, j, :] = low
+            upper_smiles[2, m, j, :] = upp
+        total_errors[2, m], lower_total_errors[2, m], upper_total_errors[2, m], MC_errors[2, m] = \
+            max_errors_MC(truth=true_smile, estimate=approx_smiles[2, m, :, :], lower=lower_smiles[2, m, :, :],
+                          upper=upper_smiles[2, m, :, :])
+        kind_here = 'QE'
+        print(f'{kind_here}, N_time={N_times[m]}: total error={100 * total_errors[2, m]:.4}%, MC error='
+              f'{100 * MC_errors[2, m]:.4}%, excess error={100 * lower_total_errors[2, m]:.4}%'
+              + ('' if m == 0 else f' improvement factor={total_errors[2, m - 1] / total_errors[2, m]:.3}, '
+                 f'{upper_total_errors[2, m - 1] / lower_total_errors[2, m]:.3}, '
+                 f'{lower_total_errors[2, m - 1] / upper_total_errors[2, m]:.3}'))
+
+    plt.loglog(N_times, total_errors[1, :], 'b-', label=f'Euler')
+    plt.loglog(N_times, lower_total_errors[1, :], 'b--')
+    plt.loglog(N_times, upper_total_errors[1, :], 'b--')
+    plt.loglog(N_times, discretization_errors[1, :], 'o-', color='b')
+    plt.loglog(N_times, total_errors[0, :], 'r-', label=f'Weak')
+    plt.loglog(N_times, lower_total_errors[0, :], 'r--')
+    plt.loglog(N_times, upper_total_errors[0, :], 'r--')
+    plt.loglog(N_times, discretization_errors[0, :], 'o-', color='r')
+    plt.loglog(N_times, total_errors[2, :], 'g-', label=f'QE')
+    plt.loglog(N_times, lower_total_errors[2, :], 'g--')
+    plt.loglog(N_times, upper_total_errors[2, :], 'g--')
+    plt.loglog(N_times, markov_error * np.ones(len(N_times)), 'k-', label='Markov')
+    min_val = np.fmin(np.fmin(np.amin(lower_total_errors), np.amin(discretization_errors)), markov_error)
+    max_val = np.fmax(np.fmax(np.amax(upper_total_errors), np.amax(discretization_errors)), markov_error)
+    for node in nodes:
+        if node >= 1:
+            plt.loglog(np.array([node, node]), np.array([min_val, max_val]), 'k-')
+    plt.title(f'Maximal relative errors for European call surfaces with N={N}')
+    plt.xlabel('Number of time steps')
+    plt.ylabel('Maximal relative error')
+    plt.legend(loc='best')
+    plt.show()
+
+    return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_error, total_errors, \
+        lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
+        upper_discretization_errors
+
+
+def asian_errors_weak_Euler_QE(params, N, N_times):
+    """
+    Computes the implied volatility smiles given the final stock prices
+    :param params: Parameters of the rough Heston model
+    :param N: Number of dimensions of the Markovian approximation
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(11)
+    :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
+        the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
+        MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
+        discretization errors and the upper MC discretization errors
+    """
+    params = rHeston_params(params)
+    params_ = params.copy()
+    params_['T'] = params['T'][-1]
+    true_smile = rHestonFourier_price_geom_asian_call(params_)
+
+    total_errors = np.empty((3, len(N_times)))  # first component is 0 for weak scheme, 1 for Euler scheme and 2 for QE
+    discretization_errors = np.empty((2, len(N_times)))
+    lower_total_errors = np.empty((3, len(N_times)))
+    lower_discretization_errors = np.empty((2, len(N_times)))
+    upper_total_errors = np.empty((3, len(N_times)))
+    upper_discretization_errors = np.empty((2, len(N_times)))
+    MC_errors = np.empty((3, len(N_times)))
+    approx_smiles = np.empty((3, len(N_times), len(params['K'])))
+    lower_smiles = np.empty((3, len(N_times), len(params['K'])))
+    upper_smiles = np.empty((3, len(N_times), len(params['K'])))
+
+    nodes, weights = rk.quadrature_rule(H=params['H'], N=N, T=params['T'], mode='european')
+    print(nodes, weights)
+    markov_smiles = rHestonFourier_price_geom_asian_call(params=params_, nodes=nodes, weights=weights)
+    markov_error = np.amax(np.abs(markov_smiles - true_smile)/true_smile)
+    print(f'Markovian error={100 * markov_error:.4}%')
+
+    for m in range(len(N_times)):
+        for i in range(2):
+            kind = 'sample paths'
+            samples = np.load(get_filename(kind=kind, N=N, mode='BL2', euler=i == 1, antithetic=True,
+                                           N_time=N_times[m], params=params, truth=False, markov=False))
+            vol, low, upp = cf.price_geom_asian_call_MC(K=params['K'], samples=samples[0, ...], antithetic=True)
+            approx_smiles[i, m, :] = vol
+            lower_smiles[i, m, :] = low
+            upper_smiles[i, m, :] = upp
+            total_errors[i, m], lower_total_errors[i, m], upper_total_errors[i, m], MC_errors[i, m] = \
+                max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
+            discretization_errors[i, m], lower_discretization_errors[i, m], \
+                upper_discretization_errors[i, m], MC_errors[i, m] = \
+                max_errors_MC(truth=markov_smiles, estimate=vol, lower=low, upper=upp)
+            kind_here = 'Euler' if i == 1 else 'Weak'
+            kind_here = kind_here + ' antithetic'
+            print(f'N={N}, {kind_here}, N_time={N_times[m]}: total error={100 * total_errors[i, m]:.4}%, '
+                  f'discretization error={100 * discretization_errors[i, m]:.4}%, '
+                  f'MC error={100 * MC_errors[i, m]:.4}%, excess error={100 * lower_discretization_errors[i, m]:.4}%'
+                  + ('' if m == 0 else
+                     f' improvement factor={discretization_errors[i, m - 1] / discretization_errors[i, m]:.3}, '
+                     f'{upper_discretization_errors[i, m - 1] / lower_discretization_errors[i, m]:.3}, '
+                     f'{lower_discretization_errors[i, m - 1] / upper_discretization_errors[i, m]:.3}'))
+
+        H, lambda_, rho, nu, theta, V_0, T_string = params['H'], params['lambda'], params['rho'], params['nu'], \
+            params['theta'], params['V_0'], params['T'][-1]
+        samples = np.load(f'rHeston sample paths HQE {N_times[m]} time steps, H={H:.3}, lambda={lambda_:.3}, '
+                          f'rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, T={T_string:.3}.npy')
+        vol, low, upp = cf.price_geom_asian_call_MC(K=params['K'], samples=samples[0, ...], antithetic=True)
+        approx_smiles[2, m, :] = vol
+        lower_smiles[2, m, :] = low
+        upper_smiles[2, m, :] = upp
+        total_errors[2, m], lower_total_errors[2, m], upper_total_errors[2, m], MC_errors[2, m] = \
+            max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
+        kind_here = 'QE'
+        print(f'{kind_here}, N_time={N_times[m]}: total error={100 * total_errors[2, m]:.4}%, MC error='
+              f'{100 * MC_errors[2, m]:.4}%, excess error={100 * lower_total_errors[2, m]:.4}%'
+              + ('' if m == 0 else f' improvement factor={total_errors[2, m - 1] / total_errors[2, m]:.3}, '
+                 f'{upper_total_errors[2, m - 1] / lower_total_errors[2, m]:.3}, '
+                 f'{lower_total_errors[2, m - 1] / upper_total_errors[2, m]:.3}'))
+
+    plt.loglog(N_times, total_errors[1, :], 'b-', label=f'Euler')
+    plt.loglog(N_times, lower_total_errors[1, :], 'b--')
+    plt.loglog(N_times, upper_total_errors[1, :], 'b--')
+    plt.loglog(N_times, discretization_errors[1, :], 'o-', color='b')
+    plt.loglog(N_times, total_errors[0, :], 'r-', label=f'Weak')
+    plt.loglog(N_times, lower_total_errors[0, :], 'r--')
+    plt.loglog(N_times, upper_total_errors[0, :], 'r--')
+    plt.loglog(N_times, discretization_errors[0, :], 'o-', color='r')
+    plt.loglog(N_times, total_errors[2, :], 'g-', label=f'QE')
+    plt.loglog(N_times, lower_total_errors[2, :], 'g--')
+    plt.loglog(N_times, upper_total_errors[2, :], 'g--')
+    plt.loglog(N_times, markov_error * np.ones(len(N_times)), 'k-', label='Markov')
+    min_val = np.fmin(np.fmin(np.amin(lower_total_errors), np.amin(discretization_errors)), markov_error)
+    max_val = np.fmax(np.fmax(np.amax(upper_total_errors), np.amax(discretization_errors)), markov_error)
+    for node in nodes:
+        if node >= 1:
+            plt.loglog(np.array([node, node]), np.array([min_val, max_val]), 'k-')
+    plt.title(f'Maximal relative errors for European call smiles with N={N}')
+    plt.xlabel('Number of time steps')
+    plt.ylabel('Maximal relative error')
+    plt.legend(loc='best')
+    plt.show()
+
+    return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_error, total_errors, \
         lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors
 

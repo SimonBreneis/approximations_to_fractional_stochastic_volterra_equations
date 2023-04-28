@@ -15,10 +15,13 @@ import rHestonMomentMatching
 import scipy.stats, scipy.optimize, scipy.integrate, scipy.linalg, scipy.special
 
 
+print(rHestonFourier.eur_call_put(S_0=100, K=np.array([105, 110, 115]), lambda_=1.4, rho=-0.5711, nu=0.5, theta=0.03, V_0=0.0435, T=1, r=0.03, rel_tol=1e-05, implied_vol=False, call=False, nodes=np.array([0.]), weights=np.array([1.])))
+print('Finished')
+time.sleep(360000)
+'''
 S_0, lambda_, rho, nu, theta, V_0, T, rel_tol = 1., 0.3, -0.7, 0.3, 0.02, 0.02, 0.04, 1e-04
 k_vec = np.linspace(-1., 0.5, 61) * np.sqrt(T)
 K = np.exp(k_vec)
-'''
 true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
                                               H=0.001, verbose=2, rel_tol=rel_tol)
 nodes, weights = rk.quadrature_rule(H=0.001, T=T, N=8, mode='paper')
@@ -63,17 +66,34 @@ plt.title('Relative errors in European implied volatility smiles')
 plt.show()
 '''
 
-
 H = 0.1
 lambda_, rho, nu, theta, V_0, S_0, T, rel_tol, verbose = 0.3, -0.7, 0.3, 0.02, 0.02, 1., 1., 1e-05, 2
 N = 2
 k = np.linspace(-0.1, 0.05, 16)
 K = np.exp(k)
+T = np.linspace(0, 1, 17)[1:]
+T = np.array([0.5, 1.])
+# T = np.array([1.])
 
-for N_time in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]:
+params = {'S': 1., 'K': K, 'H': H, 'T': T, 'lambda': lambda_, 'rho': rho, 'nu': nu, 'theta': theta, 'V_0': V_0,
+          'rel_tol': rel_tol, 'r': 0.}
+
+# smile_errors_weak_Euler_QE(params=params, N=3, N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512]))
+# surface_errors_weak_Euler_QE(params=params, N=3, N_times=np.array([16, 32, 64, 128, 256]))
+asian_errors_weak_Euler_QE(params=params, N=3, N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256]))
+print('Finished')
+# time.sleep(360000)
+
+compute_rHeston_samples(params=params, Ns=np.array([3]), N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256]),
+                        modes=['BL2'], m=1_000_000, euler=False, sample_paths=True)
+compute_rHeston_samples(params=params, Ns=np.array([3]), N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256]),
+                        modes=['BL2'], m=1_000_000, euler=True, sample_paths=True)
+print('Finished!')
+time.sleep(360000)
+for N_time in [512]:
     print(N_time)
-    rHestonMarkovSamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, r=0.,
-                                              m=20_000_000, N_time=N_time, sample_paths=False, verbose=2)
+    rHestonMarkovSamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=1., rho=rho, r=0.,
+                                              m=1_000_000, N_time=N_time, sample_paths=True, verbose=2)
 print('Finished')
 time.sleep(360000)
 
@@ -93,9 +113,6 @@ plt.plot(k, middle, 'r-')
 plt.plot(k, lower, 'r--')
 plt.plot(k, upper, 'r--')
 plt.show()
-
-params = {'S': 1., 'K': np.exp(np.linspace(-0.1, 0.05, 16)), 'H': 0.1, 'T': 1., 'lambda': 0.3, 'rho': -0.7,
-                     'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05, 'r': 0.}
 
 compute_rHeston_samples(params=params, Ns=np.array([2]), N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512]),
                         modes=['BL2'], m=20000000, euler=False, sample_paths=False)
