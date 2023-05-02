@@ -9,6 +9,7 @@ import fBmMarkov
 import functions
 import rHestonFourier
 import rHestonMarkovSamplePaths
+import rHestonQESamplePaths
 from functions import *
 # import rBergomiMarkov
 import rHestonMomentMatching
@@ -92,8 +93,8 @@ print('Finished!')
 time.sleep(360000)
 for N_time in [512]:
     print(N_time)
-    rHestonMarkovSamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=1., rho=rho, r=0.,
-                                              m=1_000_000, N_time=N_time, sample_paths=True, verbose=2)
+    rHestonQESamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=1., rho=rho, r=0., m=1_000_000,
+                                    N_time=N_time, sample_paths=True, verbose=2)
 print('Finished')
 time.sleep(360000)
 
@@ -104,8 +105,8 @@ true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho,
 # markov_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
 #                                            rel_tol=rel_tol, verbose=verbose, nodes=nodes, weights=weights)
 
-samples = rHestonMarkovSamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, r=0.,
-                                              m=100000, N_time=200, sample_paths=False, verbose=2)
+samples = rHestonQESamplePaths.samples_QE(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, r=0.,
+                                          m=100000, N_time=200, sample_paths=False, verbose=2)
 middle, lower, upper = cf.eur_MC(S_0=S_0, K=K, T=T, samples=samples[0, :], r=0., payoff='call', antithetic=False,
                                  implied_vol=True)
 plt.plot(k, true_smile, 'k-')
