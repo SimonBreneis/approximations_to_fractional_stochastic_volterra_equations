@@ -6,7 +6,7 @@ from scipy import stats
 import ComputationalFinance as cf
 import rHestonFourier
 import RoughKernel as rk
-import rHestonMarkovSamplePaths as rHestonSP
+import rHestonMarkovSimulation as rHestonSP
 from os.path import exists
 import multiprocessing as mp
 import itertools

@@ -8,8 +8,8 @@ import RoughKernel as rk
 import fBmMarkov
 import functions
 import rHestonFourier
-import rHestonMarkovSamplePaths
-import rHestonQESamplePaths
+import rHestonMarkovSimulation
+import rHestonQESimulation
 from functions import *
 # import rBergomiMarkov
 import rHestonMomentMatching
