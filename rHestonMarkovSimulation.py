@@ -322,7 +322,7 @@ def am_features(x, degree=6, K=0.):
 
 
 def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=0., m=1000000, N_time=200, N_dates=12,
-             feature_degree=6, euler=False, antithetic=True, unbiased=True):
+             feature_degree=6, euler=False, antithetic=True):
     """
     Gives the price of an American option in the approximated, Markovian rough Heston model.
     :param K: Strike price
@@ -337,13 +337,12 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
     :param weights: The weights of the Markovian approximation
     :param payoff: The payoff function, either 'call' or 'put' or a function taking as inputs S (samples) and K (strike)
     :param r: Interest rate
-    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
+    :param m: Number of samples. Uses half of them for fitting the stopping rule, and half of them for pricing
     :param N_time: Number of time steps used in the simulation
     :param N_dates: Number of exercise dates. If None, N_dates = N_time
     :param feature_degree: The degree of the polynomial features used in the regression
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param antithetic: If True, uses antithetic variates to reduce the MC error
-    :param unbiased: If True, uses newly generated samples to compute the price of the American option
     return: The prices of the call option for the various strike prices in K
     """
     if payoff == 'call':
@@ -359,25 +358,22 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
         return am_features(x=x, degree=feature_degree, K=K)
 
     ex_times = np.linspace(0, T, N_dates + 1)
-    samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
-                       S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
-                       euler=euler, antithetic=antithetic)
-    preprocessed_samples = np.empty((samples_.shape[0] - 1, samples_.shape[1], samples_.shape[2]))
-    preprocessed_samples[0, :, :] = samples_[0, :, :]
-    preprocessed_samples[1:, :, :] = weights[:, None, None] * samples_[2:, :, :]
-    preprocessed_samples[1:, :, :] = preprocessed_samples[1:, :, :] - preprocessed_samples[1:, :, :1]
-    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=preprocessed_samples, antithetic=antithetic,
-                                                    payoff=payoff, features=features)
-    # print(biased_est, biased_stat)
-    if not unbiased:
-        return biased_est, biased_stat, models, features
-    samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
-                       S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
-                       euler=euler, antithetic=antithetic)
-    preprocessed_samples = np.empty((samples_.shape[0] - 1, samples_.shape[1], samples_.shape[2]))
-    preprocessed_samples[0, :, :] = samples_[0, :, :]
-    preprocessed_samples[1:, :, :] = weights[:, None, None] * samples_[2:, :, :]
-    preprocessed_samples[1:, :, :] = preprocessed_samples[1:, :, :] - preprocessed_samples[1:, :, :1]
-    est, stat = cf.price_am_forward(T=T, r=r, samples=preprocessed_samples, payoff=payoff, models=models,
-                                    features=features, antithetic=antithetic)
+    samples_orig = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
+                           S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
+                           euler=euler, antithetic=antithetic)
+    samples_orig = samples_orig[:, :, ::N_time // N_dates]
+    samples_ = np.empty((samples_orig.shape[0] - 1, samples_orig.shape[1], samples_orig.shape[2]))
+    samples_[0, :, :] = samples_orig[0, :, :]
+    samples_[1:, :, :] = weights[:, None, None] * samples_orig[2:, :, :]
+    samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]
+    samples_1 = np.empty((samples_.shape[0], m // 2, N_dates + 1))
+    samples_1[:, :m // 4, :] = samples_[:, :m // 4, :]
+    samples_1[:, m // 4:, :] = samples_[:, m // 2:3 * m // 4, :]
+    samples_2 = np.empty((samples_.shape[0], m // 2, N_dates + 1))
+    samples_2[:, :m // 4, :] = samples_[:, m // 4:m // 2, :]
+    samples_2[:, m // 4:, :] = samples_[:, 3 * m // 4:, :]
+    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, antithetic=antithetic, payoff=payoff,
+                                                    features=features)
+    est, stat = cf.price_am_forward(T=T, r=r, samples=samples_2, payoff=payoff, models=models, features=features,
+                                    antithetic=antithetic)
     return est, stat, biased_est, biased_stat, models, features
