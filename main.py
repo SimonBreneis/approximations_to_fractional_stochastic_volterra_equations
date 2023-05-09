@@ -1,7 +1,7 @@
 import time
 import matplotlib.pyplot as plt
 import numpy as np
-# import Data
+import Data
 import ComputationalFinance
 import RoughKernel as rk
 # import rBergomi
@@ -15,7 +15,44 @@ from functions import *
 import rHestonMomentMatching
 import scipy.stats, scipy.optimize, scipy.integrate, scipy.linalg, scipy.special
 
+'''
+S_0, lambda_, rho, nu, theta, V_0, rel_tol, T, H = 1., 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05, 1., 0.1
+k = np.linspace(-1, 0.5, 51)
+K = np.exp(k)
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, H=H)
+for N in [1, 2, 3, 4, 5, 6]:
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='BL2')
+    approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol, nodes=nodes, weights=weights)
+    err = np.amax(np.abs(true_smile - approx_smile) / true_smile)
+    print(N, np.amax(nodes), err)
+print('Finished')
+time.sleep(3600000)
+'''
+'''
+for m in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+    print(m)
+    tic = time.perf_counter()
+    samples = np.random.normal(0, 1, 2 ** m)
+    print(np.abs(np.average(samples)), 1.96 * np.std(samples) / np.sqrt(2 ** m), time.perf_counter() - tic)
+    sampler = scipy.stats.qmc.MultivariateNormalQMC(mean=np.array([0.]))
+    tic = time.perf_counter()
+    samples = sampler.random(2 ** m)
+    print(np.abs(np.average(samples)), time.perf_counter() - tic)
 
+time.sleep(3600000)
+sampler = scipy.stats.qmc.Sobol(d=2, scramble=False)
+sample = sampler.random_base2(m=3)
+print(sample)
+sampler = scipy.stats.qmc.Sobol(d=2, scramble=True)
+sample = sampler.random_base2(m=3)
+print(sample)
+time.sleep(360000)
+'''
+'''
+Data.illustrate_bermudan_option_prices()
+print('Finished')
+time.sleep(3600000)
+'''
 '''
 S_0, lambda_, rho, nu, theta, V_0, T, rel_tol = 1., 0.3, -0.7, 0.3, 0.02, 0.02, 0.04, 1e-04
 k_vec = np.linspace(-1., 0.5, 61) * np.sqrt(T)
@@ -66,37 +103,144 @@ plt.show()
 
 H = 0.1
 lambda_, rho, nu, theta, V_0, S_0, T, rel_tol, verbose = 0.3, -0.7, 0.3, 0.02, 0.02, 1., 1., 1e-05, 2
+r = 0.06
 N = 2
 k = np.linspace(-0.1, 0.05, 16)
 K = np.exp(k)
+K = 1.05
 # T = np.linspace(0, 1, 17)[1:]
 # T = np.array([0.5, 1.])
 # T = np.array([1.])
 
-params = {'S': 1., 'K': K, 'H': H, 'T': T, 'lambda': lambda_, 'rho': rho, 'nu': nu, 'theta': theta, 'V_0': V_0,
-          'rel_tol': rel_tol, 'r': 0.}
+params = {'S': 1., 'K': np.array([K]), 'H': H, 'T': T, 'lambda': lambda_, 'rho': rho, 'nu': nu, 'theta': theta, 'V_0': V_0,
+          'rel_tol': rel_tol, 'r': r}
+'''
+print(rHestonFourier.eur_call_put(S_0=100, K=np.array([100, 105, 110]), lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                  T=T, call=False, rel_tol=1e-05, implied_vol=False, r=r, H=H))
+
+for N_time in [2048]:
+    est, stat, _, _, _, _ = \
+        rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                     payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=4,
+                                     feature_degree=8, antithetic=False)
+    print('QE, 4 dates, ', N_time, 100 * est, 100 * stat)
+
+for N_time in [2048]:
+    est, stat, _, _, _, _ = \
+        rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                     payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=16,
+                                     feature_degree=8, antithetic=False)
+    print('QE, 16 dates, ', N_time, 100 * est, 100 * stat)
+
+for N_time in [2048]:
+    est, stat, _, _, _, _ = \
+        rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                     payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=256,
+                                     feature_degree=8, antithetic=False)
+    print('QE, 256 dates, ', N_time, 100 * est, 100 * stat)
+'''
+'''
+for N_time in [256, 512, 1024]:
+    est, stat, _, _, _, _ = \
+        rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                     payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=256,
+                                     feature_degree=8, antithetic=False)
+    print('QE, 256 dates, ', N_time, 100 * est, 100 * stat)
+'''
+for N in [2]:
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='BL2')
+    print(rHestonFourier.eur_call_put(S_0=100, K=np.array([100, 105, 110]), lambda_=lambda_, rho=rho, nu=nu,
+                                      theta=theta, V_0=V_0,
+                                      T=T, call=False, rel_tol=1e-05, implied_vol=False, r=r, nodes=nodes,
+                                      weights=weights))
+
+    for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
+        est, stat, _, _, _, _ = \
+            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=4,
+                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             euler=True)
+        print('Euler, 4 dates, ', N_time, 100 * est, 100 * stat)
+        est, stat, _, _, _, _ = \
+            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=4,
+                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             euler=False)
+        print('Weak, 4 dates, ', N_time, 100 * est, 100 * stat)
+    for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
+        est, stat, _, _, _, _ = \
+            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=16,
+                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             euler=True)
+        print('Euler, 16 dates, ', N_time, 100 * est, 100 * stat)
+        est, stat, _, _, _, _ = \
+            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=16,
+                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             euler=False)
+        print('Weak, 16 dates, ', N_time, 100 * est, 100 * stat)
+
+    for N_time in [1024]:
+        est, stat, _, _, _, _ = \
+            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=256,
+                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             euler=True)
+        print('Euler, 256 dates, ', N_time, 100 * est, 100 * stat)
+        est, stat, _, _, _, _ = \
+            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=256,
+                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             euler=False)
+        print('Weak, 256 dates, ', N_time, 100 * est, 100 * stat)
+print('Finished')
+time.sleep(360000)
 
 # smile_errors_weak_Euler_QE(params=params, N=3, N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512]))
 # surface_errors_weak_Euler_QE(params=params, N=3, N_times=np.array([16, 32, 64, 128, 256]))
 # asian_errors_weak_Euler_QE(params=params, N=3, N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256]))
 # print('Finished')
 # time.sleep(360000)
-for N in np.array([1, 2, 4, 5, 6]):
-    print(N, 'weak')
-    compute_rHeston_samples(params=params, Ns=np.array([N]), N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256]),
-                            modes=['BL2'], m=1_000_000, euler=False, sample_paths=True)
-    print(N, 'euler')
-    compute_rHeston_samples(params=params, Ns=np.array([N]), N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256]),
-                            modes=['BL2'], m=1_000_000, euler=True, sample_paths=True)
+'''
+filename = 'rHeston sample paths 4 dim BL2 euler antithetic 1024 time steps, H=0.1, lambda=0.3, rho=-0.7, nu=0.3, theta=0.02, r = 0.06, V_0=0.02, T=1.0'
+arr = np.empty((6, 1000000, 257))
+for i in range(10):
+    print(i)
+    batch = np.load(filename + f', batch {i + 1}.npy')
+    arr[:, i * 50000:(i + 1) * 50000, :] = batch[:, :50000, ::4]
+    arr[:, 500000 + i * 50000:500000 + (i + 1) * 50000, :] = batch[:, 50000:, ::4]
+np.save(filename + '.npy', arr)
+print('Finished')
+time.sleep(3600000)
+
+for N_time in np.array([1024]):
+    for N in np.array([4]):
+        for i in range(5, 10):
+            print(N_time, N, i, 'weak')
+            f, r = compute_rHeston_samples(params=params, Ns=np.array([N]), N_times=np.array([N_time]),
+                                    modes=['BL2'], m=100_000, euler=False, sample_paths=True)
+            f = f.replace('.npy', '')
+            f += f', batch {i + 1}.npy'
+            np.save(f, r)
+            print(N, i, 'euler')
+            f, r = compute_rHeston_samples(params=params, Ns=np.array([N]), N_times=np.array([N_time]),
+                                    modes=['BL2'], m=100_000, euler=True, sample_paths=True)
+            f = f.replace('.npy', '')
+            f += f', batch {i + 1}.npy'
+            np.save(f, r)
 print('Finished!')
 time.sleep(360000)
-for N_time in [512]:
+'''
+'''
+for N_time in [2048]:
     print(N_time)
-    rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=1., rho=rho, r=0., m=1_000_000,
+    rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=1., rho=rho, r=r, m=500_000,
                                 N_time=N_time, sample_paths=True, verbose=2)
 print('Finished')
-time.sleep(360000)
+time.sleep(3600000)
 
+'''
 nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode="BL2")
 print(nodes, weights)
 true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
@@ -123,12 +267,12 @@ compute_rHeston_samples(params=params, Ns=np.array([2]), N_times=np.array([1, 2,
 compute_smiles_given_stock_prices(params=params, Ns=np.array([2]), N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512]),
                                   modes=['BL2'], antithetic=[True])
 time.sleep(360000)
-
+'''
 
 k = np.linspace(-0.5, 0.5, 51)
 K = np.exp(k)
 nodes, weights = rk.quadrature_rule(H=H, N=2, T=T, mode='european')
-'''
+
 euler_smile, euler_smile_lower, euler_smile_upper = \
     rHestonMarkovSamplePaths.eur(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, nodes=nodes,
                                  weights=weights, T=T, S_0=S_0, N_time=25, m=1000000, euler=True, implied_vol=True)

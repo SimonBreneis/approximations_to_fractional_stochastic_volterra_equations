@@ -2,10 +2,15 @@ import numpy as np
 import scipy.interpolate, scipy.special
 import ComputationalFinance as cf
 import scipy.stats
+from scipy.special import ndtri
+from scipy.stats.qmc import Sobol
+from numpy.random import default_rng
+import functions
+from os.path import exists
 
 
-def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=1000, N_time=1000, sample_paths=False,
-            return_times=None, vol_only=False, euler=False, antithetic=True):
+def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, sample_paths=False,
+            return_times=None, vol_only=False, euler=False, antithetic=True, qmc=True):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model.
     :param lambda_: Mean-reversion speed
@@ -22,17 +27,18 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
     :param weights: Can specify the weights directly
     :param sample_paths: If True, returns the entire sample paths, not just the final values. Also returns the sample
         paths of the square root of the volatility and the components of the volatility
-    :param return_times: May specify an array of times at which the sample path values should be returned. If None and
-        sample_paths is True, this is equivalent to return_times = np.linspace(0, T, N_time+1)
+    :param return_times: Integer that specifies how many time steps are returned. Only relevant if sample_paths is True.
+        E.g., N_time is 100 and return_times is 25, then the paths are simulated using 100 equispaced time steps, but
+        only the 26 = 25 + 1 values at the times np.linspace(0, T, 26) are returned. May be used especially for storage
+        saving reasons, as only these (in this case 26) values are ever stored. The number N_time must be divisible by
+        return_times. If return_times is None, it is set to N_time, i.e. we return every time step that was simulated.
     :param vol_only: If True, simulates only the volatility process, not the stock price process
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
-    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param antithetic: If True, uses antithetic variates to reduce the MC error. Deprecated
     :return: Numpy array of the final stock prices
     """
-    if return_times is not None:
-        sample_paths = True
-        return_times = np.fmax(return_times, 0)
-        T = np.amax(return_times)
+    if return_times is None:
+        return_times = N_time
     dt = T / N_time
     N = len(nodes)
     if N == 1:
@@ -52,17 +58,17 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
         b = theta * dt + (nodes * V_init)[:, None] * dt
 
         if vol_only:
-            def step_SV(V_comp_):
+            def step_SV(V_comp_, dW_):
                 sq_V = np.sqrt(np.fmax(weights @ V_comp_, 0))
-                dW = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
-                return A_inv @ (V_comp_ + nu * (sq_V * dW)[None, :] + b)
+                # dW_samples = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
+                return A_inv @ (V_comp_ + nu * (sq_V * dW_)[None, :] + b)
         else:
-            def step_SV(log_S_, V_comp_):
+            def step_SV(log_S_, V_comp_, dBW_):
                 sq_V = np.sqrt(np.fmax(weights @ V_comp_, 0))
-                dW = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
-                dB = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
-                log_S_ = log_S_ + r * dt + sq_V * (rho * dW + np.sqrt(1 - rho ** 2) * dB) - 0.5 * sq_V ** 2 * dt
-                V_comp_ = A_inv @ (V_comp_ + nu * (sq_V * dW)[None, :] + b)
+                # dW = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
+                # dB = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
+                log_S_ = log_S_ + r * dt + sq_V * (rho * dBW_[:, 1] + np.sqrt(1 - rho ** 2) * dBW_[:, 0]) - 0.5 * sq_V ** 2 * dt
+                V_comp_ = A_inv @ (V_comp_ + nu * (sq_V * dBW_[:, 1])[None, :] + b)
                 return log_S_, V_comp_
 
     else:
@@ -81,52 +87,66 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
         B = (6 + np.sqrt(3)) / 4
         A = B - 0.75
 
-        def SDE_step_V(V_):
+        def SDE_step_V(V_, dW_):
             x = weights @ V_
-            rv = cf.rand_uniform(size=m, antithetic=antithetic)
+            # dW_ = cf.rand_uniform(size=m, antithetic=antithetic)
             temp = np.sqrt((3 * z) * x + (B * z) ** 2)
             p_1 = (z / 2) * x * ((A * B - A - B + 1.5) * z + (np.sqrt(3) - 1) / 4 * temp + x) / (
                     (x + B * z - temp) * temp * (temp - (B - A) * z))
             p_2 = x / (1.5 * x + A * (B - A / 2) * z)
-            test_1 = rv < p_1
-            test_2 = p_1 + p_2 <= rv
+            test_1 = dW_ < p_1
+            test_2 = p_1 + p_2 <= dW_
             x_step = A * z * np.ones(len(temp))
             x_step[test_1] = B * z - temp[test_1]
             x_step[test_2] = B * z + temp[test_2]
             return V_ + (x_step / weight_sum)[None, :]
 
-        def step_V(V_):
-            return ODE_step_V(SDE_step_V(ODE_step_V(V_)))
+        def step_V(V_, dW_):
+            return ODE_step_V(SDE_step_V(ODE_step_V(V_), dW_))
 
-        def SDE_step_B(log_S_, V_):
-            dB = cf.rand_normal(loc=0, scale=np.sqrt(dt / 2), size=m, antithetic=antithetic)
+        def SDE_step_B(log_S_, V_, dB_):
+            # dB_ = cf.rand_normal(loc=0, scale=np.sqrt(dt / 2), size=m, antithetic=antithetic)
             x = weights @ V_
-            return log_S_ + np.sqrt(x) * rho_bar * dB - (0.5 * rho_bar_sq * dt / 2) * x, V_
+            return log_S_ + np.sqrt(x) * rho_bar * dB_ - (0.5 * rho_bar_sq * dt / 2) * x, V_
 
         drift_SDE_step_W = - (nodes[0] * V_init[0] + theta) * dt
         fact_1 = dt / 2 * (lambda_ - 0.5 * rho * nu)
 
-        def SDE_step_W(log_S_, V_):
-            V_new = step_V(V_)
+        def SDE_step_W(log_S_, V_, dW_):
+            V_new = step_V(V_, dW_)
             dY = V_ + V_new
             log_S_new = log_S_ + r * dt + rho / nu * (drift_SDE_step_W + (dt / 2 * nodes[0]) * dY[0, :]
                                                       + fact_1 * (weights @ dY) + (V_new[0, :] - V_[0, :]))
             return log_S_new, V_new
 
         if vol_only:
-            def step_SV(V_):
-                return step_V(V_)
+            def step_SV(V_, dW_):
+                return step_V(V_, dW_)
         else:
-            def step_SV(S_, V_):
-                return SDE_step_B(*SDE_step_W(*SDE_step_B(S_, V_)))
+            def step_SV(S_, V_, dBW_):
+                return SDE_step_B(*SDE_step_W(*SDE_step_B(S_, V_, dBW_[:, 0]), dBW_[:, 2]), dBW_[:, 1])
 
     if vol_only:
+        if qmc:
+            sampler = Sobol(d=N_time, scramble=False)
+            dW = sampler.random_base2(m=int(np.ceil(np.log2(m))))  # use a power of two as the number of samples
+            # to ensure good QMC properties
+            if euler:
+                dW = np.sqrt(dt) * ndtri(dW[1:, :])  # throw away the first sample as it is 0, and cannot be inverted
+        else:
+            sampler = np.random.default_rng()
+            if euler:
+                dW = np.sqrt(dt) * sampler.standard_normal((m, N_time))
+            else:
+                dW = sampler.uniform(0, 1, (m, N_time))
+        m = dW.shape[0]
+
         if sample_paths:
             V_comp = np.empty((N, m, N_time + 1))
             V_comp[:, :, 0] = V_init[:, None]
             for i in range(N_time):
                 print(f'Step {i} of {N_time}')
-                V_comp[:, :, i + 1] = step_SV(V_comp[:, :, i])
+                V_comp[:, :, i + 1] = step_SV(V_comp[:, :, i], dW[:, i])
             V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
             if return_times is not None:
                 times = np.linspace(0, T, N_time + 1)
@@ -140,12 +160,33 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             V_comp[:, :] = V_init[:, None]
             for i in range(N_time):
                 print(f'Step {i} of {N_time}')
-                V_comp = step_SV(V_comp)
+                V_comp = step_SV(V_comp, dW[:, i])
             V = np.fmax(weights @ V_comp, 0)
             result = np.empty((N + 1, m))
             result[0, :] = V
             result[1:, :] = V_comp
     else:
+        if qmc:
+            if euler:
+                sampler = Sobol(d=2 * N_time, scramble=False)
+                dBW = sampler.random_base2(m=int(np.ceil(np.log2(m))))[1:, :]  # use a power of two as the number of
+                # samples to ensure good QMC properties. Throw away the first sample as it is 0, and cannot be inverted
+                dBW = np.sqrt(dt) * ndtri(dBW)
+            else:
+                sampler = Sobol(d=3 * N_time, scramble=False)
+                dBW = sampler.random_base2(m=int(np.ceil(np.log2(m))))[1:, :]  # use a power of two as the number of
+                # samples to ensure good QMC properties. Throw away the first sample as it is 0, and cannot be inverted
+                dBW[:, :2 * N_time] = np.sqrt(dt / 2) * ndtri(dBW[:, :2 * N_time])
+        else:
+            sampler = np.random.default_rng()
+            if euler:
+                dBW = np.sqrt(dt) * sampler.standard_normal((m, 2 * N_time))
+            else:
+                dBW = np.empty((m, 3 * N_time))
+                dBW[:, :2 * N_time] = np.sqrt(dt / 2) * sampler.standard_normal((m, 2 * N_time))
+                dBW[:, 2 * N_time:] = sampler.uniform(0, 1, (m, N_time))
+        m = dBW.shape[0]
+
         if sample_paths:
             V_comp = np.empty((N, m, N_time + 1))
             V_comp[:, :, 0] = V_init[:, None]
@@ -153,7 +194,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             log_S[:, 0] = np.log(S_0)
             for i in range(N_time):
                 print(f'Step {i} of {N_time}')
-                log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i])
+                log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i], dBW[:, i::N_time])
             V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
             if return_times is not None:
                 times = np.linspace(0, T, N_time + 1)
@@ -170,7 +211,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho=0., S_0=1., r=0., m=
             log_S = np.ones(m) * np.log(S_0)
             for i in range(N_time):
                 # print(f'Step {i} of {N_time}')
-                log_S, V_comp = step_SV(log_S, V_comp)
+                log_S, V_comp = step_SV(log_S, V_comp, dBW[:, i::N_time])
             V = np.fmax(weights @ V_comp, 0)
             result = np.empty((N + 2, m))
             result[0, :] = np.exp(log_S)
@@ -358,22 +399,36 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
         return am_features(x=x, degree=feature_degree, K=K)
 
     ex_times = np.linspace(0, T, N_dates + 1)
+    '''
+    kind = 'sample paths'
+    params = {'S': 1., 'K': np.array([K]), 'H': 0.1, 'T': T, 'lambda': lambda_, 'rho': rho, 'nu': nu, 'theta': theta, 'V_0': V_0,
+              'rel_tol': 0., 'r': r}
+    vol_simulation = 'euler' if euler else 'mackevicius'
+    filename = functions.get_filename(N=len(nodes), mode='BL2', euler=euler, antithetic=antithetic, N_time=N_time,
+                                      kind=kind, params=params, truth=False, markov=False)
+    filename = f'rHeston sample paths {len(nodes)} dim BL2 {vol_simulation} antithetic {N_time} time steps, H=0.1, ' \
+                   f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, r = 0.06, V_0={V_0:.3}, ' \
+                   f'T=1.0.npy'
+    if exists(filename):  # delete this in any published version. It is trash
+        samples_orig = np.load(filename)
+    else:
+        samples_orig = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
+                               S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
+                               euler=euler, antithetic=antithetic)
+    '''
     samples_orig = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
                            S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
                            euler=euler, antithetic=antithetic)
-    samples_orig = samples_orig[:, :, ::N_time // N_dates]
+    m = samples_orig.shape[1]
+    samples_orig = samples_orig[:, :, ::(samples_orig.shape[-1] - 1) // N_dates]
     samples_ = np.empty((samples_orig.shape[0] - 1, samples_orig.shape[1], samples_orig.shape[2]))
     samples_[0, :, :] = samples_orig[0, :, :]
     samples_[1:, :, :] = weights[:, None, None] * samples_orig[2:, :, :]
     samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]
-    samples_1 = np.empty((samples_.shape[0], m // 2, N_dates + 1))
-    samples_1[:, :m // 4, :] = samples_[:, :m // 4, :]
-    samples_1[:, m // 4:, :] = samples_[:, m // 2:3 * m // 4, :]
-    samples_2 = np.empty((samples_.shape[0], m // 2, N_dates + 1))
-    samples_2[:, :m // 4, :] = samples_[:, m // 4:m // 2, :]
-    samples_2[:, m // 4:, :] = samples_[:, 3 * m // 4:, :]
-    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, antithetic=antithetic, payoff=payoff,
+    samples_1 = samples_[:, :m // 2, :]
+    samples_2 = samples_[:, m // 2:, :]
+    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, antithetic=False, payoff=payoff,
                                                     features=features)
     est, stat = cf.price_am_forward(T=T, r=r, samples=samples_2, payoff=payoff, models=models, features=features,
-                                    antithetic=antithetic)
+                                    antithetic=False)
     return est, stat, biased_est, biased_stat, models, features
