@@ -265,7 +265,7 @@ def eur_MC(S_0, K, T, samples, r=0., payoff="call", antithetic=False, implied_vo
     if antithetic:
         payoffs = 0.5 * (payoff(S=samples[:len(samples) // 2], K=K) + payoff(S=samples[len(samples) // 2:], K=K))
     else:
-        payoffs = payoff_call(S=samples, K=K)
+        payoffs = payoff(S=samples, K=K)
     price_estimate, price_stat = MC(np.exp(-r * T) * payoffs)
     if implied_vol:
         implied_volatility_estimate = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate, payoff=payoff)
