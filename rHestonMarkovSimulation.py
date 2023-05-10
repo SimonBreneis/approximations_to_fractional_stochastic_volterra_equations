@@ -56,6 +56,18 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     else:
         one_node = False
 
+    m_input = m  # the original input of how many samples should be simulated
+    m_return = m  # the final number of samples that we will actually return
+    # m itself is the number of samples that we simulate
+    # We always have m >= m_return >= m_input
+
+    if qmc:
+        m = int(2 ** np.ceil(np.log2(m)) + 0.001)
+        m_return = m
+        if m != m_input:
+            print(f'Using QMC requires simulating a number m of samples that is a power of 2. The input m={m_input} '
+                  f'is not a power of 2. Simulates m={m} samples instead.')
+
     available_memory = np.sqrt(psutil.virtual_memory().available)
     necessary_memory = 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
     if necessary_memory > available_memory:
@@ -67,6 +79,8 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     available_memory_for_random_variables = available_memory / 3
     necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
     number_rounds = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
+    m_per_round = int(np.ceil(m_return / number_rounds))
+    m = m_per_round * number_rounds
 
     V_init = np.zeros(N)
     V_init[0] = V_0 / weights[0]
@@ -149,78 +163,100 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     if vol_only:
         if qmc:
             sampler = Sobol(d=N_time, scramble=False)
-            dW = sampler.random_base2(m=int(np.ceil(np.log2(m))))  # use a power of two as the number of samples
-            # to ensure good QMC properties
-            if euler:
-                dW = np.sqrt(dt) * ndtri(dW[1:, :])  # throw away the first sample as it is 0, and cannot be inverted
         else:
             sampler = np.random.default_rng()
-            if euler:
-                dW = np.sqrt(dt) * sampler.standard_normal((m, N_time))
-            else:
-                dW = sampler.uniform(0, 1, (m, N_time))
-        m = dW.shape[0]
 
         result = np.empty((N + 1, m, return_times + 1)) if sample_paths else np.empty((N + 1, m))
-        current_V_comp = np.empty((N, m))
-        current_V_comp[:, :] = V_init[:, None]
-        for i in range(N_time):
-            print(f'Step {i} of {N_time}')
-            current_V_comp = step_SV(current_V_comp, dW[:, i])
-            if sample_paths and (i + 1) % saving_steps == 0:
-                result[1:, :, (i + 1) // saving_steps] = current_V_comp
+
+        for j in range(number_rounds):
+            if qmc:
+                dW = sampler.random(n=m_per_round)
+                if euler:
+                    if j == 0:
+                        dW[1:, :] = np.sqrt(dt) * ndtri(dW[1:, :])  # first sample is 0 and cannot be inverted
+                        dW[0, :] = 0.
+                    else:
+                        dW = np.sqrt(dt) * ndtri(dW)
+            else:
+                if euler:
+                    dW = np.sqrt(dt) * sampler.standard_normal((m_per_round, N_time))
+                else:
+                    dW = sampler.uniform(0, 1, (m_per_round, N_time))
+
+            current_V_comp = np.empty((N, m_per_round))
+            current_V_comp[:, :] = V_init[:, None]
+            for i in range(N_time):
+                print(f'Step {i} of {N_time}')
+                current_V_comp = step_SV(current_V_comp, dW[:, i])
+                if sample_paths and (i + 1) % saving_steps == 0:
+                    result[1:, j * m_per_round:(j + 1) * m_per_round, (i + 1) // saving_steps] = current_V_comp
+            if not sample_paths:
+                result[1:, j * m_per_round:(j + 1) * m_per_round] = current_V_comp
+
         if sample_paths:
             result[1:, :, 0] = V_init[:, None]
             result[0, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[1:, :, :]), 0)
         else:
-            result[1:, :] = current_V_comp
             result[0, :] = np.fmax(np.einsum('i,ij->j', weights, result[1:, :]), 0)
 
     else:
         if qmc:
             if euler:
                 sampler = Sobol(d=2 * N_time, scramble=False)
-                dBW = sampler.random_base2(m=int(np.ceil(np.log2(m))))[1:, :]  # use a power of two as the number of
-                # samples to ensure good QMC properties. Throw away the first sample as it is 0, and cannot be inverted
-                dBW = np.sqrt(dt) * ndtri(dBW)
             else:
                 sampler = Sobol(d=3 * N_time, scramble=False)
-                dBW = sampler.random_base2(m=int(np.ceil(np.log2(m))))[1:, :]  # use a power of two as the number of
-                # samples to ensure good QMC properties. Throw away the first sample as it is 0, and cannot be inverted
-                dBW[:, :2 * N_time] = np.sqrt(dt / 2) * ndtri(dBW[:, :2 * N_time])
         else:
             sampler = np.random.default_rng()
-            if euler:
-                dBW = np.sqrt(dt) * sampler.standard_normal((m, 2 * N_time))
-            else:
-                dBW = np.empty((m, 3 * N_time))
-                dBW[:, :2 * N_time] = np.sqrt(dt / 2) * sampler.standard_normal((m, 2 * N_time))
-                dBW[:, 2 * N_time:] = sampler.uniform(0, 1, (m, N_time))
-        m = dBW.shape[0]
 
         result = np.empty((N + 2, m, return_times + 1)) if sample_paths else np.empty((N + 2, m))
-        current_V_comp = np.empty((N, m))
-        current_V_comp[:, :] = V_init[:, None]
-        current_log_S = np.full(m, np.log(S_0))
-        for i in range(N_time):
-            print(f'Step {i} of {N_time}')
-            current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
-            if sample_paths and (i + 1) % saving_steps == 0:
-                result[0, :, (i + 1) // saving_steps] = current_log_S
-                result[2:, :, (i + 1) // saving_steps] = current_V_comp
+
+        for j in range(number_rounds):
+            if qmc:
+                if euler:
+                    dBW = sampler.random(n=m_per_round)
+                    if j == 0:
+                        dBW[1:, :] = np.sqrt(dt) * ndtri(dBW[1:, :])  # first sample is 0 and cannot be inverted
+                        dBW[0, :] = 0.
+                    else:
+                        dBW = np.sqrt(dt) * ndtri(dBW)
+                else:
+                    dBW = sampler.random(n=m_per_round)
+                    if j == 0:  # first sample is 0 and cannot be inverted
+                        dBW[1:, :2 * N_time] = np.sqrt(dt / 2) * ndtri(dBW[1:, :2 * N_time])
+                        dBW[0, :2 * N_time] = 0.
+                    else:
+                        dBW[:, :2 * N_time] = np.sqrt(dt / 2) * ndtri(dBW[:, :2 * N_time])
+            else:
+                if euler:
+                    dBW = np.sqrt(dt) * sampler.standard_normal((m_per_round, 2 * N_time))
+                else:
+                    dBW = np.empty((m_per_round, 3 * N_time))
+                    dBW[:, :2 * N_time] = np.sqrt(dt / 2) * sampler.standard_normal((m_per_round, 2 * N_time))
+                    dBW[:, 2 * N_time:] = sampler.uniform(0, 1, (m_per_round, N_time))
+
+            current_V_comp = np.empty((N, m_per_round))
+            current_V_comp[:, :] = V_init[:, None]
+            current_log_S = np.full(m_per_round, np.log(S_0))
+            for i in range(N_time):
+                print(f'Step {i} of {N_time}')
+                current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
+                if sample_paths and (i + 1) % saving_steps == 0:
+                    result[0, j * m_per_round:(j + 1) * m_per_round, (i + 1) // saving_steps] = current_log_S
+                    result[2:, j * m_per_round:(j + 1) * m_per_round, (i + 1) // saving_steps] = current_V_comp
+            if not sample_paths:
+                result[0, j * m_per_round:(j + 1) * m_per_round] = current_log_S
+                result[2:, j * m_per_round:(j + 1) * m_per_round] = current_V_comp
         if sample_paths:
             result[0, :, 0] = np.log(S_0)
             result[2:, :, 0] = V_init[:, None]
             result[1, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[2:, :, :]), 0)
         else:
-            result[0, :] = current_log_S
-            result[1, :] = np.fmax(np.einsum('i,ij->j', weights, current_V_comp), 0)
-            result[2:, :] = current_V_comp
+            result[1, :] = np.fmax(np.einsum('i,ij->j', weights, result[2:, :]), 0)
 
     result[0, ...] = np.exp(result[0, ...])
     if one_node:
         result = result[:-1, ...]
-    return result
+    return result[:, :m_return, ...]
 
 
 def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m=1000, N_time=1000, euler=False,
