@@ -156,29 +156,30 @@ for N in [2]:
                                       weights=weights))
 
     for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
-        est, stat, _, _, _, _ = \
+        est, stat, a, b, _, _ = \
             rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
                                              payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=4,
-                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             feature_degree=8, qmc=True, nodes=nodes, weights=weights,
                                              euler=True)
-        print('Euler, 4 dates, ', N_time, 100 * est, 100 * stat)
-        est, stat, _, _, _, _ = \
-            rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
-                                             payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=4,
-                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
-                                             euler=False)
-        print('Weak, 4 dates, ', N_time, 100 * est, 100 * stat)
+        print('Euler, 4 dates, ', N_time, 100 * est, 100 * stat, 100*a, 100*b)
+        for m in range(1, 23):
+            est, stat, _, _, _, _ = \
+                rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                                 payoff='put', r=r, m=2 ** m, N_time=N_time, N_dates=4,
+                                                 feature_degree=8, qmc=True, nodes=nodes, weights=weights,
+                                                 euler=False)
+            print('Weak, 4 dates, ', N_time, 2 ** m, 100 * est, 100 * stat)
     for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
         est, stat, _, _, _, _ = \
             rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
                                              payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=16,
-                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             feature_degree=8, qmc=True, nodes=nodes, weights=weights,
                                              euler=True)
         print('Euler, 16 dates, ', N_time, 100 * est, 100 * stat)
         est, stat, _, _, _, _ = \
             rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
                                              payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=16,
-                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             feature_degree=8, qmc=True, nodes=nodes, weights=weights,
                                              euler=False)
         print('Weak, 16 dates, ', N_time, 100 * est, 100 * stat)
 
@@ -186,13 +187,13 @@ for N in [2]:
         est, stat, _, _, _, _ = \
             rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
                                              payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=256,
-                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             feature_degree=8, qmc=True, nodes=nodes, weights=weights,
                                              euler=True)
         print('Euler, 256 dates, ', N_time, 100 * est, 100 * stat)
         est, stat, _, _, _, _ = \
             rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
                                              payoff='put', r=r, m=1_000_000, N_time=N_time, N_dates=256,
-                                             feature_degree=8, antithetic=True, nodes=nodes, weights=weights,
+                                             feature_degree=8, qmc=True, nodes=nodes, weights=weights,
                                              euler=False)
         print('Weak, 256 dates, ', N_time, 100 * est, 100 * stat)
 print('Finished')
