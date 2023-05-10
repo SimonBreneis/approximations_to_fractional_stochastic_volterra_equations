@@ -11,7 +11,7 @@ import psutil
 
 
 def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, sample_paths=False,
-            return_times=None, vol_only=False, euler=False, antithetic=True, qmc=True):
+            return_times=None, vol_only=False, euler=False, qmc=True):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model.
     :param lambda_: Mean-reversion speed
@@ -20,12 +20,12 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     :param theta: Mean variance
     :param V_0: Initial variance
     :param T: Final time/Time of maturity
-    :param N_time: Number of time steps
+    :param N_time: Number of time steps for the simulation
     :param S_0: Initial stock price
     :param r: Interest rate
-    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
-    :param nodes: Can specify the nodes directly
-    :param weights: Can specify the weights directly
+    :param m: Number of samples
+    :param nodes: Nodes of the Markovian approximation
+    :param weights: Weights of the Markovian approximation
     :param sample_paths: If True, returns the entire sample paths, not just the final values. Also returns the sample
         paths of the square root of the volatility and the components of the volatility
     :param return_times: Integer that specifies how many time steps are returned. Only relevant if sample_paths is True.
@@ -35,7 +35,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         return_times. If return_times is None, it is set to N_time, i.e. we return every time step that was simulated.
     :param vol_only: If True, simulates only the volatility process, not the stock price process
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
-    :param antithetic: If True, uses antithetic variates to reduce the MC error. Deprecated
+    :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     :return: Numpy array of the final stock prices
     """
     if sample_paths is False:
@@ -259,10 +259,38 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     return result[:, :m_return, ...]
 
 
-def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m=1000, N_time=1000, euler=False,
-        antithetic=True, payoff='call', implied_vol=False):
+def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True, payoff='call',
+        implied_vol=False):
     """
-    Gives the price or the implied volatility of a European option in the approximated, Markovian rough Heston model.
+    Gives the price or the implied volatility of a European option in the approximated, Markovian rough Heston model
+    using MC or QMC simulation.
+    :param K: Strike prices, assumed to be a numpy array
+    :param lambda_: Mean-reversion speed
+    :param rho: Correlation between Brownian motions
+    :param nu: Volatility of volatility
+    :param theta: Mean variance
+    :param V_0: Initial variance
+    :param S_0: Initial stock price
+    :param T: Final time/Time of maturity
+    :param nodes: The nodes of the Markovian approximation
+    :param weights: The weights of the Markovian approximation
+    :param r: Interest rate
+    :param m: Number of samples
+    :param N_time: Number of time steps used in simulation
+    :param euler: If True, uses an Euler scheme. If False, uses moment matching
+    :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
+    :param payoff: The payoff function, or the string 'call' or the string 'put'
+    :param implied_vol: If True (only for payoff 'call' or 'put') returns the implied volatility, else returns the price
+    return: The prices of the call option for the various strike prices in K
+    """
+    samples_ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, r=r, N_time=N_time,
+                       nodes=nodes, weights=weights, sample_paths=False, euler=euler, qmc=qmc)[0, :]
+    return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_, payoff=payoff, implied_vol=implied_vol)
+
+
+def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True):
+    """
+    Gives the price of a European call option in the approximated, Markovian rough Heston model.
     :param K: Strike prices, assumed to be a numpy array
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
@@ -277,44 +305,15 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r=0., m=1000, N
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param N_time: Number of time steps used in simulation
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
-    :param antithetic: If True, uses antithetic variates to reduce the MC error
-    :param payoff: The payoff function, or the string 'call' or the string 'put'
-    :param implied_vol: If True (only for payoff 'call' or 'put') returns the implied volatility, else returns the price
-    return: The prices of the call option for the various strike prices in K
-    """
-    samples_ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, r=r, N_time=N_time,
-                       nodes=nodes, weights=weights, sample_paths=False, euler=euler, antithetic=antithetic)[0, :]
-    return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_, payoff=payoff, antithetic=antithetic,
-                     implied_vol=implied_vol)
-
-
-def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, m=1000, N_time=1000, euler=False,
-                          antithetic=True):
-    """
-    Gives the price of a European call option in the approximated, Markovian rough Heston model.
-    :param K: Strike prices, assumed to be a numpy array
-    :param lambda_: Mean-reversion speed
-    :param rho: Correlation between Brownian motions
-    :param nu: Volatility of volatility
-    :param theta: Mean variance
-    :param V_0: Initial variance
-    :param S_0: Initial stock price
-    :param T: Final time/Time of maturity
-    :param nodes: The nodes of the Markovian approximation
-    :param weights: The weights of the Markovian approximation
-    :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
-    :param N_time: Number of time steps used in simulation
-    :param euler: If True, uses an Euler scheme. If False, uses moment matching
-    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     return: The prices of the call option for the various strike prices in K
     """
     samples_ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, N_time=N_time,
-                       nodes=nodes, weights=weights, sample_paths=True, euler=euler, antithetic=antithetic)[0, :, :]
-    return cf.price_geom_asian_call_MC(K=K, samples=samples_, antithetic=antithetic)
+                       nodes=nodes, weights=weights, r=r, sample_paths=True, euler=euler, qmc=qmc)[0, :, :]
+    return cf.price_geom_asian_call_MC(K=K, samples=samples_)
 
 
-def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m=1000, N_time=1000, euler=False,
-                       antithetic=True):
+def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time, euler=False, qmc=True):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
     :param K: Strike prices, assumed to be a numpy array
@@ -328,12 +327,13 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m=1000, N_
     :param m: Number of samples. If WB is specified, uses as many samples as WB contains, regardless of the parameter m
     :param N_time: Number of time steps used in simulation
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
-    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     return: The prices of the call option for the various strike prices in K
     """
     samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, m=m, N_time=N_time, nodes=nodes,
-                       weights=weights, sample_paths=True, vol_only=True, euler=euler, antithetic=antithetic)[0, :, :]
-    return cf.price_avg_vol_call_MC(K=K, samples=samples_, antithetic=antithetic)
+                       weights=weights, r=0., S_0=1., rho=0., sample_paths=True, vol_only=True, euler=euler,
+                       qmc=qmc)[0, :, :]
+    return cf.price_avg_vol_call_MC(K=K, samples=samples_)
 
 
 def am_features(x, degree=6, K=0.):
@@ -398,8 +398,8 @@ def am_features(x, degree=6, K=0.):
     return feat
 
 
-def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=0., m=1000000, N_time=200, N_dates=12,
-             feature_degree=6, euler=False, antithetic=True):
+def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r, m, N_time, N_dates, feature_degree=6,
+             euler=False, qmc=True):
     """
     Gives the price of an American option in the approximated, Markovian rough Heston model.
     :param K: Strike price
@@ -414,12 +414,12 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
     :param weights: The weights of the Markovian approximation
     :param payoff: The payoff function, either 'call' or 'put' or a function taking as inputs S (samples) and K (strike)
     :param r: Interest rate
-    :param m: Number of samples. Uses half of them for fitting the stopping rule, and half of them for pricing
+    :param m: Number of samples. Uses m for fitting the stopping rule, and another m for pricing
     :param N_time: Number of time steps used in the simulation
     :param N_dates: Number of exercise dates. If None, N_dates = N_time
     :param feature_degree: The degree of the polynomial features used in the regression
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
-    :param antithetic: If True, uses antithetic variates to reduce the MC error
+    :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     return: The prices of the call option for the various strike prices in K
     """
     if payoff == 'call':
@@ -451,19 +451,16 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
                                S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
                                euler=euler, antithetic=antithetic)
     '''
-    samples_orig = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
+
+    def get_samples():
+        samples_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
                            S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates, vol_only=False,
-                           euler=euler, antithetic=antithetic)
-    m = samples_orig.shape[1]
-    samples_orig = samples_orig[:, :, ::(samples_orig.shape[-1] - 1) // N_dates]
-    samples_ = np.empty((samples_orig.shape[0] - 1, samples_orig.shape[1], samples_orig.shape[2]))
-    samples_[0, :, :] = samples_orig[0, :, :]
-    samples_[1:, :, :] = weights[:, None, None] * samples_orig[2:, :, :]
-    samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]
-    samples_1 = samples_[:, :m // 2, :]
-    samples_2 = samples_[:, m // 2:, :]
-    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, antithetic=False, payoff=payoff,
-                                                    features=features)
-    est, stat = cf.price_am_forward(T=T, r=r, samples=samples_2, payoff=payoff, models=models, features=features,
-                                    antithetic=False)
+                           euler=euler, qmc=qmc)
+        samples_[1:-1, :, :] = weights[:, None, None] * samples_[2:, :, :]
+        samples_ = samples_[:-1, :, :]
+        samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]
+        return samples_
+
+    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=get_samples(), payoff=payoff, features=features)
+    est, stat = cf.price_am_forward(T=T, r=r, samples=get_samples(), payoff=payoff, models=models, features=features)
     return est, stat, biased_est, biased_stat, models, features
