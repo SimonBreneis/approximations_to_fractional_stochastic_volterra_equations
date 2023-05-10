@@ -7,6 +7,7 @@ from scipy.stats.qmc import Sobol
 from numpy.random import default_rng
 import functions
 from os.path import exists
+import psutil
 
 
 def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, sample_paths=False,
@@ -37,8 +38,14 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     :param antithetic: If True, uses antithetic variates to reduce the MC error. Deprecated
     :return: Numpy array of the final stock prices
     """
+    if sample_paths is False:
+        return_times = 1
     if return_times is None:
         return_times = N_time
+    if N_time % return_times != 0:
+        raise ValueError(f'The number of time steps for the simulation N_time={N_time} is not divisible by the number'
+                         f'of time steps that should be returned return_times={return_times}.')
+    saving_steps = N_time // return_times
     dt = T / N_time
     N = len(nodes)
     if N == 1:
@@ -48,6 +55,18 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         one_node = True
     else:
         one_node = False
+
+    available_memory = np.sqrt(psutil.virtual_memory().available)
+    necessary_memory = 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    if necessary_memory > available_memory:
+        raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with'
+                          f'{N} Markovian dimensions, {return_times} time points where the sample paths should be '
+                          f'returned and {m} sample paths. Roughly {necessary_memory}**2 bytes needed, '
+                          f'while only {available_memory}**2 bytes are available.')
+
+    available_memory_for_random_variables = available_memory / 3
+    necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    number_rounds = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
 
     V_init = np.zeros(N)
     V_init[0] = V_0 / weights[0]
@@ -67,7 +86,8 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                 sq_V = np.sqrt(np.fmax(weights @ V_comp_, 0))
                 # dW = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
                 # dB = cf.rand_normal(loc=0, scale=np.sqrt(dt), size=m, antithetic=antithetic)
-                log_S_ = log_S_ + r * dt + sq_V * (rho * dBW_[:, 1] + np.sqrt(1 - rho ** 2) * dBW_[:, 0]) - 0.5 * sq_V ** 2 * dt
+                log_S_ = log_S_ + r * dt + sq_V * (rho * dBW_[:, 1] + np.sqrt(1 - rho ** 2) * dBW_[:, 0]) \
+                    - 0.5 * sq_V ** 2 * dt
                 V_comp_ = A_inv @ (V_comp_ + nu * (sq_V * dBW_[:, 1])[None, :] + b)
                 return log_S_, V_comp_
 
@@ -141,30 +161,21 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                 dW = sampler.uniform(0, 1, (m, N_time))
         m = dW.shape[0]
 
+        result = np.empty((N + 1, m, return_times + 1)) if sample_paths else np.empty((N + 1, m))
+        current_V_comp = np.empty((N, m))
+        current_V_comp[:, :] = V_init[:, None]
+        for i in range(N_time):
+            print(f'Step {i} of {N_time}')
+            current_V_comp = step_SV(current_V_comp, dW[:, i])
+            if sample_paths and (i + 1) % saving_steps == 0:
+                result[1:, :, (i + 1) // saving_steps] = current_V_comp
         if sample_paths:
-            V_comp = np.empty((N, m, N_time + 1))
-            V_comp[:, :, 0] = V_init[:, None]
-            for i in range(N_time):
-                print(f'Step {i} of {N_time}')
-                V_comp[:, :, i + 1] = step_SV(V_comp[:, :, i], dW[:, i])
-            V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
-            if return_times is not None:
-                times = np.linspace(0, T, N_time + 1)
-                V = scipy.interpolate.interp1d(x=times, y=V)(return_times)
-                V_comp = scipy.interpolate.interp1d(x=times, y=V_comp)(return_times)
-            result = np.empty((N + 1, m, V.shape[-1]))
-            result[0, :, :] = V
-            result[1:, :, :] = V_comp
+            result[1:, :, 0] = V_init[:, None]
+            result[0, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[1:, :, :]), 0)
         else:
-            V_comp = np.zeros((N, m))
-            V_comp[:, :] = V_init[:, None]
-            for i in range(N_time):
-                print(f'Step {i} of {N_time}')
-                V_comp = step_SV(V_comp, dW[:, i])
-            V = np.fmax(weights @ V_comp, 0)
-            result = np.empty((N + 1, m))
-            result[0, :] = V
-            result[1:, :] = V_comp
+            result[1:, :] = current_V_comp
+            result[0, :] = np.fmax(np.einsum('i,ij->j', weights, result[1:, :]), 0)
+
     else:
         if qmc:
             if euler:
@@ -187,37 +198,26 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                 dBW[:, 2 * N_time:] = sampler.uniform(0, 1, (m, N_time))
         m = dBW.shape[0]
 
+        result = np.empty((N + 2, m, return_times + 1)) if sample_paths else np.empty((N + 2, m))
+        current_V_comp = np.empty((N, m))
+        current_V_comp[:, :] = V_init[:, None]
+        current_log_S = np.full(m, np.log(S_0))
+        for i in range(N_time):
+            print(f'Step {i} of {N_time}')
+            current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
+            if sample_paths and (i + 1) % saving_steps == 0:
+                result[0, :, (i + 1) // saving_steps] = current_log_S
+                result[2:, :, (i + 1) // saving_steps] = current_V_comp
         if sample_paths:
-            V_comp = np.empty((N, m, N_time + 1))
-            V_comp[:, :, 0] = V_init[:, None]
-            log_S = np.empty((m, N_time + 1))
-            log_S[:, 0] = np.log(S_0)
-            for i in range(N_time):
-                print(f'Step {i} of {N_time}')
-                log_S[:, i + 1], V_comp[:, :, i + 1] = step_SV(log_S[:, i], V_comp[:, :, i], dBW[:, i::N_time])
-            V = np.fmax(np.einsum('i,ijk->jk', weights, V_comp), 0)
-            if return_times is not None:
-                times = np.linspace(0, T, N_time + 1)
-                log_S = scipy.interpolate.interp1d(x=times, y=log_S)(return_times)
-                V = scipy.interpolate.interp1d(x=times, y=V)(return_times)
-                V_comp = scipy.interpolate.interp1d(x=times, y=V_comp)(return_times)
-            result = np.empty((N + 2, m, V.shape[-1]))
-            result[0, :, :] = np.exp(log_S)
-            result[1, :, :] = V
-            result[2:, :, :] = V_comp
+            result[0, :, 0] = np.log(S_0)
+            result[2:, :, 0] = V_init[:, None]
+            result[1, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[2:, :, :]), 0)
         else:
-            V_comp = np.zeros((N, m))
-            V_comp[:, :] = V_init[:, None]
-            log_S = np.ones(m) * np.log(S_0)
-            for i in range(N_time):
-                # print(f'Step {i} of {N_time}')
-                log_S, V_comp = step_SV(log_S, V_comp, dBW[:, i::N_time])
-            V = np.fmax(weights @ V_comp, 0)
-            result = np.empty((N + 2, m))
-            result[0, :] = np.exp(log_S)
-            result[1, :] = V
-            result[2:, :] = V_comp
+            result[0, :] = current_log_S
+            result[1, :] = np.fmax(np.einsum('i,ij->j', weights, current_V_comp), 0)
+            result[2:, :] = current_V_comp
 
+    result[0, ...] = np.exp(result[0, ...])
     if one_node:
         result = result[:-1, ...]
     return result
@@ -398,7 +398,6 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
     def features(x):
         return am_features(x=x, degree=feature_degree, K=K)
 
-    ex_times = np.linspace(0, T, N_dates + 1)
     '''
     kind = 'sample paths'
     params = {'S': 1., 'K': np.array([K]), 'H': 0.1, 'T': T, 'lambda': lambda_, 'rho': rho, 'nu': nu, 'theta': theta, 'V_0': V_0,
@@ -417,7 +416,7 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r=
                                euler=euler, antithetic=antithetic)
     '''
     samples_orig = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
-                           S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
+                           S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates, vol_only=False,
                            euler=euler, antithetic=antithetic)
     m = samples_orig.shape[1]
     samples_orig = samples_orig[:, :, ::(samples_orig.shape[-1] - 1) // N_dates]

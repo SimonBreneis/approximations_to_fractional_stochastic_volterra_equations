@@ -4,16 +4,17 @@ import numpy as np
 import Data
 import ComputationalFinance
 import RoughKernel as rk
-# import rBergomi
+import rBergomi
 import fBmMarkov
 import functions
 import rHestonFourier
 import rHestonMarkovSimulation
 import rHestonQESimulation
 from functions import *
-# import rBergomiMarkov
+import rBergomiMarkov
 import rHestonMomentMatching
 import scipy.stats, scipy.optimize, scipy.integrate, scipy.linalg, scipy.special
+
 
 '''
 S_0, lambda_, rho, nu, theta, V_0, rel_tol, T, H = 1., 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05, 1., 0.1
