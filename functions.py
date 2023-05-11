@@ -193,6 +193,7 @@ def get_filename(kind, N=None, mode=None, euler=False, antithetic=True, N_time=N
     theta = params['theta']
     V_0 = params['V_0']
     T = params['T']
+    r = params['r']
     K = (np.log(np.amin(params['K'])), np.log(np.amax(params['K'])), len(params['K']))
     K_string = f'K=({K[0]:.4}, {K[1]:.4}, {K[2]})'
     if isinstance(T, np.ndarray) and len(T) > 1:
@@ -201,19 +202,24 @@ def get_filename(kind, N=None, mode=None, euler=False, antithetic=True, N_time=N
         T_string = f'T={T[0]:.4}'
     else:
         T_string = f'T={T:.4}'
+    if r == 0.:
+        r_string = ''
+    else:
+        r_string = f'r = {r:.3}, '
 
     if truth:
         return f'rHeston {kind}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, ' \
-               f'V_0={V_0:.3}, {T_string}, {K_string}.npy'
+               f'{r_string}V_0={V_0:.3}, {T_string}, {K_string}.npy'
     else:
         if markov:
             return f'rHeston {kind} {N} dim {mode}, H={H:.3}, lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, ' \
-                   f'theta={theta:.3}, V_0={V_0:.3}, {T_string}, {K_string}.npy'
+                   f'theta={theta:.3}, {r_string}V_0={V_0:.3}, {T_string}, {K_string}.npy'
         else:
             vol_simulation = 'euler' if euler else 'mackevicius'
             antith = ' antithetic' if antithetic else ''
             return f'rHeston {kind} {N} dim {mode} {vol_simulation}{antith} {N_time} time steps, H={H:.3}, ' \
-                   f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, {T_string}.npy'
+                   f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, {r_string}V_0={V_0:.3}, ' \
+                   f'{T_string}.npy'
 
 
 def log_linear_regression(x, y):
@@ -676,7 +682,8 @@ def compute_rHeston_samples(params, Ns=None, N_times=None, modes=None, euler=Fal
                     result = rHeston_samples(params=params_, m=m, N_time=N_time, nodes=nodes, weights=weights,
                                              sample_paths=sample_paths, return_times=return_times,
                                              vol_only=vol_only, euler=euler, antithetic=antithetic)
-                    np.save(filename, result)
+                    # np.save(filename, result)
+    return filename, result
 
 
 def plot_smile_errors_given_stock_prices(Ns, N_times, modes, euler, antithetic, nodes, markov_errors, total_errors,

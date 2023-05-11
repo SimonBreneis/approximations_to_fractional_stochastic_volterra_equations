@@ -11,7 +11,7 @@ import psutil
 
 
 def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, sample_paths=False, return_times=None,
-            vol_only=False, euler=False, qmc=True, sampler=None, rv_shift=False, verbose=0):
+            vol_only=False, euler=False, qmc=True, rng=None, rv_shift=False, verbose=0):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model.
     :param lambda_: Mean-reversion speed
@@ -36,14 +36,14 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     :param vol_only: If True, simulates only the volatility process, not the stock price process
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
-    :param sampler: Can specify a sampler to use for sampling the underlying random variables. If qmc is true, expects
+    :param rng: Can specify a sampler to use for sampling the underlying random variables. If qmc is true, expects
         an instance of scipy.stats.qmc.Sobol() with the correctly specified dimension of the simulated random variables.
         If qmc is False, expects an instance of np.random.default_rng()
     :param rv_shift: Only relevant when using QMC. Can specify a shift by which the uniform random variables in [0,1)^d
         are drawn. When the random variables X are drawn from Sobol, instead uses (X + rv_shift) mod 1. If True,
         randomly generates such a random shift
     :param verbose: Determines the number of intermediary results printed to the console
-    :return: Numpy array of the simulations, and the sampler that was used for sampling the underlying random variables
+    :return: Numpy array of the simulations, and the rng that was used for generating the underlying random variables
     """
     if sample_paths is False:
         return_times = 1
@@ -63,17 +63,17 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     else:
         one_node = False
 
-    if sampler is None:
+    if rng is None:
         if qmc:
             if vol_only:
-                sampler = Sobol(d=N_time, scramble=False)
+                rng = Sobol(d=N_time, scramble=False)
             else:
                 if euler:
-                    sampler = Sobol(d=2 * N_time, scramble=False)
+                    rng = Sobol(d=2 * N_time, scramble=False)
                 else:
-                    sampler = Sobol(d=3 * N_time, scramble=False)
+                    rng = Sobol(d=3 * N_time, scramble=False)
         else:
-            sampler = np.random.default_rng()
+            rng = np.random.default_rng()
     if isinstance(rv_shift, bool) and rv_shift:
         dim = N_time
         if not vol_only and euler:
@@ -105,9 +105,9 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
 
     available_memory_for_random_variables = available_memory / 3
     necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
-    number_rounds = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
-    m_per_round = int(np.ceil(m_return / number_rounds))
-    m = m_per_round * number_rounds
+    n_batches = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
+    m_batch = int(np.ceil(m_return / n_batches))
+    m = m_batch * n_batches
 
     V_init = np.zeros(N)
     V_init[0] = V_0 / weights[0]
@@ -190,7 +190,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     def generate_samples():
         if vol_only:
             if qmc:
-                rv = sampler.random(n=m_per_round)
+                rv = rng.random(n=m_batch)
                 if isinstance(rv_shift, np.ndarray):
                     rv = (rv + rv_shift) % 1.
                 if euler:
@@ -201,12 +201,12 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                         rv = np.sqrt(dt) * ndtri(rv)
             else:
                 if euler:
-                    rv = np.sqrt(dt) * sampler.standard_normal((m_per_round, N_time))
+                    rv = np.sqrt(dt) * rng.standard_normal((m_batch, N_time))
                 else:
-                    rv = sampler.uniform(0, 1, (m_per_round, N_time))
+                    rv = rng.uniform(0, 1, (m_batch, N_time))
         else:
             if qmc:
-                rv = sampler.random(n=m_per_round)
+                rv = rng.random(n=m_batch)
                 if isinstance(rv_shift, np.ndarray):
                     rv = (rv + rv_shift) % 1.
                 if euler:
@@ -223,27 +223,27 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                         rv[:, :2 * N_time] = np.sqrt(dt / 2) * ndtri(rv[:, :2 * N_time])
             else:
                 if euler:
-                    rv = np.sqrt(dt) * sampler.standard_normal((m_per_round, 2 * N_time))
+                    rv = np.sqrt(dt) * rng.standard_normal((m_batch, 2 * N_time))
                 else:
-                    rv = np.empty((m_per_round, 3 * N_time))
-                    rv[:, :2 * N_time] = np.sqrt(dt / 2) * sampler.standard_normal((m_per_round, 2 * N_time))
-                    rv[:, 2 * N_time:] = sampler.uniform(0, 1, (m_per_round, N_time))
+                    rv = np.empty((m_batch, 3 * N_time))
+                    rv[:, :2 * N_time] = np.sqrt(dt / 2) * rng.standard_normal((m_batch, 2 * N_time))
+                    rv[:, 2 * N_time:] = rng.uniform(0, 1, (m_batch, N_time))
         return rv
 
     if vol_only:
         result = np.empty((N + 1, m, return_times + 1)) if sample_paths else np.empty((N + 1, m))
-        for j in range(number_rounds):
+        for j in range(n_batches):
             dW = generate_samples()
-            current_V_comp = np.empty((N, m_per_round))
+            current_V_comp = np.empty((N, m_batch))
             current_V_comp[:, :] = V_init[:, None]
             for i in range(N_time):
                 if verbose >= 1:
-                    print(f'Simulation round {j + 1} of {number_rounds}, step {i + 1} of {N_time}')
+                    print(f'Simulation round {j + 1} of {n_batches}, step {i + 1} of {N_time}')
                 current_V_comp = step_SV(current_V_comp, dW[:, i])
                 if sample_paths and (i + 1) % saving_steps == 0:
-                    result[1:, j * m_per_round:(j + 1) * m_per_round, (i + 1) // saving_steps] = current_V_comp
+                    result[1:, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_V_comp
             if not sample_paths:
-                result[1:, j * m_per_round:(j + 1) * m_per_round] = current_V_comp
+                result[1:, j * m_batch:(j + 1) * m_batch] = current_V_comp
 
         if sample_paths:
             result[1:, :, 0] = V_init[:, None]
@@ -253,21 +253,21 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
 
     else:
         result = np.empty((N + 2, m, return_times + 1)) if sample_paths else np.empty((N + 2, m))
-        for j in range(number_rounds):
+        for j in range(n_batches):
             dBW = generate_samples()
-            current_V_comp = np.empty((N, m_per_round))
+            current_V_comp = np.empty((N, m_batch))
             current_V_comp[:, :] = V_init[:, None]
-            current_log_S = np.full(m_per_round, np.log(S_0))
+            current_log_S = np.full(m_batch, np.log(S_0))
             for i in range(N_time):
                 if verbose >= 1:
-                    print(f'Simulation round {j + 1} of {number_rounds}, step {i + 1} of {N_time}')
+                    print(f'Simulation round {j + 1} of {n_batches}, step {i + 1} of {N_time}')
                 current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
                 if sample_paths and (i + 1) % saving_steps == 0:
-                    result[0, j * m_per_round:(j + 1) * m_per_round, (i + 1) // saving_steps] = current_log_S
-                    result[2:, j * m_per_round:(j + 1) * m_per_round, (i + 1) // saving_steps] = current_V_comp
+                    result[0, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_log_S
+                    result[2:, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_V_comp
             if not sample_paths:
-                result[0, j * m_per_round:(j + 1) * m_per_round] = current_log_S
-                result[2:, j * m_per_round:(j + 1) * m_per_round] = current_V_comp
+                result[0, j * m_batch:(j + 1) * m_batch] = current_log_S
+                result[2:, j * m_batch:(j + 1) * m_batch] = current_V_comp
         if sample_paths:
             result[0, :, 0] = np.log(S_0)
             result[2:, :, 0] = V_init[:, None]
@@ -278,7 +278,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     result[0, ...] = np.exp(result[0, ...])
     if one_node:
         result = result[:-1, ...]
-    return result[:, :m_return, ...], sampler
+    return result[:, :m_return, ...], rng
 
 
 def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True, payoff='call',
@@ -468,12 +468,6 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
             return cf.payoff_put(S=S, K=K)
     if N_dates is None:
         N_dates = N_time
-    if qmc:
-        m_ = int(2 ** np.ceil(np.log2(m)) + 0.001)
-        if m != m_:
-            print(f'Using QMC requires simulating a number m of samples that is a power of 2. The input m={m} '
-                  f'is not a power of 2. Simulates m={m_} samples instead.')
-            m = m_
 
     def features(x):
         return am_features(x=x, degree=feature_degree, K=K)
@@ -495,28 +489,34 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
                                S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
                                euler=euler, antithetic=antithetic)
     '''
-    def get_samples(sampler_=None, rv_shift=False):
-        samples_, sampler_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
-                                     rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates,
-                                     vol_only=False, euler=euler, qmc=qmc, sampler=sampler_, rv_shift=rv_shift)
+    def get_samples(rng_=None, rv_shift=False):
+        samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
+                                 rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates,
+                                 vol_only=False, euler=euler, qmc=qmc, rng=rng_, rv_shift=rv_shift)
         samples_[1:-1, :, :] = weights[:, None, None] * samples_[2:, :, :]
         samples_ = samples_[:-1, :, :]
         samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]
-        return samples_, sampler_
+        return samples_, rng_
 
-    samples_1, sampler = get_samples()
-    (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff, features=features)
     if qmc:
+        rng = None
         estimates = np.empty(qmc_error_estimators)
         for i in range(qmc_error_estimators):
-            samples_1, sampler = get_samples(sampler, False if i == 0 else True)
-            sampler.reset()
-            sampler.fast_forward(n=m)
+            if verbose >= 1:
+                print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
+            samples_1, rng = get_samples(rng, False if i == 0 else True)
+            (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff,
+                                                            features=features)
+            rng.reset()
+            rng.fast_forward(m)
+            samples_1, rng = get_samples(rng, False if i == 0 else True)
+            rng.reset()
             estimates[i], _ = cf.price_am_forward(T=T, r=r, samples=samples_1, payoff=payoff, models=models,
                                                   features=features)
-            print(estimates[i])
         est, stat = cf.MC(estimates)
     else:
-        samples_1, sampler = get_samples(sampler)
+        samples_1, rng = get_samples()
+        (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff, features=features)
+        samples_1, rng = get_samples(rng)
         est, stat = cf.price_am_forward(T=T, r=r, samples=samples_1, payoff=payoff, models=models, features=features)
-    return est, stat, biased_est, biased_stat, models, features
+    return est, stat
