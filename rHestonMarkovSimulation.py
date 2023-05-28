@@ -1,12 +1,11 @@
 import numpy as np
-import scipy.interpolate, scipy.special
+import scipy.interpolate
+import scipy.special
 import ComputationalFinance as cf
 import scipy.stats
 from scipy.special import ndtri
 from scipy.stats.qmc import Sobol
 from numpy.random import default_rng
-import functions
-from os.path import exists
 import psutil
 
 
@@ -81,7 +80,6 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         elif not vol_only and not euler:
             dim = 3 * N_time
         rv_shift = np.random.uniform(0, 1, dim)
-
 
     m_input = m  # the original input of how many samples should be simulated
     m_return = m  # the final number of samples that we will actually return
@@ -282,7 +280,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
 
 
 def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True, payoff='call',
-        implied_vol=False):
+        implied_vol=False, qmc_error_estimators=25, verbose=0):
     """
     Gives the price or the implied volatility of a European option in the approximated, Markovian rough Heston model
     using MC or QMC simulation.
@@ -303,14 +301,37 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, e
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     :param payoff: The payoff function, or the string 'call' or the string 'put'
     :param implied_vol: If True (only for payoff 'call' or 'put') returns the implied volatility, else returns the price
+    :param qmc_error_estimators: Runs the pricing step of the Longstaff-Schwartz algorithm qmc_error_estimators times
+        to get an MC estimate for the QMC error
+    :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    samples_, _ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, r=r, N_time=N_time,
-                          nodes=nodes, weights=weights, sample_paths=False, euler=euler, qmc=qmc)[0, :]
-    return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_, payoff=payoff, implied_vol=implied_vol)
+    def get_samples(rv_shift=False):
+        samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
+                                 rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=False, vol_only=False,
+                                 euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
+        return samples_[0, :]
+
+    if qmc:
+        estimates = np.empty((len(K), qmc_error_estimators))
+        for i in range(qmc_error_estimators):
+            if verbose >= 1:
+                print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
+            estimates[:, i], _ = cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=get_samples(False if i == 0 else True),
+                                           payoff=payoff, implied_vol=False)
+        est, stat = cf.MC(estimates)
+        if not implied_vol:
+            return est, stat
+        vol = cf.iv_eur(S_0=S_0, K=K, r=r, T=T, price=est, payoff=payoff)
+        low = cf.iv_eur(S_0=S_0, K=K, r=r, T=T, price=est - stat, payoff=payoff)
+        upp = cf.iv_eur(S_0=S_0, K=K, r=r, T=T, price=est + stat, payoff=payoff)
+        return vol, low, upp
+    else:
+        return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=get_samples(), payoff=payoff, implied_vol=implied_vol)
 
 
-def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True):
+def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True,
+                          qmc_error_estimators=25, verbose=0):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
     :param K: Strike prices, assumed to be a numpy array
@@ -328,14 +349,32 @@ def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weight
     :param N_time: Number of time steps used in simulation
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
+    :param qmc_error_estimators: Runs the pricing step of the Longstaff-Schwartz algorithm qmc_error_estimators times
+        to get an MC estimate for the QMC error
+    :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    samples_, _ = samples(lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, m=m, S_0=S_0, N_time=N_time,
-                          nodes=nodes, weights=weights, r=r, sample_paths=True, euler=euler, qmc=qmc)[0, :, :]
-    return cf.price_geom_asian_call_MC(K=K, samples=samples_)
+    def get_samples(rv_shift=False):
+        samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
+                                 rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, vol_only=False,
+                                 euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
+        return samples_[0, :, :]
+
+    if qmc:
+        estimates = np.empty(qmc_error_estimators)
+        for i in range(qmc_error_estimators):
+            if verbose >= 1:
+                print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
+            samples_1 = get_samples(False if i == 0 else True)
+            estimates[i], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
+        est, stat = cf.MC(estimates)
+        return est, est - stat, est + stat
+    else:
+        return cf.price_geom_asian_call_MC(K=K, samples=get_samples())
 
 
-def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time, euler=False, qmc=True):
+def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time, euler=False, qmc=True,
+                       qmc_error_estimators=25, verbose=0):
     """
     Gives the price of a European call option in the approximated, Markovian rough Heston model.
     :param K: Strike prices, assumed to be a numpy array
@@ -350,12 +389,28 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time,
     :param N_time: Number of time steps used in simulation
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
+    :param qmc_error_estimators: Runs the pricing step of the Longstaff-Schwartz algorithm qmc_error_estimators times
+        to get an MC estimate for the QMC error
+    :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    samples_, _ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, m=m, N_time=N_time, nodes=nodes,
-                          weights=weights, r=0., S_0=1., rho=0., sample_paths=True, vol_only=True, euler=euler,
-                          qmc=qmc)[0, :, :]
-    return cf.price_avg_vol_call_MC(K=K, samples=samples_)
+    def get_samples(rv_shift=False):
+        samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
+                                 rho=0., S_0=1., r=0., m=m, N_time=N_time, sample_paths=True, vol_only=True,
+                                 euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
+        return samples_[0, :, :]
+
+    if qmc:
+        estimates = np.empty(qmc_error_estimators)
+        for i in range(qmc_error_estimators):
+            if verbose >= 1:
+                print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
+            samples_1 = get_samples(False if i == 0 else True)
+            estimates[i], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
+        est, stat = cf.MC(estimates)
+        return est, est - stat, est + stat
+    else:
+        return cf.price_geom_asian_call_MC(K=K, samples=get_samples())
 
 
 def am_features(x, degree=6, K=0.):
@@ -457,7 +512,7 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     :param qmc_error_estimators: Runs the pricing step of the Longstaff-Schwartz algorithm qmc_error_estimators times
         to get an MC estimate for the QMC error
-    :param verbose:
+    :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
     if payoff == 'call':
@@ -472,23 +527,6 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
     def features(x):
         return am_features(x=x, degree=feature_degree, K=K)
 
-    '''
-    kind = 'sample paths'
-    params = {'S': 1., 'K': np.array([K]), 'H': 0.1, 'T': T, 'lambda': lambda_, 'rho': rho, 'nu': nu, 'theta': theta, 'V_0': V_0,
-              'rel_tol': 0., 'r': r}
-    vol_simulation = 'euler' if euler else 'mackevicius'
-    filename = functions.get_filename(N=len(nodes), mode='BL2', euler=euler, antithetic=antithetic, N_time=N_time,
-                                      kind=kind, params=params, truth=False, markov=False)
-    filename = f'rHeston sample paths {len(nodes)} dim BL2 {vol_simulation} antithetic {N_time} time steps, H=0.1, ' \
-                   f'lambda={lambda_:.3}, rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, r = 0.06, V_0={V_0:.3}, ' \
-                   f'T=1.0.npy'
-    if exists(filename):  # delete this in any published version. It is trash
-        samples_orig = np.load(filename)
-    else:
-        samples_orig = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
-                               S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=ex_times, vol_only=False,
-                               euler=euler, antithetic=antithetic)
-    '''
     def get_samples(rng_=None, rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates,
@@ -505,8 +543,7 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
             samples_1, rng = get_samples(rng, False if i == 0 else True)
-            (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff,
-                                                            features=features)
+            (_, _), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff, features=features)
             rng.reset()
             rng.fast_forward(m)
             samples_1, rng = get_samples(rng, False if i == 0 else True)
@@ -516,7 +553,7 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
         est, stat = cf.MC(estimates)
     else:
         samples_1, rng = get_samples()
-        (biased_est, biased_stat), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff, features=features)
+        (_, _), models = cf.price_am(T=T, r=r, samples=samples_1, payoff=payoff, features=features)
         samples_1, rng = get_samples(rng)
         est, stat = cf.price_am_forward(T=T, r=r, samples=samples_1, payoff=payoff, models=models, features=features)
     return est, stat
