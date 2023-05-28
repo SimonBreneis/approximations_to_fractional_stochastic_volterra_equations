@@ -1,8 +1,6 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy
-from scipy import stats
 import ComputationalFinance as cf
 import rHestonFourier
 import RoughKernel as rk
@@ -10,6 +8,8 @@ import rHestonMarkovSimulation as rHestonSP
 from os.path import exists
 import multiprocessing as mp
 import itertools
+import rHestonQESimulation
+from scipy.stats import linregress
 
 
 def profile(statement):
@@ -229,7 +229,7 @@ def log_linear_regression(x, y):
     :param y: The function value
     :return: Exponent, constant, R-value, p-value, empirical standard deviation
     """
-    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(np.log(x), np.log(y))
+    slope, intercept, r_value, p_value, std_err = linregress(np.log(x), np.log(y))
     return slope, np.exp(intercept), r_value, p_value, std_err
 
 
@@ -252,8 +252,8 @@ def plot_log_linear_regression(x, y, col, lab, line_style='--', offset=0):
     return power, constant
 
 
-def rHeston_samples(params, N_time=-1, m=1, nodes=None, weights=None,
-                    sample_paths=False, return_times=None, vol_only=False, euler=False, antithetic=True):
+def rHeston_samples(params, N_time=-1, m=1, nodes=None, weights=None, sample_paths=False, return_times=None,
+                    vol_only=False, euler=False):
     """
     Shorthand for rHestonSP.sample_values.
     """
@@ -261,7 +261,7 @@ def rHeston_samples(params, N_time=-1, m=1, nodes=None, weights=None,
     return rHestonSP.samples(lambda_=params['lambda'], rho=params['rho'], nu=params['nu'], theta=params['theta'],
                              V_0=params['V_0'], T=params['T'], S_0=params['S'], r=params['r'], N_time=N_time, m=m,
                              nodes=nodes, weights=weights, sample_paths=sample_paths, return_times=return_times,
-                             euler=euler, antithetic=antithetic, vol_only=vol_only)
+                             euler=euler, vol_only=vol_only)
 
 
 def rHestonFourier_iv_eur_call(params, N=0, mode=None, nodes=None, weights=None, load=True, save=False, verbose=0):
@@ -666,6 +666,7 @@ def compute_rHeston_samples(params, Ns=None, N_times=None, modes=None, euler=Fal
     N_times = set_array_default(N_times, 2 ** np.arange(18))
     modes = set_list_default(modes, ['european', 'optimized', 'paper'])
 
+    filename, result = None, None
     for N in Ns:
         for N_time in N_times:
             for mode in modes:
@@ -681,7 +682,7 @@ def compute_rHeston_samples(params, Ns=None, N_times=None, modes=None, euler=Fal
                         params_['T'] = params['T'][-1]
                     result = rHeston_samples(params=params_, m=m, N_time=N_time, nodes=nodes, weights=weights,
                                              sample_paths=sample_paths, return_times=return_times,
-                                             vol_only=vol_only, euler=euler, antithetic=antithetic)
+                                             vol_only=vol_only, euler=euler)
                     # np.save(filename, result)
     return filename, result
 
@@ -985,6 +986,252 @@ def compute_smiles_given_stock_prices(params, Ns=None, N_times=None, modes=None,
         upper_discretization_errors
 
 
+def plot_smile_errors_given_stock_prices_QE(Ns, N_times, simulator, nodes, markov_errors, total_errors,
+                                            lower_total_errors, upper_total_errors, discretization_errors):
+    """
+    Produces some plots for smile_errors_given_stock_prices and smile_errors_given_stock_prices_parallelized.
+    :param Ns: Numpy array of dimensions N
+    :param N_times: Numpy array of number of time steps
+    :param simulator: If True uses the Euler scheme, else uses moment matching
+    :param nodes: The nodes associated to the modes and Ns
+    :param markov_errors: The errors of the exact Markovian approximations
+    :param total_errors: The errors of the simulated Markovian approximations
+    :param lower_total_errors: The lower MC bounds of the errors of the simulated Markovian approximations
+    :param upper_total_errors: The upper MC bounds of the errors of the simulated Markovian approximations
+    :param discretization_errors: The discretization errors of the simulated Markovian approximations
+    :return: None
+    """
+
+    def finalize_plot_2():
+        plt.xlabel('Number of time steps')
+        plt.ylabel('Maximal relative error')
+        plt.legend(loc='best')
+        plt.show()
+
+    def node_line_plots(col):
+        nodes_1 = nodes[i]
+        min_val = np.fmin(np.fmin(np.amin(lower_total_errors[i, k, :]),
+                                  np.amin(discretization_errors[i, k, :])), markov_errors[i])
+        max_val = np.fmax(np.fmax(np.amax(upper_total_errors[i, k, :]),
+                                  np.amax(discretization_errors[i, k, :])), markov_errors[i])
+        for node in nodes_1:
+            if node >= 1:
+                plt.loglog(np.array([node, node]), np.array([min_val, max_val]), color=col)
+
+    for k in range(len(simulator)):
+        for i in range(len(Ns)):
+            plt.loglog(N_times, total_errors[i, k, :], color=color(i, len(Ns)), label=f'N={Ns[i]}')
+            plt.loglog(N_times, lower_total_errors[i, k, :], '--', color=color(i, len(Ns)))
+            plt.loglog(N_times, upper_total_errors[i, k, :], '--', color=color(i, len(Ns)))
+            plt.loglog(N_times, discretization_errors[i, k, :], 'o-', color=color(i, len(Ns)))
+            plt.loglog(N_times, markov_errors[i] * np.ones(len(N_times)), 'x-', color=color(i, len(Ns)))
+            node_line_plots(col=color(i, len(Ns)))
+        plt.title(f'Rough Heston with and {simulator[k]}')
+        finalize_plot_2()
+    for i in range(len(Ns)):
+        for k in range(len(simulator)):
+            plt.loglog(N_times, total_errors[i, k, :], color=color(k, 3), label=simulator[k])
+            plt.loglog(N_times, lower_total_errors[i, k, :], '--', color=color(k, 3))
+            plt.loglog(N_times, upper_total_errors[i, k, :], '--', color=color(k, 3))
+            plt.loglog(N_times, discretization_errors[i, k, :], 'o-', color=color(k, 3))
+            node_line_plots(col=color(k, 3))
+        plt.loglog(N_times, markov_errors[i] * np.ones(len(N_times)), 'k-', label='Markovian error')
+        plt.title(f'Rough Heston with {Ns[i]} nodes')
+        finalize_plot_2()
+
+
+def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulator=None, true_smile=None,
+                                          option='european call', n_samples=2 ** 20):
+    """
+    Computes the implied volatility smiles given the final stock prices
+    :param params: Parameters of the rough Heston model
+    :param Ns: Numpy array of values for the number of dimensions of the Markovian approximation. Default is [1, 2, 3]
+    :param N_times: Numpy array of values for the number of time steps. Default is 2**np.arange(11)
+    :param simulator: List of simulation schemes. Default is [True, False]
+    :param true_smile: The smile under the true rough Heston model can be specified here. Otherwise it is computed
+    :param option: The kind of option that is used
+    :param n_samples: Number of (Q)MC samples in the simulation
+    :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
+        the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
+        MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
+        discretization errors and the upper MC discretization errors
+    """
+    params = rHeston_params(params)
+    if not isinstance(params['T'], np.ndarray):
+        params['T'] = np.array([params['T']])
+    Ns = set_array_default(Ns, np.array([1, 2, 3]))
+    N_times = set_array_default(N_times, 2 ** np.arange(11))
+    simulator = set_list_default(simulator, ['Euler', 'Weak', 'QE'])
+    mode = 'BL2'
+    if true_smile is None:
+        if option == 'european call':
+            true_smile = rHestonFourier_iv_eur_call(params)
+        elif option == 'geometric asian call':
+            true_smile = rHestonFourier_price_geom_asian_call(params)
+        elif option == 'average volatility call':
+            true_smile = rHestonFourier_price_avg_vol_call(params)
+        else:
+            raise NotImplementedError
+
+    total_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    discretization_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    lower_total_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    lower_discretization_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    upper_total_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    upper_discretization_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    MC_errors = np.empty((len(Ns), len(simulator), len(N_times)))
+    markov_errors = np.empty(len(Ns))
+    markov_smiles = np.empty((len(Ns), len(params['T']), len(params['K'])))
+    approx_smiles = np.empty((len(Ns), len(simulator), len(N_times), len(params['T']), len(params['K'])))
+    lower_smiles = np.empty((len(Ns), len(simulator), len(N_times), len(params['T']), len(params['K'])))
+    upper_smiles = np.empty((len(Ns), len(simulator), len(N_times), len(params['T']), len(params['K'])))
+    nodes = [np.empty(N) for N in Ns]
+
+    for i in range(len(Ns)):
+        if option == 'european call':
+            nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=mode)
+            markov_smiles[i, :, :] = rHestonFourier_iv_eur_call(params=params, N=Ns[i], mode=mode, nodes=nodes[i],
+                                                                weights=weights)
+        elif option == 'geometric asian call':
+            nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=np.array([params['T'] / 2, params['T']]),
+                                                   mode=mode)
+            markov_smiles[i, :, :] = rHestonFourier_price_geom_asian_call(params=params, N=Ns[i], mode=mode,
+                                                                          nodes=nodes[i], weights=weights)
+
+        elif option == 'average volatility call':
+            nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=mode)
+            markov_smiles[i, :, :] = rHestonFourier_price_avg_vol_call(params=params, N=Ns[i], mode=mode,
+                                                                       nodes=nodes[i], weights=weights)
+        else:
+            raise NotImplementedError
+        markov_errors[i] = np.amax(np.abs(markov_smiles[i, :, :] - true_smile)/true_smile)
+        print(f'N={Ns[i]}: Markovian error={100*markov_errors[i]:.4}%')
+        for k in range(len(simulator)):
+            for m in range(len(N_times)):
+                if simulator[k] == 'QE':
+                    markovian = False
+                    is_euler = True
+                else:
+                    markovian = True
+                    if simulator[k] == 'euler' or simulator[k] == 'Euler':
+                        is_euler = True
+                    else:
+                        is_euler = False
+                if option == 'european call':
+                    if markovian:
+                        vol, low, upp = rHestonSP.eur(K=params['K'], lambda_=params['lambda'], rho=params['rho'],
+                                                      nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                                      S_0=params['S'], T=float(params['T']), nodes=nodes[i],
+                                                      weights=weights, r=params['r'], m=n_samples, N_time=N_times[m],
+                                                      euler=is_euler, implied_vol=True)
+                    elif i == 0:
+                        vol, low, upp = rHestonQESimulation.eur(H=params['H'], K=params['K'], lambda_=params['lambda'],
+                                                                rho=params['rho'], nu=params['nu'],
+                                                                theta=params['theta'], V_0=params['V_0'],
+                                                                S_0=params['S'], T=float(params['T']), r=params['r'],
+                                                                m=n_samples, N_time=N_times[m], implied_vol=True,
+                                                                verbose=1)
+                    else:
+                        vol, low, upp = approx_smiles[0, k, m, :, :], lower_smiles[0, k, m, :, :], \
+                            upper_smiles[0, k, m, :, :]
+                elif option == 'geometric asian call':
+                    if markovian:
+                        vol, low, upp = \
+                            rHestonSP.price_geom_asian_call(K=params['K'], lambda_=params['lambda'], rho=params['rho'],
+                                                            nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
+                                                            S_0=params['S'], T=float(params['T']), nodes=nodes[i],
+                                                            weights=weights, r=params['r'], m=n_samples,
+                                                            N_time=N_times[m], euler=is_euler)
+                    else:
+                        vol, low, upp = \
+                            rHestonQESimulation.price_geom_asian_call(H=params['H'], K=params['K'],
+                                                                      lambda_=params['lambda'], rho=params['rho'],
+                                                                      nu=params['nu'], theta=params['theta'],
+                                                                      V_0=params['V_0'], S_0=params['S'],
+                                                                      T=float(params['T']), r=params['r'], m=n_samples,
+                                                                      N_time=N_times[m])
+                elif option == 'average volatility call':
+                    '''
+                    kind = 'volatility sample paths'
+                    samples = np.load(get_filename(kind=kind, N=Ns[i], mode=mode, euler=simulator[k],
+                                                   N_time=N_times[m], params=params,
+                                                   truth=False, markov=False))
+                    vol, low, upp = cf.price_avg_vol_call_MC(K=params['K'], samples=samples[0, :, :])
+                    '''
+                    raise NotImplementedError
+                else:
+                    raise NotImplementedError
+                approx_smiles[i, k, m, :, :] = vol
+                lower_smiles[i, k, m, :, :] = low
+                upper_smiles[i, k, m, :, :] = upp
+                total_errors[i, k, m], lower_total_errors[i, k, m], upper_total_errors[i, k, m], MC_errors[i, k, m] = \
+                    max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
+                discretization_errors[i, k, m], lower_discretization_errors[i, k, m], \
+                    upper_discretization_errors[i, k, m], MC_errors[i, k, m] = \
+                    max_errors_MC(truth=markov_smiles[i, :, :], estimate=vol, lower=low, upper=upp)
+                print(f'N={Ns[i]}, {simulator[k]}, N_time={N_times[m]}: total error='
+                      f'{100 * total_errors[i, k, m]:.4}%, discretization error='
+                      f'{100 * discretization_errors[i, k, m]:.4}%, MC error='
+                      f'{100 * MC_errors[i, k, m]:.4}%, excess error='
+                      f'{100 * lower_discretization_errors[i, k, m]:.4}%'
+                      + ('' if m == 0 else
+                         f' improvement factor='
+                         f'{discretization_errors[i, k, m - 1] / discretization_errors[i, k, m]:.3}, '
+                         f'{upper_discretization_errors[i, k, m - 1] / lower_discretization_errors[i, k, m]:.3}, '
+                         f'{lower_discretization_errors[i, k, m - 1] / upper_discretization_errors[i, k, m]:.3}'))
+
+    k_vec = np.log(params['K'])
+
+    def finalize_plot():
+        plt.plot(k_vec, true_smile[0, :], color='k', label='Exact smile')
+        plt.legend(loc='upper right')
+        plt.xlabel('Log-moneyness')
+        plt.ylabel('Implied volatility')
+        plt.show()
+
+    for k in range(len(simulator)):
+        for m in range(len(N_times)):
+            for i in range(len(Ns)):
+                plt.plot(k_vec, approx_smiles[i, k, m, -1, :], color=color(i, len(Ns)),
+                         label=f'N={Ns[i]}')
+                if i == len(Ns) - 1:
+                    plt.plot(k_vec, upper_smiles[i, k, m, -1, :], '--', color=color(i, len(Ns)))
+                    plt.plot(k_vec, lower_smiles[i, k, m, -1, :], '--', color=color(i, len(Ns)))
+            plt.title(f'Rough Heston with {simulator[k]} and {N_times[m]} time steps')
+            finalize_plot()
+    for i in range(len(Ns)):
+        for m in range(len(N_times)):
+            for k in range(len(simulator)):
+                plt.plot(k_vec, approx_smiles[i, k, m, -1, :], color=color(k, 3), label=simulator[k])
+                if k == len(simulator) - 1:
+                    plt.plot(k_vec, upper_smiles[i, k, m, -1, :], '--', color=color(k, 3))
+                    plt.plot(k_vec, lower_smiles[i, k, m, -1, :], '--', color=color(k, 3))
+            plt.plot(k_vec, markov_smiles[i, -1, :], color='brown', label='Exact Markovian smile')
+            plt.title(f'Rough Heston with {Ns[i]} nodes and {N_times[m]} time steps')
+            finalize_plot()
+    for i in range(len(Ns)):
+        for k in range(len(simulator)):
+            for m in range(len(N_times)):
+                plt.plot(k_vec, approx_smiles[i, k, m, -1, :], color=color(m, len(N_times)),
+                         label=f'{N_times[m]} time steps')
+                if m == len(N_times) - 1:
+                    plt.plot(k_vec, upper_smiles[i, k, m, -1, :], '--', color=color(m, len(N_times)))
+                    plt.plot(k_vec, lower_smiles[i, k, m, -1, :], '--', color=color(m, len(N_times)))
+            plt.plot(k_vec, markov_smiles[i, -1, :], color='brown', label='Exact Markovian smile')
+            plt.title(f'Rough Heston with {Ns[i]} nodes and {simulator[k]}')
+            finalize_plot()
+
+    plot_smile_errors_given_stock_prices_QE(Ns=Ns, N_times=N_times, simulator=simulator, nodes=nodes,
+                                            markov_errors=markov_errors, total_errors=total_errors,
+                                            lower_total_errors=lower_total_errors,
+                                            upper_total_errors=upper_total_errors,
+                                            discretization_errors=discretization_errors)
+
+    return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_errors, total_errors, \
+        lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
+        upper_discretization_errors
+
+
 def smile_errors_weak_Euler_QE(params, N, N_times):
     """
     Computes the implied volatility smiles given the final stock prices
@@ -1155,7 +1402,7 @@ def surface_errors_weak_Euler_QE(params, N, N_times):
         H, lambda_, rho, nu, theta, V_0, T_string = params['H'], params['lambda'], params['rho'], params['nu'], \
             params['theta'], params['V_0'], params['T'][-1]
         sam = np.load(f'rHeston sample paths HQE {N_times[m]} time steps, H={H:.3}, lambda={lambda_:.3}, '
-                          f'rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, T={T_string:.3}.npy')
+                      f'rho={rho:.3}, nu={nu:.3}, theta={theta:.3}, V_0={V_0:.3}, T={T_string:.3}.npy')
         samples = np.empty((sam.shape[1], sam.shape[2] + 1))
         samples[:, 1:] = sam[0, :, :]
         samples = samples[:, ::samples.shape[-1] // len(T)]
@@ -1508,7 +1755,7 @@ def plot_GG_NGG_and_error_bounds():
     errors_GG = np.empty(N)
     errors_NGG = np.empty(N)
     error_bounds_GG = 2 * (np.sqrt(2) + 1) ** (-2 * np.sqrt((H + 0.5) * np.arange(1, N + 1)))
-    error_bounds_NGG = 60 * np.exp(-2.38 * np.sqrt((H +  0.5) * np.arange(1, N + 1)))
+    error_bounds_NGG = 60 * np.exp(-2.38 * np.sqrt((H + 0.5) * np.arange(1, N + 1)))
 
     for i in range(N):
         print(f"Computing {i + 1} of {N}.")
