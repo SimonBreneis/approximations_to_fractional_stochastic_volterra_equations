@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 from scipy.special import gamma
 import RoughKernel as rk
@@ -67,19 +65,19 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
         cov_matrix[0, 1:] = entry
         cov_matrix[1:, 0] = entry
         cov_matrix[0, 0] = dt
-        computed_chol = False
-        chol = None
-        while not computed_chol:
+        computed_cholesky = False
+        cholesky = None
+        while not computed_cholesky:
             try:
-                chol = np.linalg.cholesky(cov_matrix)
-                computed_chol = True
+                cholesky = np.linalg.cholesky(cov_matrix)
+                computed_cholesky = True
             except np.linalg.LinAlgError:
                 dampening_factor = 0.999
-                for i in range(1, N):
-                    cov_matrix[:i, i] = cov_matrix[:i, i] * dampening_factor ** ((i + 1) / N)
-                    cov_matrix[i, :i] = cov_matrix[i, :i] * dampening_factor ** ((i + 1) / N)
-                computed_chol = False
-        return chol
+                for j in range(1, N):
+                    cov_matrix[:j, j] = cov_matrix[:j, j] * dampening_factor ** ((j + 1) / N)
+                    cov_matrix[j, :j] = cov_matrix[j, :j] * dampening_factor ** ((j + 1) / N)
+                computed_cholesky = False
+        return cholesky
 
     def variance_integral():
         """
@@ -138,8 +136,7 @@ def generate_samples(H, T, eta, V_0, rho, nodes, weights, M, N_time=1000, S_0=1.
     return S[:M]
 
 
-def implied_volatility(H=0.1, T=1., eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K=1., N=10, mode="paper",
-                       rel_tol=1e-03, verbose=0):
+def implied_volatility(H, T, eta, V_0, S_0, rho, K, nodes, weights, rel_tol=1e-03, verbose=0):
     """
     Computes the implied volatility of the European call option under the rough Bergomi model, using the approximation
     inspired by Alfonsi and Kebaier.
@@ -150,17 +147,14 @@ def implied_volatility(H=0.1, T=1., eta=1.9, V_0=0.235 ** 2, S_0=1., rho=-0.9, K
     :param S_0: Initial stock price
     :param rho: Correlation between the Brownian motions driving the volatility and the stock
     :param K: The strike price
-    :param N: Dimension of the Markovian approximation
-    :param mode: Kind of Markovian approximation
+    :param nodes: The nodes of the Markovian approximation
+    :param weights: The weights of the Markovian approximation
     :param rel_tol: Relative error tolerance
     :param verbose: Determines the number of intermediary results printed to the console
     :return: The implied volatility and a 95% confidence interval, in the form (estimate, lower, upper)
     """
-    nodes, weights = rk.quadrature_rule(H, N, T, mode)
     nodes, weights = preprocess_rule(nodes, weights)
-    return rBergomiBackbone.iv_eur_call(sample_generator=lambda T_, N_time, M: generate_samples(H=H, T=T_, eta=eta,
-                                                                                                V_0=V_0, rho=rho,
-                                                                                                nodes=nodes,
-                                                                                                weights=weights, M=M,
-                                                                                                N_time=N_time, S_0=S_0),
-                                        S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)
+    return rBergomiBackbone.iv_eur_call(
+        sample_generator=lambda T_, N_time, M: generate_samples(H=H, T=T_, eta=eta, V_0=V_0, rho=rho, nodes=nodes,
+                                                                weights=weights, M=M, N_time=N_time, S_0=S_0),
+        S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose)

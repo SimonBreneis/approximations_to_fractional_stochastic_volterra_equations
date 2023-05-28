@@ -1,7 +1,6 @@
 import numpy as np
 import ComputationalFinance as cf
 import time
-import matplotlib.pyplot as plt
 
 
 def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
@@ -34,7 +33,7 @@ def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
 
         def compute_iv(N_):
             samples = sample_generator_(N=N_, M=M)
-            return cf.iv_eur_call_MC(S_0=S_0, K=K_, T=T_, samples=samples)
+            return cf.eur_MC(S_0=S_0, K=K_, T=T_, samples=samples, payoff='call', implied_vol=True)
 
         tic = time.perf_counter()
         iv, l, u = compute_iv(N_=N)
@@ -64,13 +63,6 @@ def iv_eur_call(sample_generator, S_0, K, T, rel_tol, verbose=0):
             if verbose >= 1:
                 print(total_error, discr_error, mc_error, mc_error_approx, N, M, duration,
                       time.strftime("%H:%M:%S", time.localtime()))
-            '''
-            plt.plot(np.log(K_), iv, 'k-')
-            plt.plot(np.log(K_), l, 'k--')
-            plt.plot(np.log(K_), u, 'k--')
-            plt.plot(np.log(K_), iv_approx, 'b-')
-            plt.show()
-            '''
             iv_approx, l_approx, u_approx, mc_error_approx = iv, l, u, mc_error
 
             tic = time.perf_counter()
