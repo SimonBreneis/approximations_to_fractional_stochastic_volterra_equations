@@ -1,5 +1,4 @@
-import scipy.linalg
-from scipy.optimize import minimize
+from scipy.optimize import minimize, lsq_linear
 from scipy.special import gamma, gammainc
 import orthopy
 import quadpy
@@ -129,7 +128,7 @@ def fractional_kernel_approximation(H, t, nodes, weights):
     return 1 / c_H(H) * np.tensordot(fractional_kernel_laplace(H, t, nodes), weights, axes=([0, 0]))
 
 
-def AK_improved_rule(H, N, K=None, T=1):
+def AK_improved_rule(H, N, K=None, T=1.):
     """
     The quadrature rule from Alfonsi and Kebaier in Table 6, left column.
     :param H: Hurst parameter
@@ -707,7 +706,7 @@ def error_l2_optimal_weights(H, T, nodes, output='error'):
     except np.linalg.LinAlgError:
         v = np.linalg.lstsq(A, b, rcond=None)[0]
     if np.amax(v) > 0:
-        v = scipy.optimize.lsq_linear(A, b).x
+        v = lsq_linear(A, b).x
     err = 0.25 * v @ A @ v - 0.5 * np.dot(b, v) + c  # c - 0.25 * np.dot(b, v)
     opt_weights = -0.5 * v
     if output == 'error' or output == 'err':
@@ -990,6 +989,22 @@ def european_rule(H, N, T):
     return nodes_6, weights_6
 
 
+def harms_rule(H, n, m):
+    """
+    The quadrature rule for fBm proposed by Harms.
+    :param H: Hurst parameter
+    :param n: Number of Gaussian quadrature intervals
+    :param m: Degree of Gaussian quadrature
+    :return: The nodes and weights of the quadrature rule
+    """
+    alpha_, beta_, gamma_, delta_ = H + 1/2, m - 1, 1/2 - H, H
+    r = delta_ * m / (1 - alpha_ - beta_ + delta_ + m)
+    xi_0 = n ** (-r / gamma_)
+    xi_n = n ** (r / delta_)
+    xi = xi_0 * np.exp(np.log(xi_n / xi_0) * np.linspace(0, 1, n + 1))
+    return Gaussian_on_partition(H=H, m=m, partition=xi, fractional_weight=True)
+
+
 def quadrature_rule(H, N, T, mode="european"):
     """
     Returns the nodes and weights of a quadrature rule for the fractional kernel with Hurst parameter H. The nodes are
@@ -1036,6 +1051,7 @@ def quadrature_rule(H, N, T, mode="european"):
 # ---------------------------------------------------------------------------------------
 
 # Functions taken from Christian
+
 
 import numpy as np
 from mlfr import mittag_leffler
