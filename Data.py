@@ -1045,9 +1045,12 @@ time.sleep(360000)
 # ---------------------------------------------------------------------------------------------------------------
 # Bermudan option prices for the Markovian Mackevicius Paper. The parameters used are
 # lambda_ = 0.3, nu = 0.3, theta = 0.02, V_0 = 0.02, rho = -0.7, S_0 = 100., T = 1., H = 0.1, K = 105., r = 0.06
-# The number of Monte Carlo samples used is 1_000_000, 500_000 of which are used for fitting the stopping rules,
-# and 500_000 for pricing the option. The Markovian schemes use antithtetic variates. For the Longstaff-Schwartz
-# linear regression, we use polynomials in S, V, and the components of V, of weighted degree at most 8.
+# For MC estimators, the number of Monte Carlo samples used is 1_000_000, 500_000 of which are used for fitting the
+# stopping rules, and 500_000 for pricing the option. The Markovian schemes use antithtetic variates.
+# For the Longstaff-Schwartz  linear regression, we use polynomials in S, V, and the components of V, of weighted
+# degree at most 8.
+# For QMC estimators, the number of QMC samples with Sobol is 2 ** 20 for the regression and 2 ** 20 for the pricing,
+# and we did 25 iterations with shifted Sobol points using random shifts, taking the MC average of these 25 iterations.
 # We use 4, 16, or 256 exercise times, linearly spaced over [0, 1]. The sample paths are simulated with a number of
 # time steps that is always a power of 2. In the arrays below, the prices are for increasing number of time steps in the
 # simulation. For example, for 16 exercise times, these prices correspond to 16, 32, 64, 128, 256, 512, and 1024
@@ -1072,150 +1075,226 @@ time.sleep(360000)
 # where A is the number of execution times (4, 16, or 256, and 4 or 16, respectively). The MC errors are similar
 # for all methods and number of simulation time steps. The 95% MC intervals are hence roughly given by, e.g.,
 # bermudan_prices_4_QE_depending_on_d +/- bermudan_prices_4_depending_on_d_MC_error.
-bermudan_prices_4_QE_depending_on_d = \
+bermudan_prices_4_QE_depending_on_d_MC = \
     np.array([5.881312977844017, 5.968850620756691, 5.998553757861667, 6.006160182030647, 6.006383697727581,
               6.006263235149674, 6.008178490802654, 6.008523830888406, 6.009364315695357, 6.009343528951102])
-bermudan_prices_16_QE_depending_on_d = \
+bermudan_prices_16_QE_depending_on_d_MC = \
     np.array([5.975877138293987, 6.111586468354794, 6.133727709676545, 6.1509455538422575, 6.154641777246265,
               6.158014128837235, 6.158766950398943, 6.158520021365969, 6.1621527362593795, 6.159249087253855])
-bermudan_prices_4_Euler_depending_on_d = \
+bermudan_prices_4_Euler_depending_on_d_MC = \
     np.array([6.054783793139857, 6.159708441955763, 6.20228676332753, 6.216731827913274, 6.218885182596948,
               6.218676583435156, 6.21894432367718, 6.2205907264635725, 6.217908309921049, 6.216903894341569])
-bermudan_prices_16_Euler_depending_on_d = \
+bermudan_prices_16_Euler_depending_on_d_MC = \
     np.array([6.147976009374668, 6.300566751997734, 6.3599674269505275, 6.38828958937379, 6.393769871447732,
               6.397455068946655, 6.396819084015585, 6.398640298451329, 6.398929582688365, 6.39708370098245])
-bermudan_prices_4_Weak_depending_on_d = \
+bermudan_prices_4_Weak_depending_on_d_MC = \
     np.array([5.887155699391186, 5.989452612718753, 6.038799039128605, 6.054692018775657, 6.055529845713608,
               6.052842941057083, 6.0551526792542925, 6.056899266851076, 6.0547788243116765, 6.054291819265685])
-bermudan_prices_16_Weak_depending_on_d = \
+bermudan_prices_16_Weak_depending_on_d_MC = \
     np.array([5.982915278022808, 6.144029283537505, 6.20662138026517, 6.231188122480796, 6.236681995867578,
               6.239516028915048, 6.244258417204066, 6.2475150990083295, 6.243166782714627, 6.238788655289753])
 bermudan_prices_4_depending_on_d_MC_error = 0.022
 bermudan_prices_16_depending_on_d_MC_error = 0.0205
 
-bermudan_prices_4_QE = \
+bermudan_prices_4_QE_MC = \
     np.array([5.759153259708528, 5.849745441674186, 5.950877598800659, 5.9760810510333044, 6.00055143696531,
               6.020520279637076, 6.008523830888406, 6.0052708190581585, 5.998668978300777])
-bermudan_prices_16_QE = \
+bermudan_prices_16_QE_MC = \
     np.array([6.108186686341114, 6.1376755379654995, 6.148969362688817, 6.164491459494097, 6.158520021365969,
               6.154609781154781, 6.1629121725498965])
-bermudan_prices_256_QE = \
+bermudan_prices_256_QE_MC = \
     np.array([6.122145926679324, 6.11613868482267, 6.134258103250474])
-bermudan_prices_4_Euler_1 = \
+bermudan_prices_4_Euler_1_MC = \
     np.array([6.374994912074388, 6.428210948091557, 6.337767249793884, 6.222338166117672, 6.122125820317566,
               6.124113522529565, 6.08543869293257, 6.073672663916806, 6.074643688987093])
-bermudan_prices_4_Weak_1 = \
+bermudan_prices_4_Weak_1_MC = \
     np.array([5.84016625395903, 5.984185407498253, 6.029869817364804, 6.064265531122275, 6.065994671888949,
               6.091467955508539, 6.069185109030468, 6.067684072599958, 6.055497464606124])
-bermudan_prices_16_Euler_1 = \
+bermudan_prices_16_Euler_1_MC = \
     np.array([6.506932192102358, 6.385482948726982, 6.304988519866201, 6.288568136419512, 6.2634987607692345,
               6.254241700294283, 6.248516530539128])
-bermudan_prices_16_Weak_1 = \
+bermudan_prices_16_Weak_1_MC = \
     np.array([6.209433658560861, 6.228173128211438, 6.251695791413654, 6.270230183806934, 6.251623923400068,
               6.256084539774051, 6.236805423970378])
-bermudan_prices_256_Euler_1 = \
+bermudan_prices_256_Euler_1_MC = \
     np.array([6.306193949440956, 6.2874596034918575, 6.291323937091087])
-bermudan_prices_256_Weak_1 = \
+bermudan_prices_256_Weak_1_MC = \
     np.array([6.293511391981054, 6.287814577174661, 6.273199102131892])
-bermudan_prices_4_Euler_2 = \
+bermudan_prices_4_Euler_2_MC = \
     np.array([6.420390145127389, 6.472930797016549, 6.458838247666576, 6.364240742381819, 6.257612575183531,
               6.196801022064704, 6.120252614849627, 6.108887312409656, 6.0814427881406035])
-bermudan_prices_4_Weak_2 = \
+bermudan_prices_4_Weak_2_MC = \
     np.array([5.783702082255862, 5.936975703357294, 6.013991614481586, 6.060701895557607, 6.086942776411719,
               6.073626406770916, 6.078451673607631, 6.092376219791714, 6.082868039016247])
-bermudan_prices_16_Euler_2 = \
+bermudan_prices_16_Euler_2_MC = \
     np.array([6.630140959958434, 6.542539230136588, 6.434377181446154, 6.380682485919598, 6.309035979130753,
               6.293600027099479, 6.275720286664339])
-bermudan_prices_16_Weak_2 = \
+bermudan_prices_16_Weak_2_MC = \
     np.array([6.205145264719924, 6.231609545104102, 6.263015109910695, 6.257616555092254, 6.267232619528006,
               6.276722597094117, 6.258378649955263])
-bermudan_prices_256_Euler_2 = \
+bermudan_prices_256_Euler_2_MC = \
     np.array([6.344430779399225, 6.321748327491974, 6.305306909362065])
-bermudan_prices_256_Weak_2 = \
+bermudan_prices_256_Weak_2_MC = \
     np.array([6.301194912728672, 6.318316116346498, 6.294297714897946])
-bermudan_prices_4_Euler_3 = \
+bermudan_prices_4_Euler_3_MC = \
     np.array([6.398657083587142, 6.479940945615953, 6.492488861914647, 6.466431412420086, 6.38612362113434,
               6.30562219817047, 6.2205907264635725, 6.164454139067818, 6.126165399572341])
-bermudan_prices_4_Weak_3 = \
+bermudan_prices_4_Weak_3_MC = \
     np.array([5.582231373826758, 5.812984613267271, 5.929799254569929, 6.005275274516244, 6.060022438581269,
               6.078758139791109, 6.056899266851076, 6.069635662532924, 6.081681696919653])
-bermudan_prices_16_Euler_3 = \
+bermudan_prices_16_Euler_3_MC = \
     np.array([6.660958289864805, 6.639787544579042, 6.559597866760051, 6.47722382597367, 6.398640298451329,
               6.336305040475958, 6.3019964438789255])
-bermudan_prices_16_Weak_3 = \
+bermudan_prices_16_Weak_3_MC = \
     np.array([6.108318508204293, 6.196936824424116, 6.238368060097502, 6.2605023752306765, 6.2475150990083295,
               6.248353190373457, 6.257423063271396])
-bermudan_prices_256_Euler_3 = \
+bermudan_prices_256_Euler_3_MC = \
     np.array([6.433661802419653, 6.36660700918045, 6.323643496158492])
-bermudan_prices_256_Weak_3 = \
+bermudan_prices_256_Weak_3_MC = \
     np.array([6.282204776091425, 6.290799267960921, 6.289616969621115])
-bermudan_prices_4_Euler_4 = \
+bermudan_prices_4_Euler_4_MC = \
     np.array([6.406126843462981, 6.4633057044612165, 6.441774061026381, 6.433433636956694, 6.391686385381758,
               6.365513359686255, 6.327031422505806, 6.246376842322323, 6.164341809680132])
-bermudan_prices_4_Weak_4 = \
+bermudan_prices_4_Weak_4_MC = \
     np.array([5.4362976021797715, 5.615935597891296, 5.799872869118376, 5.924465290342187, 5.999826544126777,
               6.056387810860024, 6.063220744715272, 6.084647288395503, 6.082758720011783])
-bermudan_prices_16_Euler_4 = \
+bermudan_prices_16_Euler_4_MC = \
     np.array([6.6174189872125035, 6.59365408841299, 6.571667289827528, 6.5292510957202605, 6.490150895994291,
               6.4242716756146905, 6.341487168838822])
-bermudan_prices_16_Weak_4 = \
+bermudan_prices_16_Weak_4_MC = \
     np.array([5.985484297556279, 6.107943180197603, 6.162857269579133, 6.223215685386942, 6.228446742528628,
               6.256058618685774, 6.250430035251435])
-bermudan_prices_256_Euler_4 = \
+bermudan_prices_256_Euler_4_MC = \
     np.array([6.526466435611826, 6.454235797638589, 6.372289136335599])
-bermudan_prices_256_Weak_4 = \
+bermudan_prices_256_Weak_4_MC = \
     np.array([6.264208536866021, 6.285533212002273, 6.293718989571229])
 bermudan_prices_4_MC_error = 0.022
 bermudan_prices_16_MC_error = 0.020
 bermudan_prices_256_MC_error = 0.019
 
+bermudan_prices_4_QE_QMC = \
+    np.array([5.774183408437744, 5.854615351301953, 5.929369293090418, 5.9663337673351835, 5.986770239196567,
+              5.999424979520078, 6.005674224266439, 6.012039333608904, 6.016, 6.016])
+bermudan_prices_16_QE_QMC = \
+    np.array([6.0993861291263345, 6.126970973104815, 6.143719753306705, 6.151690453648474, 6.159262765596182,
+              6.163881778647127, 6.168, 6.171])
+bermudan_prices_256_QE_QMC = \
+    np.array([6.117771629784127, 6.123, 6.128, 6.130])
+bermudan_prices_4_Euler_1_QMC = \
+    np.array([6.38975718366088, 6.423390029711331, 6.342266803436221, 6.234990343255016, 6.156105066476399,
+              6.11120506357235, 6.088939347127523, 6.080471413156653, 6.078006526653015, 6.074])
+bermudan_prices_4_Weak_1_QMC = \
+    np.array([5.83653258591296, 5.987247751528324, 6.046365468255918, 6.065750433730277, 6.070906571147718,
+              6.072159309667814, 6.074527789330435, 6.07491176485612, 6.0767741969412, 6.075])
+bermudan_prices_16_Euler_1_QMC = \
+    np.array([6.506793263507289, 6.404013763459586, 6.326878921104333, 6.28420385672242, 6.26447589920283,
+              6.254576638991984, 6.249822675780373, 6.250])
+bermudan_prices_16_Weak_1_QMC = \
+    np.array([6.214071649080092, 6.237786576410557, 6.247116775253625, 6.248556966773295, 6.246794787666114,
+              6.248758449092724, 6.2478358783283605, 6.248])
+bermudan_prices_256_Euler_1_QMC = \
+    np.array([6.296, 6.284, 6.281, 6.280])
+bermudan_prices_256_Weak_1_QMC = \
+    np.array([6.277, 6.278, 6.278, 6.278])
+bermudan_prices_4_Euler_2_QMC = \
+    np.array([6.414, 6.486, 6.452, 6.355, 6.252,
+              6.171, 6.122, 6.098, 6.086, 6.081])
+bermudan_prices_4_Weak_2_QMC = \
+    np.array([5.793, 5.952, 6.029, 6.064, 6.076,
+              6.076, 6.075, 6.078, 6.074, 6.074])
+bermudan_prices_16_Euler_2_QMC = \
+    np.array([6.617, 6.530, 6.428, 6.351, 6.302,
+              6.280, 6.268, 6.261])
+bermudan_prices_16_Weak_2_QMC = \
+    np.array([6.204, 6.237, 6.252, 6.256, 6.258,
+              6.257, 6.258, 6.258])
+bermudan_prices_256_Euler_2_QMC = \
+    np.array([6.338, 6.311, 6.300, 6.294])
+bermudan_prices_256_Weak_2_QMC = \
+    np.array([6.291, 6.289, 6.289, 6.288])
+bermudan_prices_4_Euler_3_QMC = \
+    np.array([6.403, 6.479, 6.481, 6.447, 6.388,
+              6.308, 6.225, 6.160, 6.117, 6.094])
+bermudan_prices_4_Weak_3_QMC = \
+    np.array([5.586, 5.797, 5.936, 6.015, 6.055,
+              6.064, 6.068, 6.074, 6.071, 6.070])
+bermudan_prices_16_Euler_3_QMC = \
+    np.array([6.645, 6.619, 6.561, 6.483, 6.402,
+              6.339, 6.298, 6.275])
+bermudan_prices_16_Weak_3_QMC = \
+    np.array([6.109, 6.190, 6.231, 6.245, 6.249,
+              6.251, 6.249, 6.249])
+bermudan_prices_256_Euler_3_QMC = \
+    np.array([6.436, 6.371, 6.332, 6.306])
+bermudan_prices_256_Weak_3_QMC = \
+    np.array([6.281, 6.281, 6.282, 6.279])
+bermudan_prices_4_Euler_4_QMC = \
+    np.array([6.403, 6.476, 6.471, 6.433, 6.396,
+              6.355, 6.302, 6.241, 6.182, 6.135])
+bermudan_prices_4_Weak_4_QMC = \
+    np.array([5.431, 5.619, 5.805, 5.935, 6.015,
+              6.052, 6.065, 6.068, 6.070, 6.070])
+bermudan_prices_16_Euler_4_QMC = \
+    np.array([6.633, 6.604, 6.565, 6.521, 6.473,
+              6.413, 6.355, 6.313])
+bermudan_prices_16_Weak_4_QMC = \
+    np.array([5.992, 6.114, 6.188, 6.228, 6.244,
+              6.247, 6.248, 6.248])
+bermudan_prices_256_Euler_4_QMC = \
+    np.array([6.505, 6.446, 6.387, 0])
+bermudan_prices_256_Weak_4_QMC = \
+    np.array([6.271, 6.275, 6.278, 0])
+bermudan_prices_4_QMC_error = 0.0025
+bermudan_prices_16_QMC_error = 0.0025
+bermudan_prices_256_QMC_error = 0.0025
+
 
 def illustrate_bermudan_option_prices():
     d_vec = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    n_vec_4 = np.array([4, 8, 16, 32, 64, 128, 256, 512, 1024])
-    n_vec_16 = np.array([16, 32, 64, 128, 256, 512, 1024])
-    n_vec_256 = np.array([256, 512, 1024])
-    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d, 'g', label='QE')
-    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d - bermudan_prices_4_depending_on_d_MC_error, 'g--')
-    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d + bermudan_prices_4_depending_on_d_MC_error, 'g--')
-    plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d, 'b', label='Euler')
-    plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d - bermudan_prices_4_depending_on_d_MC_error, 'b--')
-    plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d + bermudan_prices_4_depending_on_d_MC_error, 'b--')
-    plt.plot(d_vec, bermudan_prices_4_Weak_depending_on_d, 'r', label='Weak')
-    plt.plot(d_vec, bermudan_prices_4_Weak_depending_on_d - bermudan_prices_4_depending_on_d_MC_error, 'r--')
-    plt.plot(d_vec, bermudan_prices_4_Weak_depending_on_d + bermudan_prices_4_depending_on_d_MC_error, 'r--')
+    n_vec_4 = np.array([4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048])
+    n_vec_16 = np.array([16, 32, 64, 128, 256, 512, 1024, 2048])
+    n_vec_256 = np.array([256, 512, 1024, 2048])
+    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d_MC, 'g', label='QE')
+    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d_MC - bermudan_prices_4_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d_MC + bermudan_prices_4_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d_MC, 'b', label='Euler')
+    plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d_MC - bermudan_prices_4_depending_on_d_MC_error, 'b--')
+    plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d_MC + bermudan_prices_4_depending_on_d_MC_error, 'b--')
+    plt.plot(d_vec, bermudan_prices_4_Weak_depending_on_d_MC, 'r', label='Weak')
+    plt.plot(d_vec, bermudan_prices_4_Weak_depending_on_d_MC - bermudan_prices_4_depending_on_d_MC_error, 'r--')
+    plt.plot(d_vec, bermudan_prices_4_Weak_depending_on_d_MC + bermudan_prices_4_depending_on_d_MC_error, 'r--')
     plt.legend(loc='best')
     plt.xlabel('Weighted maximal degree d of polynomials')
     plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan option with 4 execution times')
     plt.show()
 
-    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d, 'g', label='QE')
-    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d - bermudan_prices_16_depending_on_d_MC_error, 'g--')
-    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d + bermudan_prices_16_depending_on_d_MC_error, 'g--')
-    plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d, 'b', label='Euler')
-    plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d - bermudan_prices_16_depending_on_d_MC_error, 'b--')
-    plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d + bermudan_prices_16_depending_on_d_MC_error, 'b--')
-    plt.plot(d_vec, bermudan_prices_16_Weak_depending_on_d, 'r', label='Weak')
-    plt.plot(d_vec, bermudan_prices_16_Weak_depending_on_d - bermudan_prices_16_depending_on_d_MC_error, 'r--')
-    plt.plot(d_vec, bermudan_prices_16_Weak_depending_on_d + bermudan_prices_16_depending_on_d_MC_error, 'r--')
+    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d_MC, 'g', label='QE')
+    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d_MC - bermudan_prices_16_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d_MC + bermudan_prices_16_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d_MC, 'b', label='Euler')
+    plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d_MC - bermudan_prices_16_depending_on_d_MC_error, 'b--')
+    plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d_MC + bermudan_prices_16_depending_on_d_MC_error, 'b--')
+    plt.plot(d_vec, bermudan_prices_16_Weak_depending_on_d_MC, 'r', label='Weak')
+    plt.plot(d_vec, bermudan_prices_16_Weak_depending_on_d_MC - bermudan_prices_16_depending_on_d_MC_error, 'r--')
+    plt.plot(d_vec, bermudan_prices_16_Weak_depending_on_d_MC + bermudan_prices_16_depending_on_d_MC_error, 'r--')
     plt.legend(loc='best')
     plt.xlabel('Weighted maximal degree d of polynomials')
     plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan option with 16 execution times')
     plt.show()
 
-    plt.plot(n_vec_4, bermudan_prices_4_QE, 'g', label='QE')
-    plt.plot(n_vec_4, bermudan_prices_4_QE - bermudan_prices_4_MC_error, 'g--')
-    plt.plot(n_vec_4, bermudan_prices_4_QE + bermudan_prices_4_MC_error, 'g--')
-    plt.plot(n_vec_4, bermudan_prices_4_Euler_1, 'b', label='Euler, N=1')
-    plt.plot(n_vec_4, bermudan_prices_4_Euler_2, color='b', linestyle='dotted', label='Euler, N=2')
-    plt.plot(n_vec_4, bermudan_prices_4_Euler_3, color='b', linestyle='dashed', label='Euler, N=3')
-    plt.plot(n_vec_4, bermudan_prices_4_Euler_4, color='b', linestyle='dashdot', label='Euler, N=4')
-    plt.plot(n_vec_4, bermudan_prices_4_Weak_1, color='r', label='Weak, N=1')
-    plt.plot(n_vec_4, bermudan_prices_4_Weak_2, color='r', linestyle='dotted', label='Weak, N=2')
-    plt.plot(n_vec_4, bermudan_prices_4_Weak_3, color='r', linestyle='dashed', label='Weak, N=3')
-    plt.plot(n_vec_4, bermudan_prices_4_Weak_4, color='r', linestyle='dashdot', label='Weak, N=4')
+    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC, 'g', label='QE')
+    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC - bermudan_prices_4_QMC_error, 'g--')
+    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC + bermudan_prices_4_QMC_error, 'g--')
+    plt.plot(n_vec_4, bermudan_prices_4_Euler_1_QMC, 'b', label='Euler, N=1')
+    plt.plot(n_vec_4, bermudan_prices_4_Euler_2_QMC, color='b', linestyle='dotted', label='Euler, N=2')
+    plt.plot(n_vec_4, bermudan_prices_4_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, N=3')
+    plt.plot(n_vec_4, bermudan_prices_4_Euler_4_QMC, color='b', linestyle='dashdot', label='Euler, N=4')
+    plt.plot(n_vec_4, bermudan_prices_4_Weak_1_QMC, color='r', label='Weak, N=1')
+    plt.plot(n_vec_4, bermudan_prices_4_Weak_2_QMC, color='r', linestyle='dotted', label='Weak, N=2')
+    plt.plot(n_vec_4, bermudan_prices_4_Weak_3_QMC, color='r', linestyle='dashed', label='Weak, N=3')
+    plt.plot(n_vec_4, bermudan_prices_4_Weak_4_QMC, color='r', linestyle='dashdot', label='Weak, N=4')
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
@@ -1223,17 +1302,17 @@ def illustrate_bermudan_option_prices():
     plt.title('Prices of Bermudan option with 4 execution times')
     plt.show()
 
-    plt.plot(n_vec_16, bermudan_prices_16_QE, 'g', label='QE')
-    plt.plot(n_vec_16, bermudan_prices_16_QE - bermudan_prices_16_MC_error, 'g--')
-    plt.plot(n_vec_16, bermudan_prices_16_QE + bermudan_prices_16_MC_error, 'g--')
-    plt.plot(n_vec_16, bermudan_prices_16_Euler_1, 'b', label='Euler, N=1')
-    plt.plot(n_vec_16, bermudan_prices_16_Euler_2, color='b', linestyle='dotted', label='Euler, N=2')
-    plt.plot(n_vec_16, bermudan_prices_16_Euler_3, color='b', linestyle='dashed', label='Euler, N=3')
-    plt.plot(n_vec_16, bermudan_prices_16_Euler_4, color='b', linestyle='dashdot', label='Euler, N=4')
-    plt.plot(n_vec_16, bermudan_prices_16_Weak_1, color='r', label='Weak, N=1')
-    plt.plot(n_vec_16, bermudan_prices_16_Weak_2, color='r', linestyle='dotted', label='Weak, N=2')
-    plt.plot(n_vec_16, bermudan_prices_16_Weak_3, color='r', linestyle='dashed', label='Weak, N=3')
-    plt.plot(n_vec_16, bermudan_prices_16_Weak_4, color='r', linestyle='dashdot', label='Weak, N=4')
+    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC, 'g', label='QE')
+    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC - bermudan_prices_16_QMC_error, 'g--')
+    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC + bermudan_prices_16_QMC_error, 'g--')
+    plt.plot(n_vec_16, bermudan_prices_16_Euler_1_QMC, 'b', label='Euler, N=1')
+    plt.plot(n_vec_16, bermudan_prices_16_Euler_2_QMC, color='b', linestyle='dotted', label='Euler, N=2')
+    plt.plot(n_vec_16, bermudan_prices_16_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, N=3')
+    plt.plot(n_vec_16, bermudan_prices_16_Euler_4_QMC, color='b', linestyle='dashdot', label='Euler, N=4')
+    plt.plot(n_vec_16, bermudan_prices_16_Weak_1_QMC, color='r', label='Weak, N=1')
+    plt.plot(n_vec_16, bermudan_prices_16_Weak_2_QMC, color='r', linestyle='dotted', label='Weak, N=2')
+    plt.plot(n_vec_16, bermudan_prices_16_Weak_3_QMC, color='r', linestyle='dashed', label='Weak, N=3')
+    plt.plot(n_vec_16, bermudan_prices_16_Weak_4_QMC, color='r', linestyle='dashdot', label='Weak, N=4')
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
@@ -1241,17 +1320,17 @@ def illustrate_bermudan_option_prices():
     plt.title('Prices of Bermudan option with 16 execution times')
     plt.show()
 
-    plt.plot(n_vec_256, bermudan_prices_256_QE, 'g', label='QE')
-    plt.plot(n_vec_256, bermudan_prices_256_QE - bermudan_prices_256_MC_error, 'g--')
-    plt.plot(n_vec_256, bermudan_prices_256_QE + bermudan_prices_256_MC_error, 'g--')
-    plt.plot(n_vec_256, bermudan_prices_256_Euler_1, 'b', label='Euler, N=1')
-    plt.plot(n_vec_256, bermudan_prices_256_Euler_2, color='b', linestyle='dotted', label='Euler, N=2')
-    plt.plot(n_vec_256, bermudan_prices_256_Euler_3, color='b', linestyle='dashed', label='Euler, N=3')
-    plt.plot(n_vec_256, bermudan_prices_256_Euler_4, color='b', linestyle='dashdot', label='Euler, N=4')
-    plt.plot(n_vec_256, bermudan_prices_256_Weak_1, color='r', label='Weak, N=1')
-    plt.plot(n_vec_256, bermudan_prices_256_Weak_2, color='r', linestyle='dotted', label='Weak, N=2')
-    plt.plot(n_vec_256, bermudan_prices_256_Weak_3, color='r', linestyle='dashed', label='Weak, N=3')
-    plt.plot(n_vec_256, bermudan_prices_256_Weak_4, color='r', linestyle='dashdot', label='Weak, N=4')
+    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC, 'g', label='QE')
+    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC - bermudan_prices_256_QMC_error, 'g--')
+    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC + bermudan_prices_256_QMC_error, 'g--')
+    plt.plot(n_vec_256, bermudan_prices_256_Euler_1_QMC, 'b', label='Euler, N=1')
+    plt.plot(n_vec_256, bermudan_prices_256_Euler_2_QMC, color='b', linestyle='dotted', label='Euler, N=2')
+    plt.plot(n_vec_256, bermudan_prices_256_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, N=3')
+    plt.plot(n_vec_256, bermudan_prices_256_Euler_4_QMC, color='b', linestyle='dashdot', label='Euler, N=4')
+    plt.plot(n_vec_256, bermudan_prices_256_Weak_1_QMC, color='r', label='Weak, N=1')
+    plt.plot(n_vec_256, bermudan_prices_256_Weak_2_QMC, color='r', linestyle='dotted', label='Weak, N=2')
+    plt.plot(n_vec_256, bermudan_prices_256_Weak_3_QMC, color='r', linestyle='dashed', label='Weak, N=3')
+    plt.plot(n_vec_256, bermudan_prices_256_Weak_4_QMC, color='r', linestyle='dashdot', label='Weak, N=4')
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
@@ -1259,17 +1338,17 @@ def illustrate_bermudan_option_prices():
     plt.title('Prices of Bermudan option with 256 execution times')
     plt.show()
 
-    plt.plot(n_vec_4, bermudan_prices_4_QE, 'g', label='QE, 4 ex. times')
-    plt.plot(n_vec_4, bermudan_prices_4_QE - bermudan_prices_4_MC_error, color='g', linestyle='dashdot')
-    plt.plot(n_vec_4, bermudan_prices_4_QE + bermudan_prices_4_MC_error, color='g', linestyle='dashdot')
-    plt.plot(n_vec_16, bermudan_prices_16_QE, color='g', linestyle='dotted', label='QE, 16 ex. times')
-    plt.plot(n_vec_256, bermudan_prices_256_QE, color='g', linestyle='dashed', label='QE, 256 ex. times')
-    plt.plot(n_vec_4, bermudan_prices_4_Euler_3, color='b', label='Euler, 4 ex. times')
-    plt.plot(n_vec_16, bermudan_prices_16_Euler_3, color='b', linestyle='dotted', label='Euler, 16 ex. times')
-    plt.plot(n_vec_256, bermudan_prices_256_Euler_3, color='b', linestyle='dashed', label='Euler, 256 ex. times')
-    plt.plot(n_vec_4, bermudan_prices_4_Weak_3, color='r', label='Weak, 4 ex. times')
-    plt.plot(n_vec_16, bermudan_prices_16_Weak_3, color='r', linestyle='dotted', label='Weak, 16 ex. times')
-    plt.plot(n_vec_256, bermudan_prices_256_Weak_3, color='r', linestyle='dashed', label='Weak, 256 ex. times')
+    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC, 'g', label='QE, 4 ex. times')
+    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC - bermudan_prices_4_QMC_error, color='g', linestyle='dashdot')
+    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC + bermudan_prices_4_QMC_error, color='g', linestyle='dashdot')
+    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC, color='g', linestyle='dotted', label='QE, 16 ex. times')
+    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC, color='g', linestyle='dashed', label='QE, 256 ex. times')
+    plt.plot(n_vec_4, bermudan_prices_4_Euler_3_QMC, color='b', label='Euler, 4 ex. times')
+    plt.plot(n_vec_16, bermudan_prices_16_Euler_3_QMC, color='b', linestyle='dotted', label='Euler, 16 ex. times')
+    plt.plot(n_vec_256, bermudan_prices_256_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, 256 ex. times')
+    plt.plot(n_vec_4, bermudan_prices_4_Weak_3_QMC, color='r', label='Weak, 4 ex. times')
+    plt.plot(n_vec_16, bermudan_prices_16_Weak_3_QMC, color='r', linestyle='dotted', label='Weak, 16 ex. times')
+    plt.plot(n_vec_256, bermudan_prices_256_Weak_3_QMC, color='r', linestyle='dashed', label='Weak, 256 ex. times')
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
