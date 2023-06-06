@@ -14,7 +14,154 @@ from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
 import scipy.stats, scipy.optimize, scipy.integrate, scipy.linalg, scipy.special
+from scipy.special import gamma
 
+
+T, rho, nu, theta, V_0, lambda_, S_0, rel_tol = 0.5, -0.7, 0.3, 0.02, 0.02, 0.3, 1., 1e-05
+k = np.linspace(-1., 0.5, 201)
+K = np.exp(k)
+H_vec = np.array([-0.05])
+N = 3
+true_smiles = np.empty((len(H_vec), len(K)))
+approx_smiles = np.empty((len(H_vec), len(K)))
+
+print(rk.quadrature_rule(H=0.1, N=3, T=1.))
+for i in range(len(H_vec)):
+    H = H_vec[i]
+    '''
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='GG')
+    samples = rHestonMarkovSimulation.samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, r=0.,
+                                              nodes=nodes, weights=weights, S_0=S_0, m=2 ** 20, N_time=256, verbose=2)[0]
+    vol, lower, upper = cf.eur_MC(S_0=S_0, K=K, T=T, samples=samples[0, :], r=0., payoff='call', implied_vol=True)
+    plt.plot(k, vol, color=color(i, len(H_vec)), label=f'H={H}')
+    plt.plot(k, lower, '--', color=color(i, len(H_vec)))
+    plt.plot(k, upper, '--', color=color(i, len(H_vec)))
+    '''
+
+    tic = time.perf_counter()
+    true_smiles[i, :] = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T,
+                                                    H=H, rho=rho, r=0., rel_tol=rel_tol, verbose=2)
+    dur = time.perf_counter() - tic
+    print(dur)
+    plt.plot(k, true_smiles[i, :])
+    plt.show()
+    print('did the first one')
+
+    '''
+    tic = time.perf_counter()
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='GG')
+    print(H, nodes, weights)
+    approx_smiles[i, :] = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T,
+                                                      nodes=nodes, weights=weights, rho=rho, r=0., rel_tol=rel_tol)
+    '''
+    '''
+    print(f'H={H}, N={N}, error={np.amax(np.abs(true_smiles[i, :] - approx_smiles[i, :]) / true_smiles[i, :])}, '
+          f'{dur}, {time.perf_counter() - tic}')
+    plt.plot(k, true_smiles[i, :], color=color(i, len(H_vec)), label=f'H={H}')
+    '''
+    # plt.plot(k, approx_smiles[i, :], '--', color=color(i, len(H_vec)), label=f'H={H}')
+nodes, weights = rk.quadrature_rule(H=H_vec[0], N=N, T=T, mode='GG')
+tic = time.perf_counter()
+approx_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, H=H_vec[0],
+                                           nodes=nodes, weights=weights, rho=rho, r=0., rel_tol=rel_tol, verbose=2)
+print(time.perf_counter() - tic)
+print((true_smiles[0, :], approx_smile))
+plt.plot(k, true_smiles[0, :])
+plt.plot(k, approx_smile)
+plt.legend(loc='best')
+plt.xlabel('log-moneyness')
+plt.ylabel('implied volatility')
+plt.show()
+
+
+
+H, T, rho, nu, theta, V_0, lambda_, S_0 = 0.1, 1., -0.7, 0.3, 0.02, 0.02, 0.3, 1.
+N_time = 100000
+nodes, weights = rk.quadrature_rule(H=H, N=3, T=T, mode='BL2')
+sample = rHestonMarkovSimulation.samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes,
+                                         weights=weights, rho=rho, S_0=S_0, r=0., m=2, N_time=N_time, sample_paths=True,
+                                         qmc=False)[0]
+# sample = rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0, r=0., m=2, N_time=N_time, sample_paths=True, qmc=False)
+'''
+plt.plot(np.linspace(0, T, N_time + 1), sample[0, 0, :], label='stock S')
+plt.plot(np.linspace(0, T, N_time + 1), np.sqrt(sample[1, 0, :]), label=r'volatility $\sqrt{V}$')
+plt.legend(loc='best')
+plt.xlabel('Time t')
+plt.show()'''
+plt.plot(np.linspace(0, T, N_time + 1), np.sqrt(sample[1, 0, :]))
+plt.legend(loc='best')
+plt.ylabel(r'Volatility $\sqrt{V}$')
+plt.xlabel('Time t')
+plt.show()
+
+'''
+Data.illustrate_bermudan_option_prices()
+'''
+T, H, rho, eta, S_0, V_0 = 0.9, 0.07, -0.9, 1.9, 1., 0.235 ** 2
+m, N_time = 10 ** 6, 2000
+k = np.linspace(-0.35, 0.4, 101)
+K = np.exp(k)
+rel_tol = 9e-02
+true_smile, lower, upper = rBergomi.implied_volatility(H=H, T=T, eta=eta, V_0=V_0, S_0=S_0, rho=rho, K=K, rel_tol=rel_tol, verbose=2)
+plt.plot(k, true_smile, 'k-', label='Non-Markovian approximation')
+plt.plot(k, lower, 'k--', label='confidence interval')
+plt.plot(k, upper, 'k--')
+nodes, weights = rk.quadrature_rule(H=H, N=16, T=T, mode='paper')
+our_smile, _, _ = rBergomiMarkov.implied_volatility(H=H, T=T, eta=eta, V_0=V_0, S_0=S_0, rho=rho, K=K, nodes=nodes,
+                                                    weights=weights, rel_tol=rel_tol, verbose=2)
+plt.plot(k, our_smile, 'r-', label='Our approach')
+nodes, weights = rk.quadrature_rule(H=H, N=16, T=T, mode='AK')
+our_smile, _, _ = rBergomiMarkov.implied_volatility(H=H, T=T, eta=eta, V_0=V_0, S_0=S_0, rho=rho, K=K, nodes=nodes,
+                                                    weights=weights, rel_tol=rel_tol, verbose=2)
+plt.plot(k, our_smile, 'b-', label='Alfonsi, Kebaier')
+nodes, weights = rk.harms_rule(H=H, n=16, m=1)
+our_smile, _, _ = rBergomiMarkov.implied_volatility(H=H, T=T, eta=eta, V_0=V_0, S_0=S_0, rho=rho, K=K, nodes=nodes,
+                                                    weights=weights, rel_tol=rel_tol, verbose=2)
+plt.plot(k, our_smile, 'orange', label='Harms, m=1')
+nodes, weights = rk.harms_rule(H=H, n=2, m=8)
+our_smile, _, _ = rBergomiMarkov.implied_volatility(H=H, T=T, eta=eta, V_0=V_0, S_0=S_0, rho=rho, K=K, nodes=nodes,
+                                                    weights=weights, rel_tol=rel_tol, verbose=2)
+plt.plot(k, our_smile, 'green', label='Harms, m=8')
+plt.legend(loc='best')
+plt.xlabel('log-moneyness')
+plt.ylabel('implied volatility')
+plt.show()
+
+
+
+lambda_, rho, nu, H, T, theta, V_0, S_0 = 0.3, -0.7, 0.3, 0.1, 1., 0.02, 0.02, 1.
+rel_tol = 3e-04
+k = np.linspace(-1.5, 1., 251)
+K = np.exp(k)
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol,
+                                         lambda_=lambda_, H=H)
+nodes, weights = rk.quadrature_rule(H=H, N=6, T=T, mode='paper')
+our_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol,
+                                        lambda_=lambda_, nodes=nodes, weights=weights)
+plt.plot(k, true_smile, 'k-', label='Non-Markovian approximation')
+plt.plot(k, our_smile, 'k--', label='N=6, our method')
+for N in [1, 4, 16, 64, 256, 1024]:
+    print(N)
+    nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode='AE')
+    our_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, rel_tol=rel_tol,
+                                             lambda_=lambda_, nodes=nodes, weights=weights)
+    plt.plot(k, our_smile, label=f'N={N}, Abi Jaber, El Euch')
+plt.legend(loc='best')
+plt.xlabel('log-moneyness')
+plt.ylabel('implied volatility')
+plt.show()
+
+
+
+nodes, weights = rk.quadrature_rule(H=0.07, T=1., N=6)
+tic = time.perf_counter()
+samples = rBergomiMarkov.generate_samples(H=0.07, T=1., eta=1.9, rho=-0.9, S_0=100., V_0=0.09, nodes=nodes, weights=weights, M=100000, N_time=128)
+print(time.perf_counter() - tic)
+tic = time.perf_counter()
+samples = rBergomi.generate_samples(H=0.07, T=1., eta=1.9, rho=-0.9, S_0=100., V_0=0.09, M=100000, N=128)
+print(time.perf_counter() - tic)
+print(cf.eur_MC(S_0=100., K=np.arange(70, 150, 10), T=1., samples=samples, payoff='put'))
+time.sleep(36000)
 
 '''
 S_0, lambda_, rho, nu, theta, V_0, rel_tol, T, H = 1., 0.3, -0.7, 0.3, 0.02, 0.02, 1e-05, 1., 0.1
@@ -121,26 +268,32 @@ for N_time in [2048]:
                                      feature_degree=8, antithetic=False)
     print('QE, 256 dates, ', N_time, 100 * est, 100 * stat)
 '''
-
+'''
+params['r'] = 0.
+params['K'] = np.exp(np.linspace(-0.1, 0.05, 16))
+print(compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([2, 3]), N_times=np.array([4, 8]),
+                                            simulator=['Euler', 'Weak'], n_samples=2 ** 17))
+print('Finished')
+time.sleep(3600000)
+'''
 for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
-    if N_time >= 32:
-        est, stat = rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0,
-                                                 T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time, N_dates=4,
-                                                 feature_degree=6, qmc=True, qmc_error_estimators=25)
+    if N_time >= 512:
+        est, stat = rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                 S_0=S_0, T=T, payoff='put', r=r, m=2 ** 18, N_time=N_time, N_dates=4,
+                                                 feature_degree=6, qmc=True, qmc_error_estimators=25, verbose=1)
         print('QE, 4 dates, ', N_time, 100 * est, 100 * stat)
 
-    if N_time >= 16:
+    if N_time >= 512:
         est, stat = rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                                 S_0=S_0,
-                                                 T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time, N_dates=16,
-                                                 feature_degree=6, qmc=True, qmc_error_estimators=25)
+                                                 S_0=S_0, T=T, payoff='put', r=r, m=2 ** 18, N_time=N_time, N_dates=16,
+                                                 feature_degree=6, qmc=True, qmc_error_estimators=25, verbose=1)
         print('QE, 16 dates, ', N_time, 100 * est, 100 * stat)
-    if N_time >= 256:
+    if N_time >= 512:
         est, stat = rHestonQESimulation.price_am(K=K, H=H, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
                                                  S_0=S_0,
-                                                 T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time, N_dates=256,
-                                                 feature_degree=6, qmc=True, qmc_error_estimators=25)
-        print('QE, 4 dates, ', N_time, 100 * est, 100 * stat)
+                                                 T=T, payoff='put', r=r, m=2 ** 17, N_time=N_time, N_dates=256,
+                                                 feature_degree=6, qmc=True, qmc_error_estimators=50, verbose=1)
+        print('QE, 256 dates, ', N_time, 100 * est, 100 * stat)
 print('Finished')
 time.sleep(360000)
 verbose = 0
@@ -151,21 +304,23 @@ for N in [4]:
                                       T=T, call=False, rel_tol=1e-05, implied_vol=False, r=r, nodes=nodes,
                                       weights=weights))
 
-    for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
+    for N_time in [256, 512, 1024, 2048]:
         for d in [6]:
-            tic = time.perf_counter()
-            est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                                         S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
-                                                         N_dates=4, feature_degree=d, qmc=True, nodes=nodes,
-                                                         weights=weights, euler=True, verbose=verbose)
-            print(time.perf_counter() - tic)
-            print('Euler, 4 dates, ', N, N_time, d, 100 * est, 100 * stat)
-            est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                                         S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
-                                                         N_dates=4, feature_degree=d, qmc=True, nodes=nodes,
-                                                         weights=weights, euler=False, verbose=verbose)
-            print('Weak, 4 dates, ', N, N_time, d, 100 * est, 100 * stat)
-            if N_time >= 16:
+            if N_time >= 2048:
+                tic = time.perf_counter()
+                est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                             S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
+                                                             N_dates=4, feature_degree=d, qmc=True, nodes=nodes,
+                                                             weights=weights, euler=True, verbose=verbose)
+                print(time.perf_counter() - tic)
+                print('Euler, 4 dates, ', N, N_time, d, 100 * est, 100 * stat)
+            if N_time >= 1024:
+                est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                             S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
+                                                             N_dates=4, feature_degree=d, qmc=True, nodes=nodes,
+                                                             weights=weights, euler=False, verbose=verbose)
+                print('Weak, 4 dates, ', N, N_time, d, 100 * est, 100 * stat)
+            if N_time >= 1024:
                 est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
                                                              S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
                                                              N_dates=16, feature_degree=d, qmc=True, nodes=nodes,
@@ -176,17 +331,17 @@ for N in [4]:
                                                              N_dates=16, feature_degree=d, qmc=True, nodes=nodes,
                                                              weights=weights, euler=False, verbose=verbose)
                 print('Weak, 16 dates, ', N, N_time, d, 100 * est, 100 * stat)
-    for N_time in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
-        est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                                     S_0=S_0, T=T, payoff='put', r=r, m=1_000_000, N_time=N_time,
-                                                     N_dates=16, feature_degree=8, qmc=True, nodes=nodes,
-                                                     weights=weights, euler=True)
-        print('Euler, 16 dates, ', N_time, 100 * est, 100 * stat)
-        est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                                     S_0=S_0, T=T, payoff='put', r=r, m=1_000_000, N_time=N_time,
-                                                     N_dates=16, feature_degree=8, qmc=True, nodes=nodes,
-                                                     weights=weights, euler=False)
-        print('Weak, 16 dates, ', N_time, 100 * est, 100 * stat)
+            if N_time >= 256:
+                est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                             S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
+                                                             N_dates=256, feature_degree=d, qmc=True, nodes=nodes,
+                                                             weights=weights, euler=True, verbose=verbose)
+                print('Euler, 256 dates, ', N, N_time, d, 100 * est, 100 * stat)
+                est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                             S_0=S_0, T=T, payoff='put', r=r, m=2 ** 20, N_time=N_time,
+                                                             N_dates=256, feature_degree=d, qmc=True, nodes=nodes,
+                                                             weights=weights, euler=False, verbose=verbose)
+                print('Weak, 256 dates, ', N, N_time, d, 100 * est, 100 * stat)
 '''
     for N_time in [1024]:
         est, stat = rHestonMarkovSimulation.price_am(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,

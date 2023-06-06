@@ -4,6 +4,8 @@ import ComputationalFinance as cf
 import psutil
 import RoughKernel as rk
 from scipy.special import gamma
+import sys
+from matplotlib import pyplot as plt
 
 
 def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
@@ -11,7 +13,8 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
     Solves psi(t) = int_0^t K(t - s) F(s, psi(s)) ds.
     :param F: Right-hand side (time-dependent!)
     :param T: Final time
-    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation
+    :param N_Riccati: Number of time steps used for solving the fractional Riccati equation. This is only an initial
+        choice, this number may be adaptively increased if the computation otherwise fails
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
@@ -25,23 +28,27 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
         raise MemoryError(f'Not enough memory to compute the characteristic function of the rough Heston model with'
                           f'{dim} inputs and {N_Riccati} time steps. Roughly {necessary_memory}**2 bytes needed, '
                           f'while only {available_memory}**2 bytes are available.')
-    
+
     if nodes is None or weights is None:
         coefficient = dt ** (H + 0.5) / gamma(H + 2.5)
-        v_1 = np.arange(N_Riccati + 1) ** (H + 1.5)
-        v_2 = np.arange(N_Riccati + 1) ** (H + 0.5)
-        v_3 = coefficient * (v_1[N_Riccati:1:-1] + v_1[N_Riccati - 2::-1] - 2 * v_1[N_Riccati - 1:0:-1])
-        v_4 = coefficient * (v_1[:-1] - (np.arange(N_Riccati) - H - 0.5) * v_2[1:])
-        v_5 = dt ** (H + 0.5) / gamma(H + 1.5) * (v_2[N_Riccati:0:-1] - v_2[N_Riccati - 1::-1])
+        v_1 = coefficient * np.arange(N_Riccati + 1) ** (H + 1.5)
+        v_2 = v_1[N_Riccati:1:-1] + v_1[N_Riccati - 2::-1] - 2 * v_1[N_Riccati - 1:0:-1]
+        v_3 = v_1[:-1] - coefficient * (np.arange(N_Riccati) - H - 0.5) * np.arange(1, N_Riccati + 1) ** (H + 0.5)
 
         psi = np.zeros(shape=(dim, N_Riccati + 1), dtype=np.cdouble)
         F_vec = np.zeros(shape=(dim, N_Riccati), dtype=np.cdouble)
         F_vec[:, 0] = F(0, psi[:, 0])
-        psi[:, 1] = F_vec[:, 0] * v_4[0] + coefficient * F(0, F_vec[:, 0] * v_5[-1])
-        for k in range(2, N_Riccati + 1):
-            F_vec[:, k - 1] = F((k - 1) / N_Riccati, psi[:, k - 1])
-            psi[:, k] = F_vec[:, 0] * v_4[k - 1] + F_vec[:, 1:k] @ v_3[-k + 1:] \
-                + coefficient * F(k / N_Riccati, F_vec[:, :k] @ v_5[-k:])
+        psi_P = F_vec[:, 0] * (v_3[0] + coefficient)
+        psi[:, 1] = F_vec[:, 0] * v_3[0] + coefficient * F(1 / N_Riccati, psi_P)
+        for k in range(1, N_Riccati):
+            F_vec[:, k] = F(k / N_Riccati, psi[:, k])
+            first_summands = F_vec[:, 0] * v_3[k] + F_vec[:, 1:k + 1] @ v_2[-k:]
+            psi_P = first_summands + coefficient * F_vec[:, k]
+            psi[:, k + 1] = first_summands + coefficient * F((k + 1) / N_Riccati, psi_P)
+            if np.amax(np.abs(psi[:, k + 1])) > 1e+70:
+                print(f'Increase N_Riccati from {N_Riccati} to {int(N_Riccati * 1.3)}')
+                return solve_fractional_Riccati(F=F, T=T, N_Riccati=int(N_Riccati * 1.3), H=H)
+
     else:
         nodes, weights = rk.sort(nodes, weights)
         n_zero_nodes = np.sum(nodes < 1e-08)
@@ -64,6 +71,9 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
             psi_x = div_weights[None, :] * F((i + 0.5) / N_Riccati, 0.5 * (psi[:, i] + psi_P))[:, None] \
                 + psi_x * exp_nodes[None, :]
             psi[:, i + 1] = np.sum(psi_x, axis=1)
+            if np.amax(np.abs(psi[:, i + 1])) > 1e+70:
+                return solve_fractional_Riccati(F=F, T=T, N_Riccati=int(N_Riccati * 1.3), H=H, nodes=nodes,
+                                                weights=weights)
 
     return psi
 
@@ -84,7 +94,7 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=Non
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
-    :return: The characteristic function
+    :return: The characteristic function, and the number of time steps N_Riccati that were actually used
     """
     z = complex(0, 1) * z
     a = nu * nu / 2
@@ -95,10 +105,12 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=Non
         return c + (b + a * x) * x
 
     psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights)
+    N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
 
-    return np.exp((np.log(S_0) + r * T) * z + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq)
+    return np.exp((np.log(S_0) + r * T) * z + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq), \
+        N_Riccati
 
 
 def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
@@ -116,22 +128,22 @@ def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None,
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
-    :return: The characteristic function
+    :return: The characteristic function, and the number of time steps N_Riccati that were actually used
     """
     z = complex(0, 1) * z
     z_sq = z * z
-    dt = T / N_Riccati
 
     def F(t, x):
         return 0.5 * t ** 2 * z_sq - 0.5 * t * z + (rho * nu * t * z - lambda_ + 0.5 * nu ** 2 * x) * x
 
     psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights)
-    integral = np.trapz(psi, dx=dt)
-    integral_sq = np.trapz(psi ** 2, dx=dt)
-    integral_time = np.trapz(psi * np.linspace(0, 1, N_Riccati + 1), dx=dt)
+    N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
+    integral = np.trapz(psi, dx=T / N_Riccati)
+    integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
+    integral_time = np.trapz(psi * np.linspace(0, 1, N_Riccati + 1), dx=T / N_Riccati)
 
     return np.exp(z * np.log(S_0) + (z / 6 - 0.25) * (V_0 * T) * z + (theta - lambda_ * V_0) * integral
-                  + 0.5 * V_0 * nu ** 2 * integral_sq + V_0 * nu * rho * z * integral_time)
+                  + 0.5 * V_0 * nu ** 2 * integral_sq + V_0 * nu * rho * z * integral_time), N_Riccati
 
 
 def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
@@ -147,19 +159,19 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
-    :return: The characteristic function
+    :return: The characteristic function, and the number of time steps N_Riccati that were actually used
     """
     z = complex(0, 1) * z
-    dt = T / N_Riccati
 
     def F(t, x):
         return z / T + (-lambda_ + 0.5 * nu ** 2 * x) * x
 
     psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights)
-    integral = np.trapz(psi, dx=dt)
-    integral_sq = np.trapz(psi ** 2, dx=dt)
+    N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
+    integral = np.trapz(psi, dx=T / N_Riccati)
+    integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
 
-    return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq)
+    return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq), N_Riccati
 
 
 def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_error=False, H=None, nu=None):
@@ -190,14 +202,16 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
         :param compute: Function that computes the Fourier inversion given the numerical parameters for a single
             maturity. Is a function of
             N_Riccati (number of Riccati intervals), L (cutoff for the Fourier integral),
-            N_Fourier (number of Fourier intervals)
+            N_Fourier (number of Fourier intervals),
+            and returns the Fourier inversion, together with the actual number of N_Riccati that was finally used
         :param eps: Relative error tolerance
         return: The implied volatility of the call option
         """
         N_Riccati = 600 * (1 if nu is None else int(np.fmax(1, nu / 0.3)))  # Number of time steps used in the solution
         # of the fractional Riccati equation
-        L = 100 / T_ ** 0.5  # The value at which we cut off the Fourier integral, so we do not integrate over the
+        L = 100 * T_ ** (-0.5 + (0 if H is None else H))  # The value at which we cut off the Fourier integral, so we do not integrate over the
         # reals, but only over [0, L]
+        N_Riccati = int(10 * L)
         N_Fourier = int(8 * L)  # The number of points used in the trapezoidal rule for the approximation of the Fourier
         # integral
         np.seterr(all='warn')
@@ -310,8 +324,8 @@ def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="europ
         nodes, weights = rk.quadrature_rule(H=H, N=N, T=T, mode=mode)
 
     def mgf(z, T_, N_):
-        return cf_log_price(z=np.complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, r=r,
-                            V_0=V_0, T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)
+        return cf_log_price(z=complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, r=r, V_0=V_0,
+                            T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)[0]
 
     if implied_vol:
         def compute(T_, K_, N_Riccati, L, N_Fourier, R):
@@ -453,8 +467,8 @@ def geom_asian_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="euro
         nodes, weights = rk.quadrature_rule(H, N, np.array([T / 2, T]), mode)
 
     def mgf(z, T_, N_):
-        return cf_avg_log_price(z=np.complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)
+        return cf_avg_log_price(z=complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)[0]
 
     if implied_vol:
         def compute(T_, K_, N_Riccati, L, N_Fourier, R):
@@ -497,8 +511,8 @@ def price_avg_vol_call_put(K, lambda_, nu, theta, V_0, T, N=0, mode="european", 
         nodes, weights = rk.quadrature_rule(H, N, T, mode)
 
     def mgf(z, T_, N_):
-        return cf_avg_vol(z=np.complex(0, -1) * z, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T_, N_Riccati=N_,
-                          H=H, nodes=nodes, weights=weights)
+        return cf_avg_vol(z=complex(0, -1) * z, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T_, N_Riccati=N_, H=H,
+                          nodes=nodes, weights=weights)[0]
 
     def compute(T_, K_, N_Riccati, L, N_Fourier, R):
         return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=0., R=R,
