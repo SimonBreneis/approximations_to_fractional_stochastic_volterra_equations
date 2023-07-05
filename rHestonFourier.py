@@ -4,11 +4,9 @@ import ComputationalFinance as cf
 import psutil
 import RoughKernel as rk
 from scipy.special import gamma
-import sys
-from matplotlib import pyplot as plt
 
 
-def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
+def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None, verbose=0):
     """
     Solves psi(t) = int_0^t K(t - s) F(s, psi(s)) ds.
     :param F: Right-hand side (time-dependent!)
@@ -18,6 +16,7 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The solution psi
     """
     dim = len(F(0, 0))
@@ -46,8 +45,9 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
             psi_P = first_summands + coefficient * F_vec[:, k]
             psi[:, k + 1] = first_summands + coefficient * F((k + 1) / N_Riccati, psi_P)
             if np.amax(np.abs(psi[:, k + 1])) > 1e+70:
-                print(f'Increase N_Riccati from {N_Riccati} to {int(N_Riccati * 1.3)}')
-                return solve_fractional_Riccati(F=F, T=T, N_Riccati=int(N_Riccati * 1.3), H=H)
+                if verbose >= 1:
+                    print(f'Increase N_Riccati from {N_Riccati} to {int(N_Riccati * 1.3)}')
+                return solve_fractional_Riccati(F=F, T=T, N_Riccati=int(N_Riccati * 1.3), H=H, verbose=verbose)
 
     else:
         nodes, weights = rk.sort(nodes, weights)
@@ -72,13 +72,15 @@ def solve_fractional_Riccati(F, T, N_Riccati, H=None, nodes=None, weights=None):
                 + psi_x * exp_nodes[None, :]
             psi[:, i + 1] = np.sum(psi_x, axis=1)
             if np.amax(np.abs(psi[:, i + 1])) > 1e+70:
+                if verbose >= 1:
+                    print(f'Increase N_Riccati from {N_Riccati} to {int(N_Riccati * 1.3)}')
                 return solve_fractional_Riccati(F=F, T=T, N_Riccati=int(N_Riccati * 1.3), H=H, nodes=nodes,
-                                                weights=weights)
+                                                weights=weights, verbose=verbose)
 
     return psi
 
 
-def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=None, nodes=None, weights=None):
+def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=None, nodes=None, weights=None, verbose=0):
     """
     Gives the characteristic function of the log-price of the rough Heston model.
     :param z: Argument of the characteristic function (assumed to be a numpy array)
@@ -94,6 +96,7 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=Non
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The characteristic function, and the number of time steps N_Riccati that were actually used
     """
     z = complex(0, 1) * z
@@ -104,7 +107,7 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=Non
     def F(t, x):
         return c + (b + a * x) * x
 
-    psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights)
+    psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights, verbose=verbose)
     N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
@@ -113,7 +116,7 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=Non
         N_Riccati
 
 
-def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
+def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None, verbose=0):
     """
     Gives the characteristic function of the average (on [0, T]) log-price of the rough Heston model.
     :param z: Argument of the characteristic function (assumed to be a numpy array)
@@ -128,6 +131,7 @@ def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None,
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The characteristic function, and the number of time steps N_Riccati that were actually used
     """
     z = complex(0, 1) * z
@@ -136,7 +140,7 @@ def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None,
     def F(t, x):
         return 0.5 * t ** 2 * z_sq - 0.5 * t * z + (rho * nu * t * z - lambda_ + 0.5 * nu ** 2 * x) * x
 
-    psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights)
+    psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights, verbose=verbose)
     N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
@@ -146,7 +150,7 @@ def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None,
                   + 0.5 * V_0 * nu ** 2 * integral_sq + V_0 * nu * rho * z * integral_time), N_Riccati
 
 
-def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None):
+def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, weights=None, verbose=0):
     """
     Gives the characteristic function of the average (on [0, T]) volatility of the rough Heston model.
     :param z: Argument of the characteristic function (assumed to be a numpy array)
@@ -159,6 +163,7 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     :param H: Hurst parameter
     :param nodes: Nodes of the Markovian approximation
     :param weights: Weights of the Markovian approximation
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The characteristic function, and the number of time steps N_Riccati that were actually used
     """
     z = complex(0, 1) * z
@@ -166,7 +171,7 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     def F(t, x):
         return z / T + (-lambda_ + 0.5 * nu ** 2 * x) * x
 
-    psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights)
+    psi = solve_fractional_Riccati(F=F, T=T, N_Riccati=N_Riccati, H=H, nodes=nodes, weights=weights, verbose=verbose)
     N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
@@ -174,7 +179,7 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq), N_Riccati
 
 
-def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_error=False, H=None, nu=None):
+def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, return_error=False, H=None, verbose=0):
     """
     Computes the Fourier inversion given a relative error tolerance by finding the appropriate parameters for
     solving the Riccati equations, and computing the inverse Fourier integral.
@@ -186,10 +191,9 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
         L (cutoff for the Fourier integral), N_Fourier (number of Fourier intervals),
         R (dampening shift that makes the Fourier inversion integrable)
     :param rel_tol: Required maximal relative error in the implied volatility
-    :param verbose: Determines how many intermediate results are printed to the console
     :param return_error: If True, also returns a relative error estimate
     :param H: Hurst parameter. Specifying may improve convergence speed
-    :param nu: Volatility of volatility. Specifying it may improve convergence speed
+    :param verbose: Determines how many intermediate results are printed to the console
     return: The implied volatility of the call option
     """
     R = 2.  # The (dampening) shift that we use for the Fourier inversion
@@ -207,10 +211,8 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
         :param eps: Relative error tolerance
         return: The implied volatility of the call option
         """
-        N_Riccati = 600 * (1 if nu is None else int(np.fmax(1, nu / 0.3)))  # Number of time steps used in the solution
-        # of the fractional Riccati equation
-        L = 100 * T_ ** (-0.5 + (0 if H is None else H))  # The value at which we cut off the Fourier integral, so we do not integrate over the
-        # reals, but only over [0, L]
+        L = 100 * T_ ** (-0.5 + (0 if H is None else H))  # The value at which we cut off the Fourier integral,
+        # so we do not integrate over the reals, but only over [0, L]
         N_Riccati = int(10 * L)
         N_Fourier = int(8 * L)  # The number of points used in the trapezoidal rule for the approximation of the Fourier
         # integral
@@ -220,24 +222,25 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
         duration = time.perf_counter() - tic
         smile_approx = compute(N_Riccati=int(N_Riccati / 1.6), L=L / 1.2, N_Fourier=N_Fourier // 2)
         error = np.amax(np.abs(smile_approx - smile) / smile)
-        if verbose >= 3:
+        if verbose >= 4:
             print(np.abs(smile_approx - smile) / smile)
         if verbose >= 2:
             print(error)
 
         while np.isnan(error) or error > eps or np.sum(np.isnan(smile)) > 0:
-            if time.perf_counter() - tic > 3600:
-                raise RuntimeError('Smile was not computed in given time.')
             if np.sum(np.isnan(smile)) == 0:
-                smile_approx = compute(N_Riccati=N_Riccati // 2, L=L, N_Fourier=N_Fourier)
-                error_Riccati = np.amax(np.abs(smile_approx - smile) / smile)
-                if not np.isnan(error_Riccati) and error_Riccati < eps / 5 and np.sum(np.isnan(smile_approx)) == 0:
-                    N_Riccati = int(N_Riccati / 1.8)
+                if H is None or H > 0:
+                    smile_approx = compute(N_Riccati=int(N_Riccati / 1.8), L=L, N_Fourier=N_Fourier)
+                    error_Riccati = np.amax(np.abs(smile_approx - smile) / smile)
+                    if not np.isnan(error_Riccati) and error_Riccati < eps / 5 and np.sum(np.isnan(smile_approx)) == 0:
+                        N_Riccati = int(N_Riccati / 1.6)
+                else:
+                    error_Riccati = np.inf
 
                 smile_approx = compute(N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier // 2)
                 error_Fourier = np.amax(np.abs(smile_approx - smile) / smile)
                 if not np.isnan(error_Fourier) and error_Fourier < eps / 5 and np.sum(np.isnan(smile_approx)) == 0:
-                    N_Fourier = N_Fourier // 2
+                    N_Fourier = int(N_Fourier / 1.8)
             else:
                 error_Fourier, error_Riccati = np.nan, np.nan
 
@@ -258,7 +261,7 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, verbose=0, return_e
             smile = compute(N_Riccati=N_Riccati, L=L, N_Fourier=N_Fourier)
             duration = time.perf_counter() - tic
             error = np.amax(np.abs(smile_approx - smile) / smile)
-            if verbose >= 3:
+            if verbose >= 4:
                 print(np.abs(smile_approx - smile) / smile)
             if verbose >= 2:
                 print(error)
@@ -325,7 +328,7 @@ def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="europ
 
     def mgf(z, T_, N_):
         return cf_log_price(z=complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, r=r, V_0=V_0,
-                            T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)[0]
+                            T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights, verbose=verbose - 2)[0]
 
     if implied_vol:
         def compute(T_, K_, N_Riccati, L, N_Fourier, R):
@@ -336,8 +339,8 @@ def eur_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="europ
             return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=r, R=R, L=L,
                                                  N=N_Fourier, log_price=True, call=call, digital=digital)
 
-    return compute_Fourier_inversion(fun=compute, S_0=S_0, K=K, T=T, rel_tol=rel_tol, verbose=verbose,
-                                     return_error=return_error, H=H, nu=nu)
+    return compute_Fourier_inversion(fun=compute, S_0=S_0, K=K, T=T, rel_tol=rel_tol, return_error=return_error, H=H,
+                                     verbose=verbose)
 
 
 def skew_eur_call_put(lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european", rel_tol=1e-03, H=None, nodes=None,
@@ -377,7 +380,7 @@ def skew_eur_call_put(lambda_, rho, nu, theta, V_0, T, r=0., N=0, mode="european
                                           implied_vol=True, call=True, return_error=True, verbose=verbose - 2)
             return np.array([smile_[198], smile_[199], smile_[201], smile_[202]]), error_
 
-        eps = rel_tol / 2
+        eps = rel_tol
         h = 0.0005 * np.sqrt(T_)
         smile, eps = compute_smile(eps_=eps, h_=h)
         skew_ = np.abs(smile[2] - smile[1]) / (2 * h)
@@ -468,7 +471,7 @@ def geom_asian_call_put(S_0, K, lambda_, rho, nu, theta, V_0, T, N=0, mode="euro
 
     def mgf(z, T_, N_):
         return cf_avg_log_price(z=complex(0, -1) * z, S_0=S_0, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
-                                T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights)[0]
+                                T=T_, N_Riccati=N_, H=H, nodes=nodes, weights=weights, verbose=verbose - 2)[0]
 
     if implied_vol:
         def compute(T_, K_, N_Riccati, L, N_Fourier, R):
@@ -512,7 +515,7 @@ def price_avg_vol_call_put(K, lambda_, nu, theta, V_0, T, N=0, mode="european", 
 
     def mgf(z, T_, N_):
         return cf_avg_vol(z=complex(0, -1) * z, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T_, N_Riccati=N_, H=H,
-                          nodes=nodes, weights=weights)[0]
+                          nodes=nodes, weights=weights, verbose=verbose - 2)[0]
 
     def compute(T_, K_, N_Riccati, L, N_Fourier, R):
         return cf.price_eur_call_put_fourier(mgf=lambda u: mgf(z=u, T_=T_, N_=N_Riccati), K=K_, T=T_, r=0., R=R,
