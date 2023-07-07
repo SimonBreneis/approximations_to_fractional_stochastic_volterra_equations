@@ -279,8 +279,8 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     return result[:, :m_return, ...], rng
 
 
-def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True, payoff='call',
-        implied_vol=False, qmc_error_estimators=25, verbose=0):
+def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n_maturities=None, euler=False, qmc=True,
+        payoff='call', implied_vol=False, qmc_error_estimators=25, verbose=0):
     """
     Gives the price or the implied volatility of a European option in the approximated, Markovian rough Heston model
     using MC or QMC simulation.
@@ -297,6 +297,10 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, e
     :param r: Interest rate
     :param m: Number of samples
     :param N_time: Number of time steps used in simulation
+    :param n_maturities: If None, only uses the maturity T. If an integer, uses the maturity vector
+        np.linspace(0, T, n_maturities + 1)[1:]. The strikes K are rescaled accordingly, where it is assumed that the
+        given vector K corresponds to the largest maturity T. If n_maturities is an integer, N_time must be divisible by
+        n_maturities
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     :param payoff: The payoff function, or the string 'call' or the string 'put'
@@ -306,25 +310,41 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, e
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
+    is_smile = n_maturities is None
+    if is_smile:
+        n_maturities = 1
+    T_vec = T * np.linspace(0, 1, n_maturities + 1)[1:]
+    K_mat = np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K)[None, :])
+
     def get_samples(rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
-                                 rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=False, vol_only=False,
-                                 euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
-        return samples_[0, :]
+                                 rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True,
+                                 return_times=n_maturities, vol_only=False, euler=euler, qmc=qmc, rv_shift=rv_shift,
+                                 verbose=verbose - 1)
+        return samples_[0, :, 1:]
 
     if qmc:
-        estimates = np.empty((len(K), qmc_error_estimators))
+        estimates = np.empty((n_maturities, len(K), qmc_error_estimators))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            estimates[:, i], _ = cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=get_samples(False if i == 0 else True),
-                                           payoff=payoff, implied_vol=False)
+            sample_batch = get_samples(False if i == 0 else True)
+            for j in range(n_maturities):
+                estimates[j, :, i], _ = cf.eur_MC(S_0=S_0, K=K_mat[j, :], T=T_vec[j], r=r, samples=sample_batch[:, j],
+                                                  payoff=payoff, implied_vol=False)
         est, stat = cf.MC(estimates)
         if not implied_vol:
+            if is_smile:
+                est, stat = est[0, :], stat[0, :]
             return est, stat
-        vol = cf.iv_eur(S_0=S_0, K=K, r=r, T=T, price=est, payoff=payoff)
-        low = cf.iv_eur(S_0=S_0, K=K, r=r, T=T, price=est - stat, payoff=payoff)
-        upp = cf.iv_eur(S_0=S_0, K=K, r=r, T=T, price=est + stat, payoff=payoff)
+        vol, low, upp = np.empty((n_maturities, len(K))), np.empty((n_maturities, len(K))), \
+            np.empty((n_maturities, len(K)))
+        for j in range(n_maturities):
+            vol[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :], payoff=payoff)
+            low[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :] - stat[j, :], payoff=payoff)
+            upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :] + stat[j, :], payoff=payoff)
+        if is_smile:
+            vol, low, upp = vol[0, :], low[0, :], upp[0, :]
         return vol, low, upp
     else:
         return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=get_samples(), payoff=payoff, implied_vol=implied_vol)
@@ -361,12 +381,12 @@ def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weight
         return samples_[0, :, :]
 
     if qmc:
-        estimates = np.empty(qmc_error_estimators)
+        estimates = np.empty((len(K), qmc_error_estimators))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
             samples_1 = get_samples(False if i == 0 else True)
-            estimates[i], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
+            estimates[:, i], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
         est, stat = cf.MC(estimates)
         return est, est - stat, est + stat
     else:
