@@ -592,12 +592,19 @@ def error_l2_optimal_weights(H, T, nodes, output='error'):
         exp_node_vec = exp_underflow(node * T)
         A = (1 - exp_node_matrix) / (2 * node)
         b = -2 * gamma_ints / node ** (H + 0.5)
-        c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
-        v = b / A
-        err = c - 0.25 * b * v
-        opt_weight = np.array([-0.5 * v])
-        if output == 'error' or output == 'err':
-            return err, opt_weight
+        if H > 0:
+            c = T ** (2 * H) / (2 * H * gamma_1 ** 2)
+            v = b / A
+            err = c - 0.25 * b * v
+            opt_weight = np.array([-0.5 * v])
+            if output == 'error' or output == 'err':
+                return err, opt_weight
+        else:
+            v = b / A
+            err = - 0.25 * b * v
+            opt_weight = np.array([-0.5 * v])
+            if output == 'error' or output == 'err':
+                return err, opt_weight
 
         A_grad = (-1 + (1 + 2 * node * T) * exp_node_matrix) / (4 * node ** 2)
         b_grad = -2 * ((node * T) ** (H + 0.5) * exp_node_vec / gamma_1 - (H + 0.5) * gamma_ints) / node ** (H + 1.5)
@@ -751,7 +758,7 @@ def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_o
     :param init_nodes: May specify a starting point for the nodes
     :param iterative: If True, starts with 1 node and iteratively solves the optimization problem before adding another
         node
-    :return: The minimal relative error together with the associated nodes and weights.
+    :return: The minimal error together with the associated nodes and weights.
     """
     error_fun = error_l2_optimal_weights
     all_errors = np.empty(1)
@@ -847,9 +854,18 @@ def optimize_error_l2(H, N, T, tol=1e-08, bound=None, method='gradient', force_o
     # post-processing, ensuring that the results are of good quality
     nodes = np.exp(res.x)
     err, weights = error_fun(H=H, T=T, nodes=nodes, output='error')
-    if err > 2 * np.fmax(original_error, 1e-9):
-        return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
-    all_errors[-1] = np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T)
+    if H > 0:
+        if err > 2 * np.fmax(original_error, 1e-9):
+            # return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
+            return np.sqrt(np.fmax(original_error, 0)), original_nodes, original_weights
+        # all_errors[-1] = np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T)
+        all_errors[-1] = np.sqrt(np.fmax(err, 0))
+    else:
+        if err > 0.5 * original_error:
+            # return np.sqrt(np.fmax(original_error, 0)) / kernel_norm(H, T), original_nodes, original_weights
+            return original_error, original_nodes, original_weights
+        # all_errors[-1] = np.sqrt(np.fmax(err, 0)) / kernel_norm(H, T)
+        all_errors[-1] = err
     return all_errors, nodes, weights
 
 
@@ -934,7 +950,10 @@ def european_rule(H, N, T):
         return optimize_error_l2(H=H, N=N_, T=T, tol=tol_, bound=bound_, method='gradient', force_order=False,
                                  init_nodes=nod)
 
-    _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
+    if H > 0:
+        _, nodes, weights = optimizing_func(N_=1, tol_=1e-06, bound_=None)
+    else:
+        _, nodes, weights = optimize_error_l1(H=H, N=1, T=T)
     if N == 1:
         return nodes, weights
 
