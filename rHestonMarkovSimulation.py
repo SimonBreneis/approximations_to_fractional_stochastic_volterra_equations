@@ -426,7 +426,7 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time,
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
             samples_1 = get_samples(False if i == 0 else True)
-            estimates[i], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
+            estimates[:, i], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
         est, stat = cf.MC(estimates)
         return est, est - stat, est + stat
     else:
