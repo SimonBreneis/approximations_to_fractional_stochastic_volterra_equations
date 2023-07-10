@@ -10,7 +10,7 @@ import psutil
 
 
 def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, sample_paths=False, return_times=None,
-            vol_only=False, euler=False, qmc=True, rng=None, rv_shift=False, verbose=0):
+            vol_only=False, stock_only=False, euler=False, qmc=True, rng=None, rv_shift=False, verbose=0):
     """
     Simulates sample paths under the Markovian approximation of the rough Heston model.
     :param lambda_: Mean-reversion speed
@@ -33,6 +33,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         saving reasons, as only these (in this case 26) values are ever stored. The number N_time must be divisible by
         return_times. If return_times is None, it is set to N_time, i.e. we return every time step that was simulated.
     :param vol_only: If True, simulates only the volatility process, not the stock price process
+    :param stock_only: If True, returns only the stock price process. This saves memory
     :param euler: If True, uses an Euler scheme. If False, uses moment matching
     :param qmc: If True, uses Quasi-Monte Carlo simulation with the Sobol sequence. If False, uses standard Monte Carlo
     :param rng: Can specify a sampler to use for sampling the underlying random variables. If qmc is true, expects
@@ -94,7 +95,11 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                   f'is not a power of 2. Simulates m={m} samples instead.')
 
     available_memory = np.sqrt(psutil.virtual_memory().available)
-    necessary_memory = 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    if stock_only:
+        necessary_memory = 3 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    else:
+        necessary_memory = 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) \
+            * np.sqrt(np.array([0.]).nbytes)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with'
                           f'{N} Markovian dimensions, {return_times} time points where the sample paths should be '
@@ -248,7 +253,23 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
             result[0, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[1:, :, :]), 0)
         else:
             result[0, :] = np.fmax(np.einsum('i,ij->j', weights, result[1:, :]), 0)
-
+    elif stock_only:
+        result = np.empty((m, return_times + 1)) if sample_paths else np.empty(m)
+        for j in range(n_batches):
+            dBW = generate_samples()
+            current_V_comp = np.empty((N, m_batch))
+            current_V_comp[:, :] = V_init[:, None]
+            current_log_S = np.full(m_batch, np.log(S_0))
+            for i in range(N_time):
+                if verbose >= 1:
+                    print(f'Simulation round {j + 1} of {n_batches}, step {i + 1} of {N_time}')
+                current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
+                if sample_paths and (i + 1) % saving_steps == 0:
+                    result[j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_log_S
+            if not sample_paths:
+                result[j * m_batch:(j + 1) * m_batch] = current_log_S
+        if sample_paths:
+            result[:, 0] = np.log(S_0)
     else:
         result = np.empty((N + 2, m, return_times + 1)) if sample_paths else np.empty((N + 2, m))
         for j in range(n_batches):
@@ -273,10 +294,15 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         else:
             result[1, :] = np.fmax(np.einsum('i,ij->j', weights, result[2:, :]), 0)
 
-    result[0, ...] = np.exp(result[0, ...])
-    if one_node:
+    if one_node and not stock_only:
         result = result[:-1, ...]
-    return result[:, :m_return, ...], rng
+    if stock_only:
+        result = result[:m_return, ...]
+        result = np.exp(result)
+    else:
+        result = result[:, :m_return, ...]
+        result[0, ...] = np.exp(result[0, ...])
+    return result, rng
 
 
 def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n_maturities=None, euler=False, qmc=True,
@@ -319,9 +345,9 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n
     def get_samples(rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True,
-                                 return_times=n_maturities, vol_only=False, euler=euler, qmc=qmc, rv_shift=rv_shift,
-                                 verbose=verbose - 1)
-        return samples_[0, :, 1:]
+                                 return_times=n_maturities, vol_only=False, stock_only=True, euler=euler, qmc=qmc,
+                                 rv_shift=rv_shift, verbose=verbose - 1)
+        return samples_[:, 1:]
 
     if qmc:
         estimates = np.empty((n_maturities, len(K), qmc_error_estimators))
@@ -377,8 +403,8 @@ def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weight
     def get_samples(rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, vol_only=False,
-                                 euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
-        return samples_[0, :, :]
+                                 stock_only=True, euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
+        return samples_
 
     if qmc:
         estimates = np.empty((len(K), qmc_error_estimators))
@@ -417,7 +443,7 @@ def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time,
     def get_samples(rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=0., S_0=1., r=0., m=m, N_time=N_time, sample_paths=True, vol_only=True,
-                                 euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
+                                 stock_only=False, euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
         return samples_[0, :, :]
 
     if qmc:
@@ -550,7 +576,7 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
     def get_samples(rng_=None, rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates,
-                                 vol_only=False, euler=euler, qmc=qmc, rng=rng_, rv_shift=rv_shift)
+                                 vol_only=False, stock_only=False, euler=euler, qmc=qmc, rng=rng_, rv_shift=rv_shift)
         samples_[1:-1, :, :] = weights[:, None, None] * samples_[2:, :, :]
         samples_ = samples_[:-1, :, :]
         samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]
