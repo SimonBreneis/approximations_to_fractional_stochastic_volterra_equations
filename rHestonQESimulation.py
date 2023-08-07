@@ -149,9 +149,13 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
     if isinstance(rv_shift, bool) and rv_shift:
         rv_shift = np.random.uniform(0, 1, 3 * N_time)
     eps = 1e-06
-    kernel = rk.kernel_rheston(H=H, lam=lambda_, zeta=nu)
     if kernel_dict is None:
         kernel_dict = {}
+    if 'kernel' in kernel_dict:
+        kernel = kernel_dict['kernel']
+    else:
+        kernel = rk.kernel_rheston(H=H, lam=lambda_, zeta=nu)
+        kernel_dict['kernel'] = kernel
     if 'xi' in kernel_dict:
         xi = kernel_dict['xi']
     else:
@@ -187,7 +191,7 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
                   f'is not a power of 2. Simulates m={m} samples instead.')
 
     available_memory = np.sqrt(psutil.virtual_memory().available)
-    necessary_memory = 4 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    necessary_memory = 2.5 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with {return_times} '
                           f'time points where the sample paths should be '
@@ -272,13 +276,13 @@ def eur(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, payo
     if is_smile:
         n_maturities = 1
     T_vec = T * np.linspace(0, 1, n_maturities + 1)[1:]
-    K_mat = np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K)[None, :])
+    _, K_mat = cf.maturity_tensor_strike(S_0=S_0, K=K, T=T)
 
     def get_samples(rv_shift=False, kernel_dict_=None):
         samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
                                                r=r, m=m, N_time=N_time, sample_paths=True, return_times=n_maturities,
                                                qmc=qmc, rv_shift=rv_shift, kernel_dict=kernel_dict_,
-                                               verbose=verbose - 1)
+                                               verbose=verbose - 2)
         return samples_[0, :, 1:], kernel_dict_
 
     if qmc:
@@ -299,9 +303,8 @@ def eur(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, payo
         vol, low, upp = np.empty((n_maturities, len(K))), np.empty((n_maturities, len(K))), \
             np.empty((n_maturities, len(K)))
         for j in range(n_maturities):
-            vol[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :], payoff=payoff)
-            low[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :] - stat[j, :], payoff=payoff)
-            upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :] + stat[j, :], payoff=payoff)
+            vol[j, :], low[j, :], upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :],
+                                                        payoff=payoff, stat=stat[j, :])
         if is_smile:
             vol, low, upp = vol[0, :], low[0, :], upp[0, :]
         return vol, low, upp
@@ -332,25 +335,31 @@ def price_geom_asian_call(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_ti
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    def get_samples(rv_shift=False, kernel_dict_=None):
-        samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
-                                               r=r, m=m, N_time=N_time, sample_paths=True, qmc=qmc,
-                                               rv_shift=rv_shift, kernel_dict=kernel_dict_, verbose=verbose - 1)
-        return samples_[0, :, :], kernel_dict_
+    verbose = 1
+    m_modified = int(np.fmin(2 ** 22 // N_time, m))
+    m_rounds = m // m_modified
 
-    if qmc:
-        kernel_dict = None
-        estimates = np.empty((len(K), qmc_error_estimators))
-        for i in range(qmc_error_estimators):
-            if verbose >= 1:
-                print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            samples_1, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
-            estimates[:, i], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
-        est, stat = cf.MC(estimates)
-        return est, est - stat, est + stat
-    else:
-        samples_1, kernel_dict = get_samples()
-        return cf.price_geom_asian_call_MC(K=K, samples=samples_1)
+    def get_samples(rv_shift=False, kernel_dict_=None, rng_=None):
+        samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
+                                               r=r, m=m_modified, N_time=N_time, sample_paths=True, qmc=qmc,
+                                               rv_shift=rv_shift, kernel_dict=kernel_dict_, rng=rng_,
+                                               verbose=verbose - 1)
+        return samples_[0, :, :], rng_, kernel_dict_
+
+    kernel_dict = None
+    estimates = np.empty((len(K), qmc_error_estimators * m_rounds))
+    for i in range(qmc_error_estimators):
+        if verbose >= 1:
+            print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
+            print(f'Current estimate: {cf.MC(estimates[:, :i * m_rounds])}')
+        samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
+        estimates[:, i * m_rounds], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
+        for k in range(1, m_rounds):
+            print(f'Round {k} of {m_rounds}')
+            samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict, rng)
+            estimates[:, i * m_rounds + k], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
+    est, stat = cf.MC(estimates)
+    return est, est - stat, est + stat
 
 
 def price_avg_vol_call(H, K, lambda_, nu, theta, V_0, T, m, N_time, qmc=True, qmc_error_estimators=25, verbose=0):
@@ -371,24 +380,31 @@ def price_avg_vol_call(H, K, lambda_, nu, theta, V_0, T, m, N_time, qmc=True, qm
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    def get_samples(rv_shift=False, kernel_dict_=None):
+    def get_samples(rv_shift=False, kernel_dict_=None, rng_=None):
         samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=0., S_0=1.,
-                                               r=0., m=m, N_time=N_time, sample_paths=True, qmc=qmc, rv_shift=rv_shift,
-                                               kernel_dict=kernel_dict_, verbose=verbose - 1)
-        return samples_[0, :, :], kernel_dict_
+                                               r=0., m=m_modified, N_time=N_time, sample_paths=True, qmc=qmc,
+                                               rv_shift=rv_shift, kernel_dict=kernel_dict_, rng=rng_,
+                                               verbose=verbose - 1)
+        return samples_[0, :, :], rng_, kernel_dict_
+
+    m_modified = int(np.fmin(2 ** 10, m))
+    m_rounds = m // m_modified
 
     if qmc:
         kernel_dict = None
-        estimates = np.empty((len(K), qmc_error_estimators))
+        estimates = np.empty((len(K), qmc_error_estimators * m_rounds))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            samples_1, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
-            estimates[:, i], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
+            samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
+            estimates[:, i * m_rounds], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
+            for k in range(1, m_rounds):
+                samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict, rng)
+                estimates[:, i * m_rounds + k], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
         est, stat = cf.MC(estimates)
         return est, est - stat, est + stat
     else:
-        samples_1, _ = get_samples()
+        samples_1, _, _ = get_samples()
         return cf.price_geom_asian_call_MC(K=K, samples=samples_1)
 
 

@@ -12,7 +12,7 @@ def maturity_tensor_strike(S_0, K, T):
     :param T: Array of maturities
     :return: Two 2-dim arrays of maturities and and strikes of the form T=T(T, K) and K=K(T, K)
     """
-    return np.tile(T, (len(K), 1)).T, S_0 * np.exp(np.multiply.outer(np.sqrt(T / T[-1]), np.log(K / S_0)))
+    return np.tile(T, (len(K), 1)).T, S_0 * np.exp(np.sqrt(T / T[-1])[:, None] * np.log(K / S_0)[None, :])
 
 
 def MC(samples):
@@ -163,7 +163,7 @@ def iv(BS_price_fun, price, tol=1e-10, sl=1e-10, sr=10.):
     return np.where(sm < threshold, np.nan, sm)
 
 
-def iv_eur(S_0, K, T, price, payoff, r=0.):
+def iv_eur(S_0, K, T, price, payoff, r=0., stat=None):
     """
     Computes the implied volatility of a European call or put option given its price.
     :param S_0: Initial stock price
@@ -173,6 +173,8 @@ def iv_eur(S_0, K, T, price, payoff, r=0.):
     :param price: (Market) price of the option
     :param payoff: Either 'call' or 'put' or a payoff function taking as input S (final stock price samples) and K
         (strike or other parameters), and returning the payoffs for all the stock prices S
+    :param stat: Can specify a MC error (statistical variance interval). In this case, returns the implied volatility as
+        well as the corresponding MC interval
     :return: The implied volatility
     """
     if payoff == 'call' or payoff == payoff_call:
@@ -192,7 +194,10 @@ def iv_eur(S_0, K, T, price, payoff, r=0.):
 
         def price_fun(s):
             return np.average(np.exp(-r * T) * payoff(S=np.exp(s * normal_rv + (r - 0.5 * s ** 2) * T), K=K), axis=-1)
-    return iv(BS_price_fun=price_fun, price=price)
+    if stat is None:
+        return iv(BS_price_fun=price_fun, price=price)
+    return iv(BS_price_fun=price_fun, price=price), iv(BS_price_fun=price_fun, price=price - stat), \
+        iv(BS_price_fun=price_fun, price=price + stat)
 
 
 def iv_geom_asian_call(S_0, K, T, price):

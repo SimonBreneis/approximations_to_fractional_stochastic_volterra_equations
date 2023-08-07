@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 from functions import *
 
 
@@ -219,7 +221,8 @@ def plot_weak_errors_of_various_quadrature_rules():
     errors_dig[7, 3, :] = np.array([np.nan, 0.05992, 0.05992, 0.1222, 0.1222, 0.1387, 0.1387, 0.1397, 0.1397, 0.1347])
 
     for i in range(errors_smile.shape[0]):
-        plt.loglog(N, errors_smile[i, 1, :], color=color(i, errors_smile.shape[0]), label=modes[i])
+        if i != 3:
+            plt.loglog(N, errors_smile[i, 1, :], color=color(i, errors_smile.shape[0]), label=modes[i])
     plt.loglog(N, 2e-05 * np.ones(len(N)), 'k-')
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of implied volatility smiles for $H=0.001$')
@@ -246,7 +249,8 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.show()
 
     for i in range(errors_surface.shape[0]):
-        plt.loglog(N, errors_surface[i, 1, :], color=color(i, errors_surface.shape[0]), label=modes[i])
+        if i != 3:
+            plt.loglog(N, errors_surface[i, 1, :], color=color(i, errors_surface.shape[0]), label=modes[i])
     plt.loglog(N, 2e-05 * np.ones(len(N)), 'k-')
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of implied volatility surfaces for $H=0.001$')
@@ -273,7 +277,8 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.show()
 
     for i in range(errors_skew.shape[0]):
-        plt.loglog(N, errors_skew[i, 1, :], color=color(i, errors_skew.shape[0]), label=modes[i])
+        if i != 3:
+            plt.loglog(N, errors_skew[i, 1, :], color=color(i, errors_skew.shape[0]), label=modes[i])
     plt.loglog(N, 2e-04 * np.ones(len(N)), 'k-')
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of the skew for $H=0.001$')
@@ -300,7 +305,8 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.show()
 
     for i in range(errors_dig.shape[0]):
-        plt.loglog(N, errors_dig[i, 1, :], color=color(i, errors_dig.shape[0]), label=modes[i])
+        if i != 3:
+            plt.loglog(N, errors_dig[i, 1, :], color=color(i, errors_dig.shape[0]), label=modes[i])
     plt.loglog(N, 2e-05 * np.ones(len(N)), 'k-')
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of digital European call option for $H=0.001$')
@@ -740,8 +746,8 @@ def illustrate_bermudan_option_prices():
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
-    plt.ylabel('Prices of Bermudan put option')
-    plt.title('Prices of Bermudan option with 4 execution times')
+    # plt.ylabel('Prices of Bermudan put option')
+    plt.title('Prices of Bermudan put option with 4 execution times')
     plt.show()
 
     plt.plot(n_vec_16, bermudan_prices_16_QE_QMC, 'g', label='QE')
@@ -758,8 +764,8 @@ def illustrate_bermudan_option_prices():
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
-    plt.ylabel('Prices of Bermudan put option')
-    plt.title('Prices of Bermudan option with 16 execution times')
+    # plt.ylabel('Prices of Bermudan put option')
+    plt.title('Prices of Bermudan put option with 16 execution times')
     plt.show()
 
     plt.plot(n_vec_256, bermudan_prices_256_QE_QMC, 'g', label='QE')
@@ -776,8 +782,8 @@ def illustrate_bermudan_option_prices():
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
-    plt.ylabel('Prices of Bermudan put option')
-    plt.title('Prices of Bermudan option with 256 execution times')
+    # plt.ylabel('Prices of Bermudan put option')
+    plt.title('Prices of Bermudan put option with 256 execution times')
     plt.show()
 
     plt.plot(n_vec_4, bermudan_prices_4_QE_QMC, 'g', label='QE, 4 ex. times')
@@ -794,8 +800,8 @@ def illustrate_bermudan_option_prices():
     plt.xscale('log')
     plt.legend(loc='best')
     plt.xlabel('Number of simulation time steps')
-    plt.ylabel('Prices of Bermudan put option')
-    plt.title('Prices of Bermudan options')
+    # plt.ylabel('Prices of Bermudan put option')
+    plt.title('Prices of Bermudan put options')
     plt.show()
 
 
@@ -846,11 +852,12 @@ def plot_for_L1_error_bound_paper_comparing_OL1_and_OL2():
 
 
 def plot_for_simulation_paper_smile_errors():
-    n_smile = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
+    n_smile_Markov = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024])
+    n_smile_QE = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
     N_smile = np.array([2, 3])
     H_smile = np.array([0.1, -0.2])
-    QE_smile = np.empty((3, len(H_smile), len(n_smile)))  # total, MC, excess
-    Euler_smile = np.empty((4, len(H_smile), len(N_smile), len(n_smile)))  # total, discr, MC, excess
+    QE_smile = np.empty((3, len(H_smile), len(n_smile_QE)))  # total, MC, excess
+    Euler_smile = np.empty((4, len(H_smile), len(N_smile), len(n_smile_Markov)))  # total, discr, MC, excess
     Weak_smile = np.empty_like(Euler_smile)
     Markov_smile = np.empty((len(H_smile), len(N_smile)))
     nodes_smile = np.empty((len(H_smile), len(N_smile)))
@@ -861,116 +868,194 @@ def plot_for_simulation_paper_smile_errors():
 
     Markov_smile[0, 0] = 0.0001323
     nodes_smile[0, 0] = 8.7171
-    Euler_smile[0, 0, 0, :] = np.array([17.95, 14.86, 13.92, 12.14, 9.671, 6.775, 4.162, 2.255, 1.113, 0.5137])
-    Euler_smile[1, 0, 0, :] = np.array([17.94, 14.86, 13.93, 12.15, 9.678, 6.782, 4.169, 2.261, 1.119, 0.5204])
+    Euler_smile[0, 0, 0, :] = np.array([17.95, 14.86, 13.92, 12.14, 9.671, 6.775, 4.162, 2.255, 1.113, 0.5137, 0.222])
+    Euler_smile[1, 0, 0, :] = np.array([17.94, 14.86, 13.93, 12.15, 9.678, 6.782, 4.169, 2.261, 1.119, 0.5204, 0.229])
     Euler_smile[2, 0, 0, :] = np.array([0.0001606, 0.0004813, 0.009113, 0.007643, 0.009972, 0.01096, 0.01916, 0.01753,
-                                        0.01984, 0.01788])
-    Euler_smile[3, 0, 0, :] = np.array([17.94, 14.86, 13.92, 12.14, 9.668, 6.774, 4.152, 2.251, 1.104, 0.5046])
-    Weak_smile[0, 0, 0, :] = np.array([25.1, 15.94, 7.161, 2.397, 0.6655, 0.1778, 0.05295, 0.0199, 0.0199, 0.01589])
+                                        0.01984, 0.01788, 0.0183])
+    Euler_smile[3, 0, 0, :] = np.array([17.94, 14.86, 13.92, 12.14, 9.668, 6.774, 4.152, 2.251, 1.104, 0.5046, 0.214])
+    Weak_smile[0, 0, 0, :] = np.array([25.1, 15.94, 7.161, 2.397, 0.6655, 0.1778, 0.05295, 0.0199, 0.0199, 0.01589,
+                                       0.013])
     Weak_smile[1, 0, 0, :] = np.array([25.09, 15.93, 7.151, 2.384, 0.6523, 0.1647, 0.04005, 0.007346, 0.01603,
-                                       0.004907])
+                                       0.004907, 0.001])
     Weak_smile[2, 0, 0, :] = np.array([0.0002869, 0.0009064, 0.01148, 0.005592, 0.01006, 0.0142, 0.01477, 0.01766,
-                                       0.01839, 0.02026])
-    Weak_smile[3, 0, 0, :] = np.array([25.09, 15.93, 7.147, 2.379, 0.6441, 0.1545, 0.02927, 0.0, 0.00263, 0.0])
+                                       0.01839, 0.02026, 0.0179])
+    Weak_smile[3, 0, 0, :] = np.array([25.09, 15.93, 7.147, 2.379, 0.6441, 0.1545, 0.02927, 0.0, 0.00263, 0.0, 0.0])
 
     Markov_smile[0, 1] = 0.0001061
     nodes_smile[0, 1] = 46.831
-    Euler_smile[0, 0, 1, :] = np.array([17.95, 14.64, 13.71, 11.98, 10.4, 8.919, 7.265, 5.358, 3.495, 2.031])
-    Euler_smile[1, 0, 1, :] = np.array([17.95, 14.66, 13.72, 11.99, 10.41, 8.931, 7.277, 5.369, 3.506, 2.042])
+    Euler_smile[0, 0, 1, :] = np.array([17.95, 14.64, 13.71, 11.98, 10.4, 8.919, 7.265, 5.358, 3.495, 2.031, 1.074])
+    Euler_smile[1, 0, 1, :] = np.array([17.95, 14.66, 13.72, 11.99, 10.41, 8.931, 7.277, 5.369, 3.506, 2.042, 1.084])
     Euler_smile[2, 0, 1, :] = np.array([0.000182, 0.0003747, 0.007863, 0.00598, 0.008593, 0.01202, 0.01517, 0.01802,
-                                        0.01926, 0.0177])
-    Euler_smile[3, 0, 1, :] = np.array([17.95, 14.66, 13.71, 11.99, 10.4, 8.921, 7.265, 5.354, 3.491, 2.029])
-    Weak_smile[0, 0, 1, :] = np.array([32.36, 25.5, 16.58, 8.813, 3.544, 1.068, 0.2818, 0.06156, 0.02817, 0.01499])
-    Weak_smile[1, 0, 1, :] = np.array([32.37, 25.5, 16.59, 8.816, 3.545, 1.066, 0.2799, 0.05924, 0.02336, 0.008746])
+                                        0.01926, 0.0177, 0.0220])
+    Euler_smile[3, 0, 1, :] = np.array([17.95, 14.66, 13.71, 11.99, 10.4, 8.921, 7.265, 5.354, 3.491, 2.029, 1.065])
+    Weak_smile[0, 0, 1, :] = np.array([32.36, 25.5, 16.58, 8.813, 3.544, 1.068, 0.2818, 0.06156, 0.02817, 0.01499,
+                                       0.012])
+    Weak_smile[1, 0, 1, :] = np.array([32.37, 25.5, 16.59, 8.816, 3.545, 1.066, 0.2799, 0.05924, 0.02336, 0.008746,
+                                       0.004])
     Weak_smile[2, 0, 1, :] = np.array([0.0002066, 0.0005943, 0.01481, 0.004585, 0.007014, 0.01097, 0.01412, 0.01592,
-                                       0.01547, 0.01598])
-    Weak_smile[3, 0, 1, :] = np.array([32.37, 25.5, 16.58, 8.812, 3.538, 1.057, 0.2678, 0.04658, 0.01061, 0.0])
+                                       0.01547, 0.01598, 0.0194])
+    Weak_smile[3, 0, 1, :] = np.array([32.37, 25.5, 16.58, 8.812, 3.538, 1.057, 0.2678, 0.04658, 0.01061, 0.0, 0.0])
 
     Markov_smile[1, 0] = 0.000649
     nodes_smile[1, 0] = 60.452
-    Euler_smile[0, 1, 0, :] = np.array([18.44, 18.10, 26.52, 35.55, 45.07, 53.27, 56.99, 54.27, 45.98, 35.11])
-    Euler_smile[1, 1, 0, :] = np.array([18.41, 18.03, 26.44, 35.47, 44.98, 53.17, 56.88, 54.17, 45.89, 35.02])
+    Euler_smile[0, 1, 0, :] = np.array([18.44, 18.10, 26.52, 35.55, 45.07, 53.27, 56.99, 54.27, 45.98, 35.11, 24.50])
+    Euler_smile[1, 1, 0, :] = np.array([18.41, 18.03, 26.44, 35.47, 44.98, 53.17, 56.88, 54.17, 45.89, 35.02, 24.42])
     Euler_smile[2, 1, 0, :] = np.array([0.0001594, 0.000445, 0.004552, 0.006467, 0.01454, 0.01542, 0.01483, 0.02012,
-                                        0.02537, 0.02464])
-    Euler_smile[3, 1, 0, :] = np.array([18.41, 18.03, 26.43, 35.46, 44.96, 53.15, 56.87, 54.15, 45.86, 34.99])
-    Weak_smile[0, 1, 0, :] = np.array([37.52, 36.86, 33.41, 27.02, 17.58, 7.885, 2.636, 0.7081, 0.1587, 0.06635])
-    Weak_smile[1, 1, 0, :] = np.array([37.50, 36.84, 33.39, 27.00, 17.55, 7.862, 2.636, 0.7224, 0.1714, 0.03964])
+                                        0.02537, 0.02464, 0.0279])
+    Euler_smile[3, 1, 0, :] = np.array([18.41, 18.03, 26.43, 35.46, 44.96, 53.15, 56.87, 54.15, 45.86, 34.99, 24.39])
+    Weak_smile[0, 1, 0, :] = np.array([37.52, 36.86, 33.41, 27.02, 17.58, 7.885, 2.636, 0.7081, 0.1587, 0.06635, 0.064])
+    Weak_smile[1, 1, 0, :] = np.array([37.50, 36.84, 33.39, 27.00, 17.55, 7.862, 2.636, 0.7224, 0.1714, 0.03964, 0.012])
     Weak_smile[2, 1, 0, :] = np.array([0.0002219, 0.0005522, 0.01815, 0.004001, 0.005323, 0.007084, 0.0122, 0.01457,
-                                       0.02133, 0.02897])
-    Weak_smile[3, 1, 0, :] = np.array([37.50, 36.84, 33.38, 26.99, 17.55, 7.857, 2.626, 0.7089, 0.1569, 0.01842])
+                                       0.02133, 0.02897, 0.0304])
+    Weak_smile[3, 1, 0, :] = np.array([37.50, 36.84, 33.38, 26.99, 17.55, 7.857, 2.626, 0.7089, 0.1569, 0.01842, 0.0])
 
     Markov_smile[1, 1] = 0.0000597
     nodes_smile[1, 1] = 681.37
-    Euler_smile[0, 1, 1, :] = np.array([18.44, 17.94, 25.00, 31.27, 37.87, 45.33, 54.13, 63.63, 71.63, 75.51])
-    Euler_smile[1, 1, 1, :] = np.array([18.44, 17.93, 25.00, 31.27, 37.86, 45.32, 54.12, 63.62, 71.62, 75.50])
+    Euler_smile[0, 1, 1, :] = np.array([18.44, 17.94, 25.00, 31.27, 37.87, 45.33, 54.13, 63.63, 71.63, 75.51, 73.81])
+    Euler_smile[1, 1, 1, :] = np.array([18.44, 17.93, 25.00, 31.27, 37.86, 45.32, 54.12, 63.62, 71.62, 75.50, 73.80])
     Euler_smile[2, 1, 1, :] = np.array([0.000182, 0.0005123, 0.006125, 0.006301, 0.009887, 0.01359, 0.02281, 0.02178,
-                                        0.02452, 0.02768])
-    Euler_smile[3, 1, 1, :] = np.array([18.44, 17.93, 24.99, 31.26, 37.85, 45.30, 54.09, 63.59, 71.59, 75.46])
-    Weak_smile[0, 1, 1, :] = np.array([38.74, 40.39, 40.19, 38.70, 35.64, 30.36, 22.71, 13.83, 5.945, 1.859])
-    Weak_smile[1, 1, 1, :] = np.array([38.74, 40.39, 40.18, 38.69, 35.63, 30.36, 22.71, 13.83, 5.944, 1.860])
+                                        0.02452, 0.02768, 0.0253])
+    Euler_smile[3, 1, 1, :] = np.array([18.44, 17.93, 24.99, 31.26, 37.85, 45.30, 54.09, 63.59, 71.59, 75.46, 73.77])
+    Weak_smile[0, 1, 1, :] = np.array([38.74, 40.39, 40.19, 38.70, 35.64, 30.36, 22.71, 13.83, 5.945, 1.859, 0.478])
+    Weak_smile[1, 1, 1, :] = np.array([38.74, 40.39, 40.18, 38.69, 35.63, 30.36, 22.71, 13.83, 5.944, 1.860, 0.479])
     Weak_smile[2, 1, 1, :] = np.array([0.0001541, 0.0004758, 0.02254, 0.005561, 0.005572, 0.006918, 0.007507, 0.00729,
-                                       0.01039, 0.0138])
-    Weak_smile[3, 1, 1, :] = np.array([38.74, 40.39, 40.17, 38.69, 35.63, 30.35, 22.71, 13.83, 5.935, 1.850])
+                                       0.01039, 0.0138, 0.0229])
+    Weak_smile[3, 1, 1, :] = np.array([38.74, 40.39, 40.17, 38.69, 35.63, 30.35, 22.71, 13.83, 5.935, 1.850, 0.460])
 
     QE_smile, Euler_smile, Weak_smile = 0.01 * QE_smile, 0.01 * Euler_smile, 0.01 * Weak_smile
 
-    n_surface = np.array([16, 32, 64, 128, 256, 512])
+    n_surface_Markov = np.array([16, 32, 64, 128, 256, 512, 1024])
+    n_surface_QE = np.array([16, 32, 64, 128, 256, 512])
     N_surface = np.array([2, 3])
     H_surface = 0.1
-    QE_surface = np.empty((3, len(n_surface)))  # total, MC, excess
-    Euler_surface = np.empty((4, len(N_surface), len(n_surface)))  # total, discr, MC, excess
+    QE_surface = np.empty((3, len(n_surface_QE)))  # total, MC, excess
+    Euler_surface = np.empty((4, len(N_surface), len(n_surface_Markov)))  # total, discr, MC, excess
     Weak_surface = np.empty_like(Euler_surface)
     Markov_surface = np.empty(len(N_surface))
     nodes_surface = np.empty(len(N_surface))
 
+    QE_surface[0, :] = np.array([8.631, 7.914, 5.467, 3.036, 1.565, 0.935])
+    QE_surface[1, :] = np.array([0.0114, 0.0148, 0.0174, 0.0189, 0.0251, 0.0230])
+    QE_surface[2, :] = np.array([np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
+
     Markov_surface[0] = 0.0163
     nodes_surface[0] = 34.87
-    Euler_surface[0, 0, :] = np.array([26.06, 24.27, 16.57, 9.440, 4.593, 2.240])
-    Euler_surface[1, 0, :] = np.array([27.86, 26.04, 18.23, 11.00, 6.088, 2.064])
-    Euler_surface[2, 0, :] = np.array([0.01605, 0.01226, 0.01934, 0.02007, 0.01791, 0.01815])
-    Euler_surface[3, 0, :] = np.array([27.86, 26.04, 18.23, 10.99, 6.078, 3.056])
-    Weak_surface[0, 0, :] = np.array([10.21, 4.686, 2.183, 1.625, 1.632, 1.639])
-    Weak_surface[1, 0, :] = np.array([9.958, 4.160, 1.390, 0.3897, 0.1050, 0.03640])
-    Weak_surface[2, 0, :] = np.array([0.009144, 0.01287, 0.0168, 0.02008, 0.02257, 0.01981])
+    Euler_surface[0, 0, :] = np.array([26.06, 24.27, 16.57, 9.440, 4.593, 2.240, 1.250])
+    Euler_surface[1, 0, :] = np.array([27.86, 26.04, 18.23, 11.00, 6.088, 2.064, 1.437])
+    Euler_surface[2, 0, :] = np.array([0.01605, 0.01226, 0.01934, 0.02007, 0.01791, 0.01815, 0.0226])
+    Euler_surface[3, 0, :] = np.array([27.86, 26.04, 18.23, 10.99, 6.078, 3.056, 1.427])
+    Weak_surface[0, 0, :] = np.array([10.21, 4.686, 2.183, 1.625, 1.632, 1.639, 1.643])
+    Weak_surface[1, 0, :] = np.array([9.958, 4.160, 1.390, 0.3897, 0.1050, 0.03640, 0.027])
+    Weak_surface[2, 0, :] = np.array([0.009144, 0.01287, 0.0168, 0.02008, 0.02257, 0.01981, 0.0204])
+    Weak_surface[3, 0, :] = np.array([9.957, 4.159, 1.383, 0.382, 0.093, 0.027, 0.011])
+
+    Markov_surface[1] = 0.001867
+    nodes_surface[1] = 118.01
+    Euler_surface[0, 1, :] = np.array([26.06, 24.31, 17.92, 12.81, 8.801, 5.462, 3.036])
+    Euler_surface[1, 1, :] = np.array([26.13, 24.37, 17.98, 12.87, 8.856, 5.515, 3.078])
+    Euler_surface[2, 1, :] = np.array([0.0244, 0.0178, 0.0151, 0.0201, 0.0187, 0.0255, 0.0231])
+    Euler_surface[3, 1, :] = np.array([26.13, 24.37, 17.97, 12.86, 8.843, 5.501, 3.068])
+    Weak_surface[0, 1, :] = np.array([16.35, 8.689, 3.656, 1.261, 0.428, 0.200, 0.1899])
+    Weak_surface[1, 1, :] = np.array([16.25, 8.571, 3.528, 1.134, 0.306, 0.067, 0.02565])
+    Weak_surface[2, 1, :] = np.array([0.0064, 0.0120, 0.0202, 0.0218, 0.0193, 0.0203, 0.0226])
+    Weak_surface[3, 1, :] = np.array([16.25, 8.569, 3.525, 1.127, 0.295, 0.057, 0.0133])
 
     QE_surface, Euler_surface, Weak_surface = 0.01 * QE_surface, 0.01 * Euler_surface, 0.01 * Weak_surface
 
+    n_asian = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
+    N_asian = np.array([2, 3])
+    H_asian = 0.1
+    QE_asian = np.empty((3, len(n_asian)))  # total, MC, excess
+    Euler_asian = np.empty((4, len(N_asian), len(n_asian)))  # total, discr, MC, excess
+    Weak_asian = np.empty_like(Euler_asian)
+    Markov_asian = np.empty(len(N_asian))
+    nodes_asian = np.empty(len(N_asian))
+
+    QE_asian[0, :] = np.array([38.58, 17.95, 13.40, 9.606, 5.722, 2.858, 1.387, 0.750, 0.458, 0.235])
+    QE_asian[1, :] = np.array([0.0015, 0.0023, 0.0050, 0.0107, 0.0175, 0.0227, 0.0331, 0.0357, 0.0378, 0.03])
+
+    Markov_asian[0] = 0.003195
+    nodes_asian[0] = 12.328
+    Euler_asian[0, 0, :] = np.array([14.44, 40.76, 44.80, 39.67, 31.92, 22.91, 14.35, 7.845, 3.816, 1.609])
+    Euler_asian[1, 0, :] = np.array([14.42, 41.21, 45.27, 40.12, 32.34, 23.30, 14.72, 8.190, 4.149, 1.935])
+    Euler_asian[2, 0, :] = np.array([0.0003, 0.0004, 0.0031, 0.0066, 0.0141, 0.0142, 0.0201, 0.0316, 0.0270, 0.0314])
+    Euler_asian[3, 0, :] = np.array([14.42, 41.21, 45.26, 40.11, 32.32, 23.28, 14.70, 8.156, 4.121, 1.903])
+    Weak_asian[0, 0, :] = np.array([30.86, 15.16, 7.970, 4.318, 2.040, 0.473, 0.215, 0.251, 0.321, 0.333])
+    Weak_asian[1, 0, :] = np.array([30.69, 15.08, 7.909, 4.653, 2.367, 0.782, 0.215, 0.069, 0.011, 0.014])
+    Weak_asian[2, 0, :] = np.array([0.0007, 0.0011, 0.0048, 0.0104, 0.0126, 0.0189, 0.0302, 0.0277, 0.0331, 0.0255])
+    Weak_asian[3, 0, :] = np.array([30.68, 15.08, 7.907, 4.642, 2.354, 0.763, 0.185, 0.041, 0.000, 0.000])
+
+    Markov_asian[1] = 0.000026
+    nodes_asian[1] = 59.003
+    Euler_asian[0, 1, :] = np.array([14.44, 40.67, 44.56, 39.35, 32.81, 27.12, 21.84, 16.24, 10.76, 6.394])
+    Euler_asian[1, 1, :] = np.array([14.44, 40.67, 44.56, 39.36, 32.82, 27.12, 21.84, 16.24, 10.76, 6.397])
+    Euler_asian[2, 1, :] = np.array([0.0003, 0.0004, 0.0026, 0.0060, 0.0127, 0.0139, 0.0175, 0.0284, 0.0333, 0.0299])
+    Euler_asian[3, 1, :] = np.array([14.44, 40.67, 44.56, 39.35, 32.80, 27.11, 21.82, 16.21, 10.73, 6.365])
+    Weak_asian[0, 1, :] = np.array([33.93, 19.76, 13.20, 7.793, 5.823, 3.115, 1.066, 0.262, 0.090, 0.027])
+    Weak_asian[1, 1, :] = np.array([33.93, 19.76, 13.20, 7.794, 5.826, 3.118, 1.068, 0.264, 0.092, 0.025])
+    Weak_asian[2, 1, :] = np.array([0.0006, 0.0018, 0.0039, 0.0082, 0.0082, 0.0180, 0.0223, 0.0318, 0.0312, 0.0306])
+    Weak_asian[3, 1, :] = np.array([33.93, 19.76, 13.20, 7.791, 5.817, 3.099, 1.045, 0.233, 0.061, 0.008])
+
+    QE_asian, Euler_asian, Weak_asian = 0.01 * QE_asian, 0.01 * Euler_asian, 0.01 * Weak_asian
+
     for i in range(len(H_smile)):
         for j in range(len(N_smile)):
-            plt.loglog(n_smile, Euler_smile[0, i, j, :], 'r-', label='Euler')
-            plt.loglog(n_smile, Euler_smile[0, i, j, :] - Euler_smile[2, i, j, :], 'r--')
-            plt.loglog(n_smile, Euler_smile[0, i, j, :] + Euler_smile[2, i, j, :], 'r--')
-            plt.loglog(n_smile, Weak_smile[0, i, j, :], 'g-', label='Weak')
-            plt.loglog(n_smile, Weak_smile[0, i, j, :] - Weak_smile[2, i, j, :], 'g--')
-            plt.loglog(n_smile, Weak_smile[0, i, j, :] + Weak_smile[2, i, j, :], 'g--')
+            plt.loglog(n_smile_Markov, Euler_smile[0, i, j, :], 'r-', label='Euler')
+            plt.loglog(n_smile_Markov, Euler_smile[0, i, j, :] - Euler_smile[2, i, j, :], 'r--')
+            plt.loglog(n_smile_Markov, Euler_smile[0, i, j, :] + Euler_smile[2, i, j, :], 'r--')
+            plt.loglog(n_smile_Markov, Weak_smile[0, i, j, :], 'g-', label='Weak')
+            plt.loglog(n_smile_Markov, Weak_smile[0, i, j, :] - Weak_smile[2, i, j, :], 'g--')
+            plt.loglog(n_smile_Markov, Weak_smile[0, i, j, :] + Weak_smile[2, i, j, :], 'g--')
             if H_smile[i] > 0:
-                plt.loglog(n_smile, QE_smile[0, i, :], 'b-', label='QE')
-                plt.loglog(n_smile, QE_smile[0, i, :] - QE_smile[1, i, :], 'b--')
-                plt.loglog(n_smile, QE_smile[0, i, :] + QE_smile[1, i, :], 'b--')
-            plt.loglog(n_smile, Markov_smile[i, j] * np.ones_like(n_smile), 'k-')
+                plt.loglog(n_smile_QE, QE_smile[0, i, :], 'b-', label='QE')
+                plt.loglog(n_smile_QE, QE_smile[0, i, :] - QE_smile[1, i, :], 'b--')
+                plt.loglog(n_smile_QE, QE_smile[0, i, :] + QE_smile[1, i, :], 'b--')
+            plt.loglog(n_smile_Markov, Markov_smile[i, j] * np.ones_like(n_smile_Markov), 'k-')
             plt.loglog(nodes_smile[i, j] * np.ones(2),
                        np.array([np.fmax(np.amax(Weak_smile[0, i, j, :]), np.amax(Euler_smile[0, i, j, :])), 0]), 'k-')
             plt.xlabel('Number of time steps')
             # plt.ylabel('Maximal relative error')
             plt.title(f'Maximal relative errors of IV smiles with H={H_smile[i]} and N={N_smile[j]}')
             plt.legend(loc='best')
+            plt.tight_layout()
             plt.show()
 
     for j in range(len(N_surface)):
-        plt.loglog(n_surface, Euler_surface[0, j, :], 'r-', label='Euler')
-        plt.loglog(n_surface, Euler_surface[0, j, :] - Euler_surface[2, j, :], 'r--')
-        plt.loglog(n_surface, Euler_surface[0, j, :] + Euler_surface[2, j, :], 'r--')
-        plt.loglog(n_surface, Weak_surface[0, j, :], 'g-', label='Weak')
-        plt.loglog(n_surface, Weak_surface[0, j, :] - Weak_surface[2, j, :], 'g--')
-        plt.loglog(n_surface, Weak_surface[0, j, :] + Weak_surface[2, j, :], 'g--')
-        plt.loglog(n_surface, QE_surface[0, :], 'b-', label='QE')
-        plt.loglog(n_surface, QE_surface[0, :] - QE_surface[1, :], 'b--')
-        plt.loglog(n_surface, QE_surface[0, :] + QE_surface[1, :], 'b--')
-        plt.loglog(n_surface, Markov_surface[j] * np.ones_like(n_surface), 'k-')
+        plt.loglog(n_surface_Markov, Euler_surface[0, j, :], 'r-', label='Euler')
+        plt.loglog(n_surface_Markov, Euler_surface[0, j, :] - Euler_surface[2, j, :], 'r--')
+        plt.loglog(n_surface_Markov, Euler_surface[0, j, :] + Euler_surface[2, j, :], 'r--')
+        plt.loglog(n_surface_Markov, Weak_surface[0, j, :], 'g-', label='Weak')
+        plt.loglog(n_surface_Markov, Weak_surface[0, j, :] - Weak_surface[2, j, :], 'g--')
+        plt.loglog(n_surface_Markov, Weak_surface[0, j, :] + Weak_surface[2, j, :], 'g--')
+        plt.loglog(n_surface_QE, QE_surface[0, :], 'b-', label='QE')
+        plt.loglog(n_surface_QE, QE_surface[0, :] - QE_surface[1, :], 'b--')
+        plt.loglog(n_surface_QE, QE_surface[0, :] + QE_surface[1, :], 'b--')
+        plt.loglog(n_surface_Markov, Markov_surface[j] * np.ones_like(n_surface_Markov), 'k-')
         plt.loglog(nodes_surface[j] * np.ones(2),
                    np.array([np.fmax(np.amax(Weak_surface[0, j, :]), np.amax(Euler_surface[0, j, :])), 0]), 'k-')
         plt.xlabel('Number of time steps')
         # plt.ylabel('Maximal relative error')
         plt.title(f'Maximal relative errors of IV surfaces with H={H_surface} and N={N_surface[j]}')
         plt.legend(loc='best')
+        plt.tight_layout()
+        plt.show()
+
+    for j in range(len(N_asian)):
+        plt.loglog(n_asian, Euler_asian[0, j, :], 'r-', label='Euler')
+        plt.loglog(n_asian, Euler_asian[0, j, :] - Euler_asian[2, j, :], 'r--')
+        plt.loglog(n_asian, Euler_asian[0, j, :] + Euler_asian[2, j, :], 'r--')
+        plt.loglog(n_asian, Weak_asian[0, j, :], 'g-', label='Weak')
+        plt.loglog(n_asian, Weak_asian[0, j, :] - Weak_asian[2, j, :], 'g--')
+        plt.loglog(n_asian, Weak_asian[0, j, :] + Weak_asian[2, j, :], 'g--')
+        plt.loglog(n_asian, QE_asian[0, :], 'b-', label='QE')
+        plt.loglog(n_asian, QE_asian[0, :] - QE_asian[1, :], 'b--')
+        plt.loglog(n_asian, QE_asian[0, :] + QE_asian[1, :], 'b--')
+        plt.loglog(n_asian, Markov_asian[j] * np.ones_like(n_asian), 'k-')
+        plt.loglog(nodes_asian[j] * np.ones(2),
+                   np.array([np.fmax(np.amax(Weak_asian[0, j, :]), np.amax(Euler_asian[0, j, :])), 0]), 'k-')
+        plt.xlabel('Number of time steps')
+        # plt.ylabel('Maximal relative error')
+        plt.title(f'Maximal relative errors of Asian call prices with H={H_asian} and N={N_asian[j]}')
+        plt.legend(loc='best')
+        plt.tight_layout()
         plt.show()

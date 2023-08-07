@@ -9,6 +9,9 @@ The generalized Mittag-Leffler function called through the R-package
 MittagLeffleR and rpy2.
 """
 
+import os
+os.environ['R_HOME'] = 'C:/Users/breneis/AppData/Local/Programs/R/R-4.2.3'
+
 import numpy as np
 from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri, default_converter

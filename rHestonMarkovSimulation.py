@@ -113,7 +113,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     m = m_batch * n_batches
 
     V_init = np.zeros(N)
-    V_init[0] = V_0 / weights[0]
+    V_init = V_0 / (N * nodes) / (np.sum(weights / nodes))  # V_0 / weights[0]
 
     if euler:
         A = np.eye(N) + np.diag(nodes) * dt + lambda_ * weights[None, :] * dt
@@ -366,9 +366,8 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n
         vol, low, upp = np.empty((n_maturities, len(K))), np.empty((n_maturities, len(K))), \
             np.empty((n_maturities, len(K)))
         for j in range(n_maturities):
-            vol[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :], payoff=payoff)
-            low[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :] - stat[j, :], payoff=payoff)
-            upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :] + stat[j, :], payoff=payoff)
+            vol[j, :], low[j, :], upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :],
+                                                        payoff=payoff, stat=stat[j, :])
         if is_smile:
             vol, low, upp = vol[0, :], low[0, :], upp[0, :]
         return vol, low, upp

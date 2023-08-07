@@ -1041,7 +1041,7 @@ def plot_smile_errors_given_stock_prices_QE(Ns, N_times, simulator, nodes, marko
 
 
 def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulator=None, true_smile=None,
-                                          option='european call', n_samples=2 ** 20):
+                                          option='european call', n_samples=2 ** 20, verbose=0):
     """
     Computes the implied volatility smiles given the final stock prices
     :param params: Parameters of the rough Heston model
@@ -1051,6 +1051,7 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
     :param true_smile: The smile under the true rough Heston model can be specified here. Otherwise it is computed
     :param option: The kind of option that is used
     :param n_samples: Number of (Q)MC samples in the simulation
+    :param verbose: Determines the number of intermediary results printed to the console
     :return: The true smile, the Markovian smiles, the approximated smiles, the lower MC approximated smiles,
         the upper MC approximated smiles, the Markovian errors, the total errors of the approximated smiles, the lower
         MC errors, the upper MC errors, the discretization errors of the approximated smiles, the lower MC
@@ -1064,12 +1065,10 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
     simulator = set_list_default(simulator, ['Euler', 'Weak', 'QE'])
     mode = 'BL2'
     if true_smile is None:
-        if option == 'european call':
+        if option == 'european call' or option == 'surface':
             true_smile = rHestonFourier_iv_eur_call(params)
         elif option == 'geometric asian call':
             true_smile = rHestonFourier_price_geom_asian_call(params)
-        elif option == 'average volatility call':
-            true_smile = rHestonFourier_price_avg_vol_call(params)
         else:
             raise NotImplementedError
 
@@ -1088,24 +1087,21 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
     nodes = [np.empty(N) for N in Ns]
 
     for i in range(len(Ns)):
-        if option == 'european call':
+        if option == 'european call' or option == 'surface':
             nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=mode)
             markov_smiles[i, :, :] = rHestonFourier_iv_eur_call(params=params, N=Ns[i], mode=mode, nodes=nodes[i],
-                                                                weights=weights)
+                                                                weights=weights, verbose=verbose - 1)
         elif option == 'geometric asian call':
             nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=np.array([params['T'] / 2, params['T']]),
                                                    mode=mode)
-            markov_smiles[i, :, :] = rHestonFourier_price_geom_asian_call(params=params, N=Ns[i], mode=mode,
-                                                                          nodes=nodes[i], weights=weights)
-
-        elif option == 'average volatility call':
-            nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=mode)
-            markov_smiles[i, :, :] = rHestonFourier_price_avg_vol_call(params=params, N=Ns[i], mode=mode,
-                                                                       nodes=nodes[i], weights=weights)
+            markov_smiles[i, :, :] = \
+                rHestonFourier_price_geom_asian_call(params=params, N=Ns[i], mode=mode, nodes=nodes[i], weights=weights,
+                                                     verbose=verbose - 1)
         else:
             raise NotImplementedError
         markov_errors[i] = np.amax(np.abs(markov_smiles[i, :, :] - true_smile)/true_smile)
-        print(f'N={Ns[i]}: Markovian error={100*markov_errors[i]:.4}%')
+        print(f'Quadrature rule: nodes={nodes[i]}, weights={weights}')
+        print(f'N={Ns[i]}: Markovian error={100*markov_errors[i]:.4}%, largest node={np.amax(nodes[i]):.4}')
         for k in range(len(simulator)):
             for m in range(len(N_times)):
                 if simulator[k] == 'QE':
@@ -1117,20 +1113,23 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
                         is_euler = True
                     else:
                         is_euler = False
-                if option == 'european call':
+                if option == 'european call' or option == 'surface':
                     if markovian:
                         vol, low, upp = rHestonSP.eur(K=params['K'], lambda_=params['lambda'], rho=params['rho'],
                                                       nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
-                                                      S_0=params['S'], T=float(params['T']), nodes=nodes[i],
+                                                      S_0=params['S'], T=float(np.amax(params['T'])), nodes=nodes[i],
                                                       weights=weights, r=params['r'], m=n_samples, N_time=N_times[m],
-                                                      euler=is_euler, implied_vol=True)
+                                                      euler=is_euler, implied_vol=True,
+                                                      n_maturities=len(params['T']) if option == 'surface' else None,
+                                                      verbose=verbose - 1)
                     elif i == 0:
-                        vol, low, upp = rHestonQESimulation.eur(H=params['H'], K=params['K'], lambda_=params['lambda'],
-                                                                rho=params['rho'], nu=params['nu'],
-                                                                theta=params['theta'], V_0=params['V_0'],
-                                                                S_0=params['S'], T=float(params['T']), r=params['r'],
-                                                                m=n_samples, N_time=N_times[m], implied_vol=True,
-                                                                verbose=1)
+                        vol, low, upp = \
+                            rHestonQESimulation.eur(H=params['H'], K=params['K'], lambda_=params['lambda'],
+                                                    rho=params['rho'], nu=params['nu'], theta=params['theta'],
+                                                    V_0=params['V_0'], S_0=params['S'], T=float(np.amax(params['T'])),
+                                                    r=params['r'], m=n_samples, N_time=N_times[m], implied_vol=True,
+                                                    n_maturities=len(params['T']) if option == 'surface' else None,
+                                                    verbose=verbose - 1)
                     else:
                         vol, low, upp = approx_smiles[0, k, m, :, :], lower_smiles[0, k, m, :, :], \
                             upper_smiles[0, k, m, :, :]
@@ -1141,7 +1140,7 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
                                                             nu=params['nu'], theta=params['theta'], V_0=params['V_0'],
                                                             S_0=params['S'], T=float(params['T']), nodes=nodes[i],
                                                             weights=weights, r=params['r'], m=n_samples,
-                                                            N_time=N_times[m], euler=is_euler)
+                                                            N_time=N_times[m], euler=is_euler, verbose=verbose - 1)
                     else:
                         vol, low, upp = \
                             rHestonQESimulation.price_geom_asian_call(H=params['H'], K=params['K'],
@@ -1149,16 +1148,7 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
                                                                       nu=params['nu'], theta=params['theta'],
                                                                       V_0=params['V_0'], S_0=params['S'],
                                                                       T=float(params['T']), r=params['r'], m=n_samples,
-                                                                      N_time=N_times[m])
-                elif option == 'average volatility call':
-                    '''
-                    kind = 'volatility sample paths'
-                    samples = np.load(get_filename(kind=kind, N=Ns[i], mode=mode, euler=simulator[k],
-                                                   N_time=N_times[m], params=params,
-                                                   truth=False, markov=False))
-                    vol, low, upp = cf.price_avg_vol_call_MC(K=params['K'], samples=samples[0, :, :])
-                    '''
-                    raise NotImplementedError
+                                                                      N_time=N_times[m], verbose=verbose - 1)
                 else:
                     raise NotImplementedError
                 approx_smiles[i, k, m, :, :] = vol
@@ -1178,7 +1168,8 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
                          f' improvement factor='
                          f'{discretization_errors[i, k, m - 1] / discretization_errors[i, k, m]:.3}, '
                          f'{upper_discretization_errors[i, k, m - 1] / lower_discretization_errors[i, k, m]:.3}, '
-                         f'{lower_discretization_errors[i, k, m - 1] / upper_discretization_errors[i, k, m]:.3}'))
+                         f'{lower_discretization_errors[i, k, m - 1] / upper_discretization_errors[i, k, m]:.3}')
+                      + f', Time: {time.strftime("%H:%M:%S", time.localtime())}')
 
     k_vec = np.log(params['K'])
 
@@ -1188,7 +1179,7 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
         plt.xlabel('Log-moneyness')
         plt.ylabel('Implied volatility')
         plt.show()
-
+    '''
     for k in range(len(simulator)):
         for m in range(len(N_times)):
             for i in range(len(Ns)):
@@ -1226,7 +1217,7 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
                                             lower_total_errors=lower_total_errors,
                                             upper_total_errors=upper_total_errors,
                                             discretization_errors=discretization_errors)
-
+    '''
     return true_smile, markov_smiles, approx_smiles, lower_smiles, upper_smiles, markov_errors, total_errors, \
         lower_total_errors, upper_total_errors, discretization_errors, lower_discretization_errors, \
         upper_discretization_errors
@@ -1780,7 +1771,7 @@ def plot_GG_NGG_and_error_bounds():
 
 def plot_GG_varying_H():
     N = 183
-    H = np.array([0.001, 0.01, 0.1])
+    H = np.array([-0.4, -0.3, -0.2, -0.1, 0., 0.1])
     T = 1.
 
     errors_GG = np.empty((len(H), N))
@@ -1790,11 +1781,12 @@ def plot_GG_varying_H():
             print(f"Computing {i + 1} of {N} for H={H[j]}.")
             nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='GG')
             errors_GG[j, i] = rk.error_l1(H=H[j], nodes=nodes, weights=weights, T=T, method='gaussian')
+            print(errors_GG[j, i])
 
     errors_GG = errors_GG / np.array([rk.kernel_norm(H=H[j], T=T, p=1.) for j in range(len(H))])[:, None]
 
     for j in range(len(H)):
-        plt.loglog(np.arange(1, N + 1), errors_GG[j, :], label=f'H={H[j]}')
+        plt.loglog(np.arange(1, N + 1), errors_GG[j, :], color=color(j, len(H)), label=f'H={H[j]}')
     plt.xlabel('Number of nodes N')
     plt.ylabel('Relative error')
     plt.title('Relative ' + r'$L^1$' + f'-errors for GG')
@@ -1804,7 +1796,7 @@ def plot_GG_varying_H():
 
 def plot_GG_OL1_varying_H():
     N = 10
-    H = np.array([0.001, 0.01, 0.1])
+    H = np.array([-0.4, -0.3, -0.2, -0.1, 0., 0.1])
     T = 1.
 
     errors_GG = np.empty((len(H), N))
@@ -1817,8 +1809,7 @@ def plot_GG_OL1_varying_H():
             print(f"Computing {i + 1} of {N} for H={H[j]}.")
             nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='GG')
             errors_GG[j, i] = rk.error_l1(H=H[j], nodes=nodes, weights=weights, T=T, method='gaussian')
-            # nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='OL1')
-            nodes, weights = quadrature_rules[0, j, i, :i + 1], quadrature_rules[1, j, i, :i + 1]
+            nodes, weights = rk.quadrature_rule(H=H[j], N=i + 1, T=T, mode='OL1')
             errors_OL1[j, i] = rk.error_l1(H=H[j], nodes=nodes, weights=weights, T=T, method='intersections')[0]
 
     errors_GG = errors_GG / np.array([rk.kernel_norm(H=H[j], T=T, p=1.) for j in range(len(H))])[:, None]
