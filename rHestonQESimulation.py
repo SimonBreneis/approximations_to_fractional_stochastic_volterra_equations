@@ -408,7 +408,7 @@ def price_avg_vol_call(H, K, lambda_, nu, theta, V_0, T, m, N_time, qmc=True, qm
         return cf.price_geom_asian_call_MC(K=K, samples=samples_1)
 
 
-def price_am(K, H, lambda_, rho, nu, theta, V_0, S_0, T, payoff, r=0., m=1000000, N_time=200, N_dates=12,
+def price_am(K, H, lambda_, rho, nu, theta, V_0, S_0, T, payoff, r, m=1000000, N_time=200, N_dates=12,
              feature_degree=6, qmc=True, qmc_error_estimators=25, verbose=0):
     """
     Gives the price of an American option using the QE scheme.
