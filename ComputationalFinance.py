@@ -472,7 +472,6 @@ def price_am(T, r, samples, payoff, features, antithetic=False, varying_initial_
         else:
             ft = features(np.zeros((d, 1)))
             models[i] = models[i].fit(ft, np.array([0]))
-        # print(models[i].intercept_, models[i].coef_)
     if not varying_initial_conditions:
         discounted_future_payoffs = discount * discounted_future_payoffs
         current_payoff = payoff(S=samples[0, :, 0])
@@ -482,7 +481,6 @@ def price_am(T, r, samples, payoff, features, antithetic=False, varying_initial_
         models[0].fit(ft, np.array([average_discounted_future_payoffs]))
         if average_current_payoff >= average_discounted_future_payoffs:
             discounted_future_payoffs = average_current_payoff * np.ones(m)
-        # print(models[0].intercept_, models[0].coef_)
     if antithetic:
         discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:] + discounted_future_payoffs[:m // 2])
     return MC(discounted_future_payoffs), models
@@ -532,8 +530,8 @@ def price_am_BS(S_0, sigma, T, r, m, N, K, feature_degree, antithetic=False):
         return feat
 
     samples = S_0 * BS_paths(sigma=sigma, T=T, n=N, m=m, r=r, antithetic=antithetic)
-    price, models = price_am(T=T, r=r, samples=samples[None, :, :], payoff=lambda S: payoff_put(S, K), features=features, antithetic=antithetic,
-                             varying_initial_conditions=False)
+    price, models = price_am(T=T, r=r, samples=samples[None, :, :], payoff=lambda S: payoff_put(S, K),
+                             features=features, antithetic=antithetic, varying_initial_conditions=False)
     return price
 
 
@@ -568,7 +566,6 @@ def price_am_iso(T, r, samples, payoff, features, antithetic=False, varying_init
         predicted_future_payoffs = models[i].predict(ft)
         execute_now = current_payoff > predicted_future_payoffs
         discounted_future_payoffs[execute_now] = current_payoff[execute_now]
-        # print(models[i].intercept_, models[i].coef_)
     if not varying_initial_conditions:
         discounted_future_payoffs = discount * discounted_future_payoffs
         current_payoff = payoff(samples[:, :, 0])
@@ -578,7 +575,6 @@ def price_am_iso(T, r, samples, payoff, features, antithetic=False, varying_init
         models[0].fit(ft, np.array([average_discounted_future_payoffs]))
         if average_current_payoff >= average_discounted_future_payoffs:
             discounted_future_payoffs = average_current_payoff * np.ones(m)
-        # print(models[0].intercept_, models[0].coef_)
     if antithetic:
         discounted_future_payoffs = 0.5 * (discounted_future_payoffs[m // 2:2 * (m // 2)]
                                            + discounted_future_payoffs[:m // 2])
