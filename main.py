@@ -299,7 +299,7 @@ params = {'S': 1., 'K': np.exp(np.linspace(-0.1, 0.05, 16)), 'H': 0.1, 'T': T, '
                      'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05, 'r': 0.}
 
 compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([3]),
-                                      N_times=np.array([256, 512, 1024]),
+                                      N_times=np.array([512, 1024]),
                                       n_samples=2 ** 22, option='geometric asian call', simulator=['QE'], verbose=2)
 
 print('Finished!')
