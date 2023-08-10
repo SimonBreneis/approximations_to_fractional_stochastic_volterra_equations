@@ -112,8 +112,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     m_batch = int(np.ceil(m_return / n_batches))
     m = m_batch * n_batches
 
-    V_init = np.zeros(N)
-    V_init = V_0 / (N * nodes) / (np.sum(weights / nodes))  # V_0 / weights[0]
+    V_init = V_0 / nodes / (np.sum(weights / nodes))
 
     if euler:
         A = np.eye(N) + np.diag(nodes) * dt + lambda_ * weights[None, :] * dt
