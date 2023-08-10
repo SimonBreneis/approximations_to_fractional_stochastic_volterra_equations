@@ -1802,8 +1802,6 @@ def plot_GG_OL1_varying_H():
     errors_GG = np.empty((len(H), N))
     errors_OL1 = np.empty((len(H), N))
 
-    quadrature_rules = np.load('Optimal l1 nodes weights H in 0001 001 01 N from 1 to 10.npy')
-
     for j in range(len(H)):
         for i in range(N):
             print(f"Computing {i + 1} of {N} for H={H[j]}.")
