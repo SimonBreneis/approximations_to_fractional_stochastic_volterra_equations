@@ -10,6 +10,7 @@ import functions
 import rHestonFourier
 import rHestonMarkovSimulation
 # import rHestonQESimulation
+import rHestonQESimulation
 from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
@@ -200,7 +201,7 @@ plot_samples_volatility_markov_3d()
 
 Data.plot_for_simulation_paper_smile_errors()
 '''
-
+H = 0.1
 rho, nu, theta, V_0, lambda_, S_0 = -0.7, 0.3, 0.02, 0.02, 0.3, 1.
 '''
 H = 0.1
@@ -288,19 +289,58 @@ T = np.linspace(0, 1, 17)[1:]
 params = {'S': 1., 'K': np.exp(np.linspace(-0.1, 0.05, 16)), 'H': 0.1, 'T': T, 'lambda': 0.3, 'rho': -0.7,
                      'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05, 'r': 0.}
 
-compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([3]),
-                                      N_times=np.array([1024]),
-                                      n_samples=2 ** 22, option='surface', simulator=['Weak'], verbose=2)
+compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([2, 3]),
+                                      N_times=np.array([16, 32, 64, 128, 256, 512, 1024]),
+                                      n_samples=2 ** 17, option='surface', simulator=['Weak'],
+                                      verbose=2)
 '''
 
-# T = np.linspace(0, 1, 17)[1:]
+T = np.linspace(0, 1, 17)[1:]
 T = 1.
 params = {'S': 1., 'K': np.exp(np.linspace(-0.1, 0.05, 16)), 'H': 0.1, 'T': T, 'lambda': 0.3, 'rho': -0.7,
                      'nu': 0.3, 'theta': 0.02, 'V_0': 0.02, 'rel_tol': 1e-05, 'r': 0.}
 
-compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([3]),
-                                      N_times=np.array([512, 1024]),
-                                      n_samples=2 ** 22, option='geometric asian call', simulator=['QE'], verbose=2)
+'''
+samples, rng, kernel_dict = rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho,
+                                                        S_0=S_0, r=0., m=2 ** 22, N_time=1024, sample_paths=True,
+                                                        verbose=2)
+filename = 'QE paths 1024 time steps batch 1.npy'
+np.save(filename, samples)
+for i in range(2, 26):
+    print(f'Now generating batch {i}')
+    samples, rng, kernel_dict = rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T,
+                                                            rho=rho, S_0=S_0, r=0., m=2 ** 22, N_time=1024,
+                                                            sample_paths=True, rng=rng, kernel_dict=kernel_dict,
+                                                            rv_shift=True, verbose=2)
+    np.save(f'QE paths 1024 time steps batch {i}.npy')
+print('Finished!')
+time.sleep(3600000)
+'''
+T = 1.
+'''
+for N in [2, 3]:
+    for M in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]:
+        nodes, weights = rk.quadrature_rule(H=H, T=T, N=N)
+        tic = time.perf_counter()
+        rHestonMarkovSimulation.samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
+                                        rho=rho, S_0=S_0, r=0., m=2 ** 22, N_time=M, euler=True, qmc=False)
+        print(f'Euler, N={N}, M={M}, time={25*(time.perf_counter() - tic)}')
+
+        tic = time.perf_counter()
+        rHestonMarkovSimulation.samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
+                                        rho=rho, S_0=S_0, r=0., m=2 ** 22, N_time=M, euler=False, qmc=False)
+        print(f'Weak, N={N}, M={M}, time={25*(time.perf_counter() - tic)}')
+
+        if N == 2:
+            rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0, r=0.,
+                                        m=2 ** 22, N_time=M, qmc=False)
+'''
+
+params['rel_tol'] = 2e-04
+compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([2, 3]),
+                                      N_times=np.array([64, 128, 256, 512, 1024]),
+                                      n_samples=2 ** 22, option='geometric asian call', simulator=['Euler', 'Weak'],
+                                      verbose=2)
 
 print('Finished!')
 time.sleep(360000)

@@ -111,7 +111,6 @@ def cf_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, r=0., H=Non
     N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
-
     return np.exp((np.log(S_0) + r * T) * z + V_0 * T * c + (theta + V_0 * b) * integral + V_0 * a * integral_sq), \
         N_Riccati
 
@@ -145,7 +144,6 @@ def cf_avg_log_price(z, S_0, lambda_, rho, nu, theta, V_0, T, N_Riccati, H=None,
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
     integral_time = np.trapz(psi * np.linspace(0, 1, N_Riccati + 1), dx=T / N_Riccati)
-
     return np.exp(z * np.log(S_0) + (z / 6 - 0.25) * (V_0 * T) * z + (theta - lambda_ * V_0) * integral
                   + 0.5 * V_0 * nu ** 2 * integral_sq + V_0 * nu * rho * z * integral_time), N_Riccati
 
@@ -175,7 +173,6 @@ def cf_avg_vol(z, lambda_, nu, theta, V_0, T, N_Riccati, H=None, nodes=None, wei
     N_Riccati = psi.shape[1] - 1  # The function solve_fractional_Riccati may finally use a different number N_Riccati
     integral = np.trapz(psi, dx=T / N_Riccati)
     integral_sq = np.trapz(psi ** 2, dx=T / N_Riccati)
-
     return np.exp(z * V_0 + (theta - lambda_ * V_0) * integral + 0.5 * V_0 * nu ** 2 * integral_sq), N_Riccati
 
 
@@ -273,7 +270,7 @@ def compute_Fourier_inversion(S_0, K, T, fun, rel_tol=1e-03, return_error=False,
         T = np.array([T])
         T_is_float = True
     if len(K.shape) == 1:
-        _, K = cf.maturity_tensor_strike(S_0=S_0, K=K, T=T)
+        K = S_0 * np.exp(np.sqrt(T / T[-1])[:, None] * np.log(K / S_0)[None, :])
 
     surface = np.empty_like(K)
     errors = np.empty(len(T))

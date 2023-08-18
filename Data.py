@@ -969,8 +969,8 @@ def plot_for_simulation_paper_smile_errors():
     Markov_asian = np.empty(len(N_asian))
     nodes_asian = np.empty(len(N_asian))
 
-    QE_asian[0, :] = np.array([38.58, 17.95, 13.40, 9.606, 5.722, 2.858, 1.387, 0.750, 0.458, 0.235])
-    QE_asian[1, :] = np.array([0.0015, 0.0023, 0.0050, 0.0107, 0.0175, 0.0227, 0.0331, 0.0357, 0.0378, 0.03])
+    QE_asian[0, :] = np.array([38.58, 17.95, 13.40, 9.606, 5.722, 2.858, 1.387, 0.750, 0.458, 0.2825])
+    QE_asian[1, :] = np.array([0.0015, 0.0023, 0.0050, 0.0107, 0.0175, 0.0227, 0.0331, 0.0357, 0.0378, 0.03944])
 
     Markov_asian[0] = 0.003195
     nodes_asian[0] = 12.328

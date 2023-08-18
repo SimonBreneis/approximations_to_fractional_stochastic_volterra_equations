@@ -83,16 +83,13 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         rv_shift = np.random.uniform(0, 1, dim)
 
     m_input = m  # the original input of how many samples should be simulated
-    m_return = m  # the final number of samples that we will actually return
     # m itself is the number of samples that we simulate
-    # We always have m >= m_return >= m_input
+    # We always have m >= m_input. At the end, we discard the additionally simulated paths.
 
     if qmc:
-        m = int(2 ** np.ceil(np.log2(m)) + 0.001)
-        m_return = m
-        if m != m_input:
+        if int(2 ** np.ceil(np.log2(m)) + 0.001) != m_input:
             print(f'Using QMC requires simulating a number m of samples that is a power of 2. The input m={m_input} '
-                  f'is not a power of 2. Simulates m={m} samples instead.')
+                  f'is not a power of 2.')
 
     available_memory = np.sqrt(psutil.virtual_memory().available)
     if stock_only:
@@ -101,15 +98,18 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         necessary_memory = 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) \
             * np.sqrt(np.array([0.]).nbytes)
     if necessary_memory > available_memory:
-        raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with'
+        raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with '
                           f'{N} Markovian dimensions, {return_times} time points where the sample paths should be '
                           f'returned and {m} sample paths. Roughly {necessary_memory}**2 bytes needed, '
                           f'while only {available_memory}**2 bytes are available.')
 
     available_memory_for_random_variables = available_memory / 3
-    necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    if qmc:
+        necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    else:
+        necessary_memory_for_random_variables = np.sqrt(3 * m) * np.sqrt(np.array([0.]).nbytes)
     n_batches = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
-    m_batch = int(np.ceil(m_return / n_batches))
+    m_batch = int(np.ceil(m / n_batches))
     m = m_batch * n_batches
 
     V_init = V_0 / nodes / (np.sum(weights / nodes))
@@ -201,11 +201,12 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                         rv[0, :] = 0.
                     else:
                         rv = np.sqrt(dt) * ndtri(rv)
+                return lambda index: rv[:, index]
             else:
                 if euler:
-                    rv = np.sqrt(dt) * rng.standard_normal((m_batch, N_time))
+                    return lambda index: np.sqrt(dt) * rng.standard_normal(m_batch)
                 else:
-                    rv = rng.uniform(0, 1, (m_batch, N_time))
+                    return lambda index: rng.uniform(0, 1, m_batch)
         else:
             if qmc:
                 rv = rng.random(n=m_batch)
@@ -223,17 +224,20 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
                         rv[0, :2 * N_time] = 0.
                     else:
                         rv[:, :2 * N_time] = np.sqrt(dt / 2) * ndtri(rv[:, :2 * N_time])
+                return lambda index: rv[:, index::N_time]
             else:
                 if euler:
-                    rv = np.sqrt(dt) * rng.standard_normal((m_batch, 2 * N_time))
+                    return lambda index: np.sqrt(dt) * rng.standard_normal((m_batch, 2))
                 else:
-                    rv = np.empty((m_batch, 3 * N_time))
-                    rv[:, :2 * N_time] = np.sqrt(dt / 2) * rng.standard_normal((m_batch, 2 * N_time))
-                    rv[:, 2 * N_time:] = rng.uniform(0, 1, (m_batch, N_time))
-        return rv
+                    def rv_fun(index):
+                        rv_vars = np.empty((m_batch, 3))
+                        rv_vars[:, :2] = np.sqrt(dt / 2) * rng.standard_normal((m_batch, 2))
+                        rv_vars[:, 2] = rng.uniform(0, 1, m_batch)
+                        return rv_vars
+                    return rv_fun
 
     if vol_only:
-        result = np.empty((N + 1, m, return_times + 1)) if sample_paths else np.empty((N + 1, m))
+        result = np.empty((N + 1, return_times + 1, m)) if sample_paths else np.empty((N + 1, m))
         for j in range(n_batches):
             dW = generate_samples()
             current_V_comp = np.empty((N, m_batch))
@@ -241,19 +245,19 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
             for i in range(N_time):
                 if verbose >= 1:
                     print(f'Simulation round {j + 1} of {n_batches}, step {i + 1} of {N_time}')
-                current_V_comp = step_SV(current_V_comp, dW[:, i])
+                current_V_comp = step_SV(current_V_comp, dW(i))
                 if sample_paths and (i + 1) % saving_steps == 0:
-                    result[1:, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_V_comp
+                    result[1:, (i + 1) // saving_steps, j * m_batch:(j + 1) * m_batch] = current_V_comp
             if not sample_paths:
                 result[1:, j * m_batch:(j + 1) * m_batch] = current_V_comp
 
         if sample_paths:
-            result[1:, :, 0] = V_init[:, None]
+            result[1:, 0, :] = V_init[:, None]
             result[0, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[1:, :, :]), 0)
         else:
             result[0, :] = np.fmax(np.einsum('i,ij->j', weights, result[1:, :]), 0)
     elif stock_only:
-        result = np.empty((m, return_times + 1)) if sample_paths else np.empty(m)
+        result = np.empty((return_times + 1, m)) if sample_paths else np.empty(m)
         for j in range(n_batches):
             dBW = generate_samples()
             current_V_comp = np.empty((N, m_batch))
@@ -262,15 +266,15 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
             for i in range(N_time):
                 if verbose >= 1:
                     print(f'Simulation round {j + 1} of {n_batches}, step {i + 1} of {N_time}')
-                current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
+                current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW(i))
                 if sample_paths and (i + 1) % saving_steps == 0:
-                    result[j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_log_S
+                    result[(i + 1) // saving_steps, j * m_batch:(j + 1) * m_batch] = current_log_S
             if not sample_paths:
                 result[j * m_batch:(j + 1) * m_batch] = current_log_S
         if sample_paths:
-            result[:, 0] = np.log(S_0)
+            result[0, :] = np.log(S_0)
     else:
-        result = np.empty((N + 2, m, return_times + 1)) if sample_paths else np.empty((N + 2, m))
+        result = np.empty((N + 2, return_times + 1, m)) if sample_paths else np.empty((N + 2, m))
         for j in range(n_batches):
             dBW = generate_samples()
             current_V_comp = np.empty((N, m_batch))
@@ -279,28 +283,27 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
             for i in range(N_time):
                 if verbose >= 1:
                     print(f'Simulation round {j + 1} of {n_batches}, step {i + 1} of {N_time}')
-                current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW[:, i::N_time])
+                current_log_S, current_V_comp = step_SV(current_log_S, current_V_comp, dBW(i))
                 if sample_paths and (i + 1) % saving_steps == 0:
-                    result[0, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_log_S
-                    result[2:, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_V_comp
+                    result[0, (i + 1) // saving_steps, j * m_batch:(j + 1) * m_batch] = current_log_S
+                    result[2:, (i + 1) // saving_steps, j * m_batch:(j + 1) * m_batch] = current_V_comp
             if not sample_paths:
                 result[0, j * m_batch:(j + 1) * m_batch] = current_log_S
                 result[2:, j * m_batch:(j + 1) * m_batch] = current_V_comp
         if sample_paths:
-            result[0, :, 0] = np.log(S_0)
-            result[2:, :, 0] = V_init[:, None]
+            result[0, 0, :] = np.log(S_0)
+            result[2:, 0, :] = V_init[:, None]
             result[1, :, :] = np.fmax(np.einsum('i,ijk->jk', weights, result[2:, :, :]), 0)
         else:
             result[1, :] = np.fmax(np.einsum('i,ij->j', weights, result[2:, :]), 0)
 
-    if one_node and not stock_only:
-        result = result[:-1, ...]
+    result = result[..., :m_input]
     if stock_only:
-        result = result[:m_return, ...]
         result = np.exp(result)
     else:
-        result = result[:, :m_return, ...]
         result[0, ...] = np.exp(result[0, ...])
+        if one_node:
+            result = result[:-1, ...]
     return result, rng
 
 
@@ -309,14 +312,14 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n
     """
     Gives the price or the implied volatility of a European option in the approximated, Markovian rough Heston model
     using MC or QMC simulation.
-    :param K: Strike prices, assumed to be a numpy array
+    :param K: Strike prices, assumed to be a 1d numpy array
     :param lambda_: Mean-reversion speed
     :param rho: Correlation between Brownian motions
     :param nu: Volatility of volatility
     :param theta: Mean variance
     :param V_0: Initial variance
     :param S_0: Initial stock price
-    :param T: Final time/Time of maturity
+    :param T: Maturity. Is an integer. For surfaces/multiple maturities, additionally use the parameter n_maturities
     :param nodes: The nodes of the Markovian approximation
     :param weights: The weights of the Markovian approximation
     :param r: Interest rate
@@ -339,39 +342,30 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n
     if is_smile:
         n_maturities = 1
     T_vec = T * np.linspace(0, 1, n_maturities + 1)[1:]
-    K_mat = np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K)[None, :])
+    K_mat = S_0 * np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K / S_0)[None, :])
 
     def get_samples(rv_shift=False):
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True,
                                  return_times=n_maturities, vol_only=False, stock_only=True, euler=euler, qmc=qmc,
                                  rv_shift=rv_shift, verbose=verbose - 1)
-        return samples_[:, 1:]
+        return samples_[1:, :]
 
     if qmc:
         estimates = np.empty((n_maturities, len(K), qmc_error_estimators))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            sample_batch = get_samples(False if i == 0 else True)
-            for j in range(n_maturities):
-                estimates[j, :, i], _ = cf.eur_MC(S_0=S_0, K=K_mat[j, :], T=T_vec[j], r=r, samples=sample_batch[:, j],
-                                                  payoff=payoff, implied_vol=False)
+            estimates[:, :, i], _, _ = cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, payoff=payoff,
+                                                 samples=get_samples(False if i == 0 else True), implied_vol=False)
         est, stat = cf.MC(estimates)
         if not implied_vol:
             if is_smile:
                 est, stat = est[0, :], stat[0, :]
-            return est, stat
-        vol, low, upp = np.empty((n_maturities, len(K))), np.empty((n_maturities, len(K))), \
-            np.empty((n_maturities, len(K)))
-        for j in range(n_maturities):
-            vol[j, :], low[j, :], upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :],
-                                                        payoff=payoff, stat=stat[j, :])
-        if is_smile:
-            vol, low, upp = vol[0, :], low[0, :], upp[0, :]
-        return vol, low, upp
+            return est, est - stat, est + stat
+        return cf.iv_eur(S_0=S_0, K=K_mat, r=r, T=T_vec, price=est, payoff=payoff, stat=stat)
     else:
-        return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=get_samples(), payoff=payoff, implied_vol=implied_vol)
+        return cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, samples=get_samples(), payoff=payoff, implied_vol=implied_vol)
 
 
 def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, euler=False, qmc=True,
@@ -575,6 +569,7 @@ def price_am(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, payoff, r,
         samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
                                  rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, return_times=N_dates,
                                  vol_only=False, stock_only=False, euler=euler, qmc=qmc, rng=rng_, rv_shift=rv_shift)
+        samples_ = np.transpose(samples_, (0, 2, 1))
         samples_[1:-1, :, :] = weights[:, None, None] * samples_[2:, :, :]
         samples_ = samples_[:-1, :, :]
         samples_[1:, :, :] = samples_[1:, :, :] - samples_[1:, :, :1]

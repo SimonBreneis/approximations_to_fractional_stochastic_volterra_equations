@@ -3,18 +3,6 @@ from scipy.stats import norm
 from sklearn.linear_model import LinearRegression
 
 
-def maturity_tensor_strike(S_0, K, T):
-    """
-    Given a numpy array of strikes K for maturity T[-1], computes appropriate array of strikes for all other
-    maturities in T for the computation of an implied volatility surface.
-    :param S_0: Initial stock price
-    :param K: Strikes for maturity T[-1]
-    :param T: Array of maturities
-    :return: Two 2-dim arrays of maturities and and strikes of the form T=T(T, K) and K=K(T, K)
-    """
-    return np.tile(T, (len(K), 1)).T, S_0 * np.exp(np.sqrt(T / T[-1])[:, None] * np.log(K / S_0)[None, :])
-
-
 def MC(samples):
     """
     Computes an approximation of E[X], where samples~X.
@@ -98,8 +86,8 @@ def BS_nodes(S_0, K, sigma, T, r=0., regularize=True):
     :param regularize: Ensures that the results are in the interval [-30, 30].
     :return: The first node
     """
-    d1 = (np.log(S_0 / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
-    d2 = (np.log(S_0 / K) + (r - sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
+    d1 = (np.log(S_0 / K) + (r + sigma ** 2 / 2) * T[..., None]) / (sigma * np.sqrt(T[..., None]))
+    d2 = (np.log(S_0 / K) + (r - sigma ** 2 / 2) * T[..., None]) / (sigma * np.sqrt(T[..., None]))
     if regularize:
         d1 = np.fmax(np.fmin(d1, 30), -30)
         d2 = np.fmax(np.fmin(d2, 30), -30)
@@ -119,15 +107,16 @@ def BS_price_eur_call_put(S_0, K, sigma, T, r=0., call=True, digital=False):
     :return: The price of a call option
     """
     if digital:
-        put_price = norm.cdf((np.log(K / S_0) + sigma ** 2 * T / 2 - r * T) / (sigma * np.sqrt(T)))
+        put_price = norm.cdf((np.log(K / S_0) + sigma ** 2 * T[..., None] / 2 - r * T[..., None])
+                             / (sigma * np.sqrt(T[..., None])))
         if call:
             return 1 - put_price
         else:
             return put_price
     d1, d2 = BS_nodes(S_0=S_0, K=K, sigma=sigma, T=T, r=r, regularize=True)
     if call:
-        return S_0 * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-    - S_0 * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
+        return S_0 * norm.cdf(d1) - K * np.exp(-r * T[..., None]) * norm.cdf(d2)
+    return - S_0 * norm.cdf(-d1) + K * np.exp(-r * T[..., None]) * norm.cdf(-d2)
 
 
 def BS_price_geom_asian_call(S_0, K, sigma, T):
@@ -190,10 +179,14 @@ def iv_eur(S_0, K, T, price, payoff, r=0., stat=None):
         def price_fun(s):
             return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=False, digital=True)
     else:
-        normal_rv = np.random.normal(0, np.sqrt(T), 1000000)
+        if isinstance(T, np.ndarray):
+            normal_rv = np.sqrt(T)[:, None] * np.random.normal(0, 1, (len(T), 1000000))
+        else:
+            normal_rv = np.sqrt(T) * np.random.normal(0, 1, 1000000)
 
         def price_fun(s):
-            return np.average(np.exp(-r * T) * payoff(S=np.exp(s * normal_rv + (r - 0.5 * s ** 2) * T), K=K), axis=-1)
+            return np.average(np.exp(-r * T)[..., None]
+                              * payoff(S=np.exp(s * normal_rv + (r - 0.5 * s ** 2) * T[..., None]), K=K), axis=-1)
     if stat is None:
         return iv(BS_price_fun=price_fun, price=price)
     return iv(BS_price_fun=price_fun, price=price), iv(BS_price_fun=price_fun, price=price - stat), \
@@ -241,20 +234,19 @@ def payoff_put(S, K):
     :param K: Strike price
     :return: The payoff.
     """
-    if isinstance(K, float) or isinstance(S, float) or isinstance(K, int) or isinstance(S, int):
+    if not isinstance(K, np.ndarray) or not isinstance(S, np.ndarray):
         return np.fmax(K - S, 0)
-    if len(K.shape) == 1 and len(S.shape) == 1:
-        return np.fmax(K[:, None] - S[None, :], 0)
-    return np.fmax(K[:, :, None] - S[:, None, :], 0)
+    return np.fmax(K[..., None] - S[..., None, :], 0)
 
 
 def eur_MC(S_0, K, T, samples, r=0., payoff="call", antithetic=False, implied_vol=False):
     """
     Computes the price or the implied volatility for a European option given samples of final stock prices.
     :param S_0: The initial stock price
-    :param K: The strike prices for which the implied volatilities should be calculated
-    :param T: The final time
-    :param samples: The final stock prices
+    :param K: The strike prices for which the implied volatilities should be calculated. 1d numpy array if T is float,
+        2d numpy array if T is 1d numpy array (of shape (len(T), n))
+    :param T: The final time. Float or 1d numpy array
+    :param samples: The final stock prices. Numpy array of shape (K.shape, m)
     :param r: Interest rate
     :param payoff: Either a payoff function with two parameters S (for the samples) and K (for the strike or additional
         parameters), or one of the strings 'put' and 'call'
@@ -268,16 +260,14 @@ def eur_MC(S_0, K, T, samples, r=0., payoff="call", antithetic=False, implied_vo
     elif payoff == 'put':
         payoff = payoff_put
     if antithetic:
-        payoffs = 0.5 * (payoff(S=samples[:len(samples) // 2], K=K) + payoff(S=samples[len(samples) // 2:], K=K))
+        payoffs = 0.5 * (payoff(S=samples[..., :len(samples) // 2], K=K)
+                         + payoff(S=samples[..., len(samples) // 2:], K=K))
     else:
         payoffs = payoff(S=samples, K=K)
-    price_estimate, price_stat = MC(np.exp(-r * T) * payoffs)
+    price_estimate, price_stat = MC(np.exp(-r * T)[..., None, None] * payoffs)
     if implied_vol:
-        implied_volatility_estimate = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate, payoff=payoff)
-        implied_volatility_lower = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate - price_stat, payoff=payoff)
-        implied_volatility_upper = iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate + price_stat, payoff=payoff)
-        return implied_volatility_estimate, implied_volatility_lower, implied_volatility_upper
-    return price_estimate, price_stat
+        return iv_eur(S_0=S_0, K=K, r=r, T=T, price=price_estimate, payoff=payoff, stat=price_stat)
+    return price_estimate, price_estimate - price_stat, price_estimate + price_stat
 
 
 def price_geom_asian_call_MC(K, samples, antithetic=False):
@@ -288,10 +278,10 @@ def price_geom_asian_call_MC(K, samples, antithetic=False):
     :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The prices, and lower and upper confidence interval bounds
     """
-    geom_avg_prices = np.exp(np.trapz(np.log(samples), dx=1 / (samples.shape[-1] - 1), axis=-1))
+    geom_avg_prices = np.exp(np.trapz(np.log(samples), dx=1 / (samples.shape[-2] - 1), axis=-2))
     if antithetic:
-        payoffs = 0.5 * (payoff_call(S=geom_avg_prices[:len(geom_avg_prices) // 2], K=K)
-                         + payoff_call(S=geom_avg_prices[len(geom_avg_prices) // 2:], K=K))
+        payoffs = 0.5 * (payoff_call(S=geom_avg_prices[..., :len(geom_avg_prices) // 2], K=K)
+                         + payoff_call(S=geom_avg_prices[..., len(geom_avg_prices) // 2:], K=K))
     else:
         payoffs = payoff_call(S=geom_avg_prices, K=K)
     price_estimate, price_stat = MC(payoffs)
@@ -306,10 +296,10 @@ def price_avg_vol_call_MC(K, samples, antithetic=False):
     :param antithetic: If True, the samples are antithetic, with the first half corresponding to the second half
     :return: Three numpy arrays: The prices, and lower and upper confidence interval bounds
     """
-    avg_vol = np.trapz(samples, dx=1 / (samples.shape[-1] - 1), axis=-1)
+    avg_vol = np.trapz(samples, dx=1 / (samples.shape[-2] - 1), axis=-2)
     if antithetic:
-        payoffs = 0.5 * (payoff_call(S=avg_vol[:len(avg_vol) // 2], K=K)
-                         + payoff_call(S=avg_vol[len(avg_vol) // 2:], K=K))
+        payoffs = 0.5 * (payoff_call(S=avg_vol[..., :len(avg_vol) // 2], K=K)
+                         + payoff_call(S=avg_vol[..., len(avg_vol) // 2:], K=K))
     else:
         payoffs = payoff_call(S=avg_vol, K=K)
     price_estimate, price_stat = MC(payoffs)

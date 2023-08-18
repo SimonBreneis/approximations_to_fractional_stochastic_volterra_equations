@@ -130,7 +130,7 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
     :param kernel_dict: A dictionary containing precomputed xi, b_star, and beta. If None, precomputes these quantities
     :param verbose: Determines the number of intermediary results printed to the console
     :return: The simulated sample paths, the rng that was used for generating the underlying random variables, and a
-        kernel_dict with the precomputed xi, b_star, and beta
+        kernel_dict with the precomputed xi, b_star, beta, and kernel
     """
     if sample_paths is False:
         return_times = 1
@@ -179,16 +179,13 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
     assert gamma > 0.0, f"gamma fails positivity, gamma = {gamma}."
 
     m_input = m  # the original input of how many samples should be simulated
-    m_return = m  # the final number of samples that we will actually return
     # m itself is the number of samples that we simulate
-    # We always have m >= m_return >= m_input
+    # We always have m >= m_input. At the end, we discard the additionally simulated paths.
 
     if qmc:
-        m = int(2 ** np.ceil(np.log2(m)) + 0.001)
-        m_return = m
-        if m != m_input:
+        if int(2 ** np.ceil(np.log2(m)) + 0.001) != m_input:
             print(f'Using QMC requires simulating a number m of samples that is a power of 2. The input m={m_input} '
-                  f'is not a power of 2. Simulates m={m} samples instead.')
+                  f'is not a power of 2.')
 
     available_memory = np.sqrt(psutil.virtual_memory().available)
     necessary_memory = 2.5 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
@@ -201,13 +198,13 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
     available_memory_for_random_variables = available_memory / 3
     necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
     n_batches = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
-    m_batch = int(np.ceil(m_return / n_batches))
+    m_batch = int(np.ceil(m / n_batches))
     m = m_batch * n_batches
 
     if sample_paths:
-        result = np.empty((2, m, return_times + 1))
-        result[0, :, 0] = np.log(S_0)
-        result[1, :, 0] = xi(0)
+        result = np.empty((2, return_times + 1, m))
+        result[0, 0, :] = np.log(S_0)
+        result[1, 0, :] = xi(0)
     else:
         result = np.empty((2, m))
 
@@ -233,12 +230,12 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
                                                        v_old=current_V, chi_old=chi[:, :i], X_old=current_X,
                                                        rv=rv[:, 3 * i:3 * (i + 1)], beta=beta, gamma=gamma, r=r)
             if sample_paths and (i + 1) % saving_steps == 0:
-                result[1, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_V
-                result[0, j * m_batch:(j + 1) * m_batch, (i + 1) // saving_steps] = current_X
+                result[1, (i + 1) // saving_steps, j * m_batch:(j + 1) * m_batch] = current_V
+                result[0, (i + 1) // saving_steps, j * m_batch:(j + 1) * m_batch] = current_X
         if not sample_paths:
             result[1, j * m_batch:(j + 1) * m_batch] = current_V
             result[0, j * m_batch:(j + 1) * m_batch] = current_X
-    result = result[:, :m_return, ...]  # discard those values which were unnecessarily generated
+    result = result[..., :m_input]  # discard those values which were unnecessarily generated
     result[0, ...] = np.exp(result[0, ...])
     return result, rng, kernel_dict
 
@@ -276,14 +273,14 @@ def eur(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, payo
     if is_smile:
         n_maturities = 1
     T_vec = T * np.linspace(0, 1, n_maturities + 1)[1:]
-    _, K_mat = cf.maturity_tensor_strike(S_0=S_0, K=K, T=T)
+    K_mat = S_0 * np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K / S_0)[None, :])
 
     def get_samples(rv_shift=False, kernel_dict_=None):
         samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
                                                r=r, m=m, N_time=N_time, sample_paths=True, return_times=n_maturities,
                                                qmc=qmc, rv_shift=rv_shift, kernel_dict=kernel_dict_,
                                                verbose=verbose - 2)
-        return samples_[0, :, 1:], kernel_dict_
+        return samples_[0, 1:, :], kernel_dict_
 
     if qmc:
         kernel_dict = None
@@ -292,25 +289,17 @@ def eur(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, payo
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
             samples_1, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
-            for j in range(n_maturities):
-                estimates[j, :, i], _ = cf.eur_MC(S_0=S_0, K=K_mat[j, :], T=T_vec[j], r=r, samples=samples_1[:, j],
-                                                  payoff=payoff, implied_vol=False)
+            estimates[:, :, i], _, _ = cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, samples=samples_1, payoff=payoff,
+                                                 implied_vol=False)
         est, stat = cf.MC(estimates)
         if not implied_vol:
             if is_smile:
                 est, stat = est[0, :], stat[0, :]
-            return est, stat
-        vol, low, upp = np.empty((n_maturities, len(K))), np.empty((n_maturities, len(K))), \
-            np.empty((n_maturities, len(K)))
-        for j in range(n_maturities):
-            vol[j, :], low[j, :], upp[j, :] = cf.iv_eur(S_0=S_0, K=K_mat[j, :], r=r, T=T_vec[j], price=est[j, :],
-                                                        payoff=payoff, stat=stat[j, :])
-        if is_smile:
-            vol, low, upp = vol[0, :], low[0, :], upp[0, :]
-        return vol, low, upp
+            return est, est - stat, est + stat
+        return cf.iv_eur(S_0=S_0, K=K_mat, r=r, T=T_vec, price=est, payoff=payoff, stat=stat)
     else:
-        samples_1, kernel_dict = get_samples()
-        return cf.eur_MC(S_0=S_0, K=K, T=T, r=r, samples=samples_1, payoff=payoff, implied_vol=implied_vol)
+        return cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, samples=get_samples()[0], payoff=payoff,
+                         implied_vol=implied_vol)
 
 
 def price_geom_asian_call(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, qmc_error_estimators=25,
@@ -451,6 +440,7 @@ def price_am(K, H, lambda_, rho, nu, theta, V_0, S_0, T, payoff, r, m=1000000, N
             samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0, r=r, m=m,
                     N_time=N_time, sample_paths=True, qmc=qmc, rng=rng_, return_times=N_dates, rv_shift=rv_shift,
                     kernel_dict=kernel_dict_, verbose=verbose - 1)
+        samples_1 = np.transpose(samples_, (0, 2, 1))
         samples_1[1, :, :] = samples_1[1, :, :] - samples_1[1, :, :1]
         return samples_1, rng_, kernel_dict_
 

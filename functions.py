@@ -1092,8 +1092,8 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
             markov_smiles[i, :, :] = rHestonFourier_iv_eur_call(params=params, N=Ns[i], mode=mode, nodes=nodes[i],
                                                                 weights=weights, verbose=verbose - 1)
         elif option == 'geometric asian call':
-            nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=np.array([params['T'] / 2, params['T']]),
-                                                   mode=mode)
+            # originally (or better) T = np.array([params['T'] / 2, params['T']]) below
+            nodes[i], weights = rk.quadrature_rule(H=params['H'], N=Ns[i], T=params['T'], mode=mode)
             markov_smiles[i, :, :] = \
                 rHestonFourier_price_geom_asian_call(params=params, N=Ns[i], mode=mode, nodes=nodes[i], weights=weights,
                                                      verbose=verbose - 1)
@@ -1154,6 +1154,7 @@ def compute_smiles_given_stock_prices_QMC(params, Ns=None, N_times=None, simulat
                 approx_smiles[i, k, m, :, :] = vol
                 lower_smiles[i, k, m, :, :] = low
                 upper_smiles[i, k, m, :, :] = upp
+                print(true_smile.shape, vol.shape, low.shape, upp.shape)
                 total_errors[i, k, m], lower_total_errors[i, k, m], upper_total_errors[i, k, m], MC_errors[i, k, m] = \
                     max_errors_MC(truth=true_smile, estimate=vol, lower=low, upper=upp)
                 discretization_errors[i, k, m], lower_discretization_errors[i, k, m], \
