@@ -338,7 +338,7 @@ for N in [2, 3]:
 
 params['rel_tol'] = 2e-04
 compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([2, 3]),
-                                      N_times=np.array([64, 128, 256, 512, 1024]),
+                                      N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]),
                                       n_samples=2 ** 22, option='geometric asian call', simulator=['Euler', 'Weak'],
                                       verbose=2)
 

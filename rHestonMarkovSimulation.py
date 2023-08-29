@@ -9,6 +9,33 @@ from numpy.random import default_rng
 import psutil
 
 
+def get_necessary_memory(N, return_times, m):
+    """
+    Estimates the (square root of the) number of bytes needed to simulate the required number of paths.
+    :param N: Dimension of the Markovian approximation. 0 if only the stock is saved
+    :param return_times: Number of time steps that should be returned
+    :param m: Number of sample paths
+    :return: Square root of the number of bytes that are required for storing m paths with return_times time steps
+        where the volatility has N dimensions
+    """
+    return 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+
+
+def get_n_batches(N, return_times, m):
+    """
+    Returns the number of batches that need to be used to simulate m samples.
+    :param N: Dimension of the Markovian approximation. 0 if only the stock is saved
+    :param return_times: Number of time steps that should be returned
+    :param m: Number of sample paths
+    :return: Number of batches and number of samples per batch
+    """
+    available_memory = np.sqrt(psutil.virtual_memory().available) / 2
+    necessary_memory = get_necessary_memory(N=N, return_times=return_times, m=m)
+    n_batches = int(np.ceil((necessary_memory / available_memory) ** 2))
+    m_batch = int(np.ceil(m / n_batches))
+    return n_batches, m_batch
+
+
 def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, sample_paths=False, return_times=None,
             vol_only=False, stock_only=False, euler=False, qmc=True, rng=None, rv_shift=False, verbose=0):
     """
@@ -86,17 +113,15 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
     # m itself is the number of samples that we simulate
     # We always have m >= m_input. At the end, we discard the additionally simulated paths.
 
+    """
     if qmc:
         if int(2 ** np.ceil(np.log2(m)) + 0.001) != m_input:
             print(f'Using QMC requires simulating a number m of samples that is a power of 2. The input m={m_input} '
                   f'is not a power of 2.')
+    """
 
     available_memory = np.sqrt(psutil.virtual_memory().available)
-    if stock_only:
-        necessary_memory = 3 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
-    else:
-        necessary_memory = 2.5 * np.sqrt(N + 2) * np.sqrt(return_times + 1) * np.sqrt(m) \
-            * np.sqrt(np.array([0.]).nbytes)
+    necessary_memory = get_necessary_memory(N=0 if stock_only else N, return_times=return_times, m=m)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with '
                           f'{N} Markovian dimensions, {return_times} time points where the sample paths should be '
@@ -108,7 +133,7 @@ def samples(lambda_, nu, theta, V_0, T, nodes, weights, rho, S_0, r, m, N_time, 
         necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
     else:
         necessary_memory_for_random_variables = np.sqrt(3 * m) * np.sqrt(np.array([0.]).nbytes)
-    n_batches = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
+    n_batches = int(np.ceil((necessary_memory_for_random_variables / available_memory_for_random_variables) ** 2))
     m_batch = int(np.ceil(m / n_batches))
     m = m_batch * n_batches
 
@@ -392,23 +417,39 @@ def price_geom_asian_call(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weight
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    def get_samples(rv_shift=False):
-        samples_, rng_ = samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights,
-                                 rho=rho, S_0=S_0, r=r, m=m, N_time=N_time, sample_paths=True, vol_only=False,
-                                 stock_only=True, euler=euler, qmc=qmc, rv_shift=rv_shift, verbose=verbose - 1)
-        return samples_
+    n_batches, m_batch = get_n_batches(N=0, return_times=N_time, m=m)
+
+    def get_sample_batch(rng=None, rv_shift=False):
+        return samples(lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, nodes=nodes, weights=weights, rho=rho,
+                       S_0=S_0, r=r, m=m_batch, N_time=N_time, sample_paths=True, vol_only=False, stock_only=True,
+                       euler=euler, qmc=qmc, rv_shift=rv_shift, rng=rng, verbose=verbose - 1)
+
+    def single_estimator(rv_shift=False):
+        estimates = np.empty((len(K), n_batches))
+        confidences = np.empty((len(K), n_batches))
+        rng = None
+        for j in range(n_batches):
+            samples_, rng = get_sample_batch(rng=rng, rv_shift=rv_shift)
+            estimates[:, j], low, upp = cf.price_geom_asian_call_MC(K=K, samples=samples_)
+            confidences[:, j] = np.abs(estimates[:, j] - low)
+            if qmc:
+                rng.reset()
+                rng.fast_forward((j + 1) * m_batch)
+        estimate, confidence = cf.MC(estimates)
+        if n_batches < 100:
+            confidence, _ = cf.MC(confidence) / np.sqrt(n_batches)
+        return estimate, estimate - confidence, estimate + confidence
 
     if qmc:
-        estimates = np.empty((len(K), qmc_error_estimators))
+        estimators = np.empty((len(K), qmc_error_estimators))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            samples_1 = get_samples(False if i == 0 else True)
-            estimates[:, i], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
-        est, stat = cf.MC(estimates)
+            estimators[:, i], _, _ = single_estimator(rv_shift=i != 0)
+        est, stat = cf.MC(estimators)
         return est, est - stat, est + stat
     else:
-        return cf.price_geom_asian_call_MC(K=K, samples=get_samples())
+        return single_estimator()
 
 
 def price_avg_vol_call(K, lambda_, nu, theta, V_0, T, nodes, weights, m, N_time, euler=False, qmc=True,

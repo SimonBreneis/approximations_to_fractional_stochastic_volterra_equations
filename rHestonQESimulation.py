@@ -98,6 +98,51 @@ def hqe_step(xi, kernel, rho, dt, eps, b_star_, v_old, chi_old, X_old, rv, beta,
     return X_new, v_new, chi_new
 
 
+def get_necessary_memory(return_times, m):
+    """
+    Estimates the (square root of the) number of bytes needed to simulate the required number of paths.
+    :param return_times: Number of time steps that should be returned
+    :param m: Number of sample paths
+    :return: Square root of the number of bytes that are required for storing m paths with return_times time steps
+        where the volatility has N dimensions
+    """
+    return 2.5 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+
+
+def get_n_batches(return_times, m):
+    """
+    Returns the number of batches that need to be used to simulate m samples.
+    :param return_times: Number of time steps that should be returned
+    :param m: Number of sample paths
+    :return: Number of batches and number of samples per batch
+    """
+    available_memory = np.sqrt(psutil.virtual_memory().available) / 2
+    necessary_memory = get_necessary_memory(return_times=return_times, m=m)
+    n_batches = int(np.ceil((necessary_memory / available_memory) ** 2))
+    m_batch = int(np.ceil(m / n_batches))
+    return n_batches, m_batch
+
+
+def get_kernel_dict(H, lambda_, nu, V_0, theta, T, N_time, kernel_dict=None):
+    dt = float(T / N_time)
+    if kernel_dict is None:
+        kernel_dict = {}
+    if 'kernel' not in kernel_dict:
+        kernel_dict['kernel'] = rk.kernel_rheston(H=H, lam=lambda_, zeta=nu)
+    if 'xi' not in kernel_dict:
+        # Compute the forward variance curve. For faster use in the algorithm, we precompute and do linear
+        # interpolation.
+        n_inter = 100  # number of points for interpolation
+        x = np.linspace(0.0, T, n_inter)
+        xi_val = kernel_dict['kernel'].xi(x, V_0, lambda_, theta / lambda_)
+        kernel_dict['xi'] = interp1d(x, xi_val, kind='linear')
+    if 'b_star' not in kernel_dict:
+        kernel_dict['b_star'] = b_star(kernel_dict['kernel'], dt, N_time)
+    if 'beta' not in kernel_dict:
+        kernel_dict['beta'] = kernel_dict['kernel'].K_0(dt) / dt
+    return kernel_dict
+
+
 def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=False, qmc=True, rng=None,
             return_times=None, rv_shift=False, kernel_dict=None, verbose=0):
     """
@@ -149,32 +194,9 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
     if isinstance(rv_shift, bool) and rv_shift:
         rv_shift = np.random.uniform(0, 1, 3 * N_time)
     eps = 1e-06
-    if kernel_dict is None:
-        kernel_dict = {}
-    if 'kernel' in kernel_dict:
-        kernel = kernel_dict['kernel']
-    else:
-        kernel = rk.kernel_rheston(H=H, lam=lambda_, zeta=nu)
-        kernel_dict['kernel'] = kernel
-    if 'xi' in kernel_dict:
-        xi = kernel_dict['xi']
-    else:
-        # Compute the forward variance curve. For faster use in the algorithm, we precompute and do linear
-        # interpolation.
-        n_inter = 100  # number of points for interpolation
-        x = np.linspace(0.0, T, n_inter)
-        xi_val = kernel.xi(x, V_0, lambda_, theta / lambda_)
-        xi = interp1d(x, xi_val, kind='linear')
-        kernel_dict['xi'] = xi
-    if 'b_star' in kernel_dict:
-        b_star_ = kernel_dict['b_star']
-    else:
-        b_star_ = b_star(kernel, float(dt), N_time)
-        kernel_dict['b_star'] = b_star_
-    if 'beta' in kernel_dict:
-        beta = kernel_dict['beta']
-    else:
-        beta = kernel.K_0(dt) / dt
+    kernel_dict = get_kernel_dict(H=H, lambda_=lambda_, nu=nu, V_0=V_0, T=T, N_time=N_time, theta=theta,
+                                  kernel_dict=kernel_dict)
+    kernel, xi, b_star_, beta = kernel_dict['kernel'], kernel_dict['xi'], kernel_dict['b_star'], kernel_dict['beta']
     gamma = (b_star_[0] ** 2 - beta ** 2) * dt
     assert gamma > 0.0, f"gamma fails positivity, gamma = {gamma}."
 
@@ -188,7 +210,7 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
                   f'is not a power of 2.')
 
     available_memory = np.sqrt(psutil.virtual_memory().available)
-    necessary_memory = 2.5 * np.sqrt(return_times + 1) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
+    necessary_memory = get_necessary_memory(return_times=return_times, m=m)
     if necessary_memory > available_memory:
         raise MemoryError(f'Not enough memory to store the sample paths of the rough Heston model with {return_times} '
                           f'time points where the sample paths should be '
@@ -197,7 +219,7 @@ def samples(H, lambda_, nu, theta, V_0, T, rho, S_0, r, m, N_time, sample_paths=
 
     available_memory_for_random_variables = available_memory / 3
     necessary_memory_for_random_variables = np.sqrt(3 * N_time) * np.sqrt(m) * np.sqrt(np.array([0.]).nbytes)
-    n_batches = int(np.ceil(necessary_memory_for_random_variables / available_memory_for_random_variables))
+    n_batches = int(np.ceil((necessary_memory_for_random_variables / available_memory_for_random_variables) ** 2))
     m_batch = int(np.ceil(m / n_batches))
     m = m_batch * n_batches
 
@@ -274,21 +296,21 @@ def eur(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, payo
         n_maturities = 1
     T_vec = T * np.linspace(0, 1, n_maturities + 1)[1:]
     K_mat = S_0 * np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K / S_0)[None, :])
+    kernel_dict = get_kernel_dict(H=H, lambda_=lambda_, nu=nu, V_0=V_0, theta=theta, T=T, N_time=N_time)
 
-    def get_samples(rv_shift=False, kernel_dict_=None):
+    def get_samples(rv_shift=False):
         samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
                                                r=r, m=m, N_time=N_time, sample_paths=True, return_times=n_maturities,
-                                               qmc=qmc, rv_shift=rv_shift, kernel_dict=kernel_dict_,
+                                               qmc=qmc, rv_shift=rv_shift, kernel_dict=kernel_dict,
                                                verbose=verbose - 2)
-        return samples_[0, 1:, :], kernel_dict_
+        return samples_[0, 1:, :]
 
     if qmc:
-        kernel_dict = None
         estimates = np.empty((n_maturities, len(K), qmc_error_estimators))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            samples_1, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
+            samples_1 = get_samples(False if i == 0 else True)
             estimates[:, :, i], _, _ = cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, samples=samples_1, payoff=payoff,
                                                  implied_vol=False)
         est, stat = cf.MC(estimates)
@@ -324,31 +346,42 @@ def price_geom_asian_call(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_ti
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    verbose = 1
-    m_modified = int(np.fmin(2 ** 22 // N_time, m))
-    m_rounds = m // m_modified
+    n_batches, m_batch = get_n_batches(return_times=N_time, m=m)
+    kernel_dict = get_kernel_dict(H=H, lambda_=lambda_, nu=nu, V_0=V_0, theta=theta, T=T, N_time=N_time)
 
-    def get_samples(rv_shift=False, kernel_dict_=None, rng_=None):
-        samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
-                                               r=r, m=m_modified, N_time=N_time, sample_paths=True, qmc=qmc,
-                                               rv_shift=rv_shift, kernel_dict=kernel_dict_, rng=rng_,
-                                               verbose=verbose - 1)
-        return samples_[0, :, :], rng_, kernel_dict_
+    def get_sample_batch(rv_shift=False, rng=None):
+        samples_, rng, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0,
+                                              r=r, m=m_batch, N_time=N_time, sample_paths=True, qmc=qmc,
+                                              rv_shift=rv_shift, kernel_dict=kernel_dict, rng=rng,
+                                              verbose=verbose - 1)
+        return samples_[0, :, :], rng
 
-    kernel_dict = None
-    estimates = np.empty((len(K), qmc_error_estimators * m_rounds))
-    for i in range(qmc_error_estimators):
-        if verbose >= 1:
-            print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            print(f'Current estimate: {cf.MC(estimates[:, :i * m_rounds])}')
-        samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
-        estimates[:, i * m_rounds], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
-        for k in range(1, m_rounds):
-            print(f'Round {k} of {m_rounds}')
-            samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict, rng)
-            estimates[:, i * m_rounds + k], _, _ = cf.price_geom_asian_call_MC(K=K, samples=samples_1)
-    est, stat = cf.MC(estimates)
-    return est, est - stat, est + stat
+    def single_estimator(rv_shift=False):
+        estimates = np.empty((len(K), n_batches))
+        confidences = np.empty((len(K), n_batches))
+        rng = None
+        for j in range(n_batches):
+            samples_, rng = get_sample_batch(rng=rng, rv_shift=rv_shift)
+            estimates[:, j], low, upp = cf.price_geom_asian_call_MC(K=K, samples=samples_)
+            confidences[:, j] = np.abs(estimates[:, j] - low)
+            if qmc:
+                rng.reset()
+                rng.fast_forward((j + 1) * m_batch)
+        estimate, confidence = cf.MC(estimates)
+        if n_batches < 100:
+            confidence, _ = cf.MC(confidence) / np.sqrt(n_batches)
+        return estimate, estimate - confidence, estimate + confidence
+
+    if qmc:
+        estimators = np.empty((len(K), qmc_error_estimators))
+        for i in range(qmc_error_estimators):
+            if verbose >= 1:
+                print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
+            estimators[:, i], _, _ = single_estimator(rv_shift=i != 0)
+        est, stat = cf.MC(estimators)
+        return est, est - stat, est + stat
+    else:
+        return single_estimator()
 
 
 def price_avg_vol_call(H, K, lambda_, nu, theta, V_0, T, m, N_time, qmc=True, qmc_error_estimators=25, verbose=0):
@@ -369,31 +402,30 @@ def price_avg_vol_call(H, K, lambda_, nu, theta, V_0, T, m, N_time, qmc=True, qm
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
-    def get_samples(rv_shift=False, kernel_dict_=None, rng_=None):
-        samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=0., S_0=1.,
-                                               r=0., m=m_modified, N_time=N_time, sample_paths=True, qmc=qmc,
-                                               rv_shift=rv_shift, kernel_dict=kernel_dict_, rng=rng_,
-                                               verbose=verbose - 1)
-        return samples_[0, :, :], rng_, kernel_dict_
+    n_batches, m_batch = get_n_batches(return_times=N_time, m=m)
+    kernel_dict = get_kernel_dict(H=H, lambda_=lambda_, nu=nu, V_0=V_0, theta=theta, T=T, N_time=N_time)
 
-    m_modified = int(np.fmin(2 ** 10, m))
-    m_rounds = m // m_modified
+    def get_samples(rv_shift=False, rng_=None):
+        samples_, rng_, kernel_dict_ = samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=0., S_0=1.,
+                                               r=0., m=m_batch, N_time=N_time, sample_paths=True, qmc=qmc,
+                                               rv_shift=rv_shift, rng=rng_, kernel_dict=kernel_dict,
+                                               verbose=verbose - 1)
+        return samples_[0, :, :], rng_
 
     if qmc:
-        kernel_dict = None
-        estimates = np.empty((len(K), qmc_error_estimators * m_rounds))
+        estimates = np.empty((len(K), qmc_error_estimators * n_batches))
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict)
-            estimates[:, i * m_rounds], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
-            for k in range(1, m_rounds):
-                samples_1, rng, kernel_dict = get_samples(False if i == 0 else True, kernel_dict, rng)
-                estimates[:, i * m_rounds + k], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
+            samples_1, rng = get_samples(False if i == 0 else True)
+            estimates[:, i * n_batches], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
+            for k in range(1, n_batches):
+                samples_1, rng = get_samples(False if i == 0 else True, rng)
+                estimates[:, i * n_batches + k], _, _ = cf.price_avg_vol_call_MC(K=K, samples=samples_1)
         est, stat = cf.MC(estimates)
         return est, est - stat, est + stat
     else:
-        samples_1, _, _ = get_samples()
+        samples_1, _ = get_samples()
         return cf.price_geom_asian_call_MC(K=K, samples=samples_1)
 
 
@@ -422,6 +454,7 @@ def price_am(K, H, lambda_, rho, nu, theta, V_0, S_0, T, payoff, r, m=1000000, N
     :param verbose: Determines the number of intermediary results printed to the console
     return: The prices of the call option for the various strike prices in K
     """
+    kernel_dict = get_kernel_dict(H=H, lambda_=lambda_, nu=nu, V_0=V_0, theta=theta, T=T, N_time=N_time)
     if payoff == 'call':
         def payoff(S):
             return cf.payoff_call(S=S, K=K)
@@ -435,33 +468,33 @@ def price_am(K, H, lambda_, rho, nu, theta, V_0, S_0, T, payoff, r, m=1000000, N
         return rHestonMarkovSimulation.am_features(x=x, degree=feature_degree, K=K)
         # return am_features(x=x, degree=feature_degree, K=K)
 
-    def get_samples(rng_=None, rv_shift=False, kernel_dict_=None):
+    def get_samples(rng_=None, rv_shift=False):
         samples_1, rng_, kernel_dict_ = \
             samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0, T=T, rho=rho, S_0=S_0, r=r, m=m,
                     N_time=N_time, sample_paths=True, qmc=qmc, rng=rng_, return_times=N_dates, rv_shift=rv_shift,
-                    kernel_dict=kernel_dict_, verbose=verbose - 1)
+                    kernel_dict=kernel_dict, verbose=verbose - 1)
         samples_1 = np.transpose(samples_, (0, 2, 1))
         samples_1[1, :, :] = samples_1[1, :, :] - samples_1[1, :, :1]
-        return samples_1, rng_, kernel_dict_
+        return samples_1, rng_
 
     if qmc:
-        rng, kernel_dict = None, None
+        rng = None
         estimates = np.empty(qmc_error_estimators)
         for i in range(qmc_error_estimators):
             if verbose >= 1:
                 print(f'Computing estimator {i + 1} of {qmc_error_estimators}')
-            samples_, rng, kernel_dict = get_samples(rng, False if i == 0 else True, kernel_dict)
+            samples_, rng = get_samples(rng, False if i == 0 else True)
             rng.reset()
             rng.fast_forward(m)
             (_, _), models = cf.price_am(T=T, r=r, samples=samples_, payoff=payoff, features=features)
-            samples_, rng, kernel_dict = get_samples(rng, False if i == 0 else True, kernel_dict)
+            samples_, rng = get_samples(rng, False if i == 0 else True)
             rng.reset()
             estimates[i], _ = cf.price_am_forward(T=T, r=r, samples=samples_, payoff=payoff, models=models,
                                                   features=features)
         est, stat = cf.MC(estimates)
     else:
-        samples_, rng, kernel_dict = get_samples()
+        samples_, rng = get_samples()
         (_, _), models = cf.price_am(T=T, r=r, samples=samples_, payoff=payoff, features=features)
-        samples_, rng, kernel_dict = get_samples(rng_=rng, rv_shift=False, kernel_dict_=kernel_dict)
+        samples_, rng = get_samples(rng_=rng, rv_shift=False)
         est, stat = cf.price_am_forward(T=T, r=r, samples=samples_, payoff=payoff, models=models, features=features)
     return est, stat
