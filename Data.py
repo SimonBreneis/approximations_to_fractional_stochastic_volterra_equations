@@ -225,6 +225,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of implied volatility smiles for $H=0.001$')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     plt.loglog(N, errors_smile[0, 0, :], color=color(0, 4), label='GG')
@@ -244,6 +245,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of implied volatility smiles')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     for i in range(errors_surface.shape[0]):
@@ -253,6 +255,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of implied volatility surfaces for $H=0.001$')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     plt.loglog(N, errors_surface[0, 0, :], color=color(0, 4), label='GG')
@@ -272,6 +275,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of implied volatility surfaces')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     for i in range(errors_skew.shape[0]):
@@ -281,6 +285,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of the skew for $H=0.001$')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     plt.loglog(N, errors_skew[0, 0, :], color=color(0, 4), label='GG')
@@ -300,6 +305,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of the skew')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     for i in range(errors_dig.shape[0]):
@@ -309,6 +315,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of digital European call option for $H=0.001$')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     plt.loglog(N, errors_dig[0, 0, :], color=color(0, 4), label='GG')
@@ -327,6 +334,7 @@ def plot_weak_errors_of_various_quadrature_rules():
     plt.xlabel('Number of nodes N')
     plt.title(r'Relative errors of digital European call option')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
 
@@ -455,6 +463,7 @@ def plot_computed_skews():
     plt.xlabel('Maturity T')
     plt.title('Skew using GG for H=-0.1')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
     plt.plot(T, skew_BL_1, color=color(0, 10), label='N=1')
@@ -471,6 +480,7 @@ def plot_computed_skews():
     plt.xlabel('Maturity T')
     plt.title('Skew using BL for H=-0.1')
     plt.legend(loc='best')
+    plt.tight_layout()
     plt.show()
 
 
@@ -484,225 +494,228 @@ def convergence_rates_various_theorems():
     plt.ylabel(r'$\alpha(H)$')
     plt.legend(loc='best')
     plt.title('Exponents of the convergence rates depending on H')
+    plt.tight_layout()
     plt.show()
-
-# ---------------------------------------------------------------------------------------------------------------
-# Bermudan option prices for the Markovian Mackevicius Paper. The parameters used are
-# lambda_ = 0.3, nu = 0.3, theta = 0.02, V_0 = 0.02, rho = -0.7, S_0 = 100., T = 1., H = 0.1, K = 105., r = 0.06
-# For MC estimators, the number of Monte Carlo samples used is 1_000_000, 500_000 of which are used for fitting the
-# stopping rules, and 500_000 for pricing the option. The Markovian schemes use antithetic variates.
-# For the Longstaff-Schwartz  linear regression, we use polynomials in S, V, and the components of V, of weighted
-# degree at most 8.
-# For QMC estimators, the number of QMC samples with Sobol is 2 ** 20 for the regression and 2 ** 20 for the pricing,
-# and we did 25 iterations with shifted Sobol points using random shifts, taking the MC average of these 25 iterations.
-# We use 4, 16, or 256 exercise times, linearly spaced over [0, 1]. The sample paths are simulated with a number of
-# time steps that is always a power of 2. In the arrays below, the prices are for increasing number of time steps in the
-# simulation. For example, for 16 exercise times, these prices correspond to 16, 32, 64, 128, 256, 512, and 1024
-# simulation time steps.
-# The general naming convention is as follows.
-# bermudan_prices_A_method_N
-# where A is the number of exercise times (4, 16, or 256), method is the method of simulation (QE, Euler, or Weak),
-# and N, only for the Markovian approximations (Euler and Weak) denotes the number of dimensions for approximating
-# the volatility.
-# Furthermore, we have arrays for determining which weighted degree of polynomials we should use in the linear
-# regression in Longstaff-Schwartz. In the end, we chose a maximal weighted degree of 8. The arrays with varying maximal
-# degree are denoted by
-# bermudan_prices_A_method_depending_on_d
-# where A is the number of exercise times (4 or 16), and method is the method for simulation (QE, Euler, or Weak).
-# We always use 256 simulation time steps, and for the Markovian approximations, we use 3 dimensions for the volatility.
-# All these MC estimates below of course come with MC errors. We give approximately the MC errors of the pricing
-# (i.e. the second step of the Longstaff-Schwartz algorithm), in terms of a 95% confidence interval, for the prices
-# below. The naming convention is
-# bermudan_prices_A_MC_error
-# or
-# bermudan_prices_A_depending_on_d_MC_error
-# where A is the number of execution times (4, 16, or 256, and 4 or 16, respectively). The MC errors are similar
-# for all methods and number of simulation time steps. The 95% MC intervals are hence roughly given by, e.g.,
-# bermudan_prices_4_QE_depending_on_d +/- bermudan_prices_4_depending_on_d_MC_error.
-
-
-bermudan_prices_4_QE_depending_on_d_MC = \
-    np.array([5.881312977844017, 5.968850620756691, 5.998553757861667, 6.006160182030647, 6.006383697727581,
-              6.006263235149674, 6.008178490802654, 6.008523830888406, 6.009364315695357, 6.009343528951102])
-bermudan_prices_16_QE_depending_on_d_MC = \
-    np.array([5.975877138293987, 6.111586468354794, 6.133727709676545, 6.1509455538422575, 6.154641777246265,
-              6.158014128837235, 6.158766950398943, 6.158520021365969, 6.1621527362593795, 6.159249087253855])
-bermudan_prices_4_Euler_depending_on_d_MC = \
-    np.array([6.054783793139857, 6.159708441955763, 6.20228676332753, 6.216731827913274, 6.218885182596948,
-              6.218676583435156, 6.21894432367718, 6.2205907264635725, 6.217908309921049, 6.216903894341569])
-bermudan_prices_16_Euler_depending_on_d_MC = \
-    np.array([6.147976009374668, 6.300566751997734, 6.3599674269505275, 6.38828958937379, 6.393769871447732,
-              6.397455068946655, 6.396819084015585, 6.398640298451329, 6.398929582688365, 6.39708370098245])
-bermudan_prices_4_Weak_depending_on_d_MC = \
-    np.array([5.887155699391186, 5.989452612718753, 6.038799039128605, 6.054692018775657, 6.055529845713608,
-              6.052842941057083, 6.0551526792542925, 6.056899266851076, 6.0547788243116765, 6.054291819265685])
-bermudan_prices_16_Weak_depending_on_d_MC = \
-    np.array([5.982915278022808, 6.144029283537505, 6.20662138026517, 6.231188122480796, 6.236681995867578,
-              6.239516028915048, 6.244258417204066, 6.2475150990083295, 6.243166782714627, 6.238788655289753])
-bermudan_prices_4_depending_on_d_MC_error = 0.022
-bermudan_prices_16_depending_on_d_MC_error = 0.0205
-
-bermudan_prices_4_QE_MC = \
-    np.array([5.759153259708528, 5.849745441674186, 5.950877598800659, 5.9760810510333044, 6.00055143696531,
-              6.020520279637076, 6.008523830888406, 6.0052708190581585, 5.998668978300777])
-bermudan_prices_16_QE_MC = \
-    np.array([6.108186686341114, 6.1376755379654995, 6.148969362688817, 6.164491459494097, 6.158520021365969,
-              6.154609781154781, 6.1629121725498965])
-bermudan_prices_256_QE_MC = \
-    np.array([6.122145926679324, 6.11613868482267, 6.134258103250474])
-bermudan_prices_4_Euler_1_MC = \
-    np.array([6.374994912074388, 6.428210948091557, 6.337767249793884, 6.222338166117672, 6.122125820317566,
-              6.124113522529565, 6.08543869293257, 6.073672663916806, 6.074643688987093])
-bermudan_prices_4_Weak_1_MC = \
-    np.array([5.84016625395903, 5.984185407498253, 6.029869817364804, 6.064265531122275, 6.065994671888949,
-              6.091467955508539, 6.069185109030468, 6.067684072599958, 6.055497464606124])
-bermudan_prices_16_Euler_1_MC = \
-    np.array([6.506932192102358, 6.385482948726982, 6.304988519866201, 6.288568136419512, 6.2634987607692345,
-              6.254241700294283, 6.248516530539128])
-bermudan_prices_16_Weak_1_MC = \
-    np.array([6.209433658560861, 6.228173128211438, 6.251695791413654, 6.270230183806934, 6.251623923400068,
-              6.256084539774051, 6.236805423970378])
-bermudan_prices_256_Euler_1_MC = \
-    np.array([6.306193949440956, 6.2874596034918575, 6.291323937091087])
-bermudan_prices_256_Weak_1_MC = \
-    np.array([6.293511391981054, 6.287814577174661, 6.273199102131892])
-bermudan_prices_4_Euler_2_MC = \
-    np.array([6.420390145127389, 6.472930797016549, 6.458838247666576, 6.364240742381819, 6.257612575183531,
-              6.196801022064704, 6.120252614849627, 6.108887312409656, 6.0814427881406035])
-bermudan_prices_4_Weak_2_MC = \
-    np.array([5.783702082255862, 5.936975703357294, 6.013991614481586, 6.060701895557607, 6.086942776411719,
-              6.073626406770916, 6.078451673607631, 6.092376219791714, 6.082868039016247])
-bermudan_prices_16_Euler_2_MC = \
-    np.array([6.630140959958434, 6.542539230136588, 6.434377181446154, 6.380682485919598, 6.309035979130753,
-              6.293600027099479, 6.275720286664339])
-bermudan_prices_16_Weak_2_MC = \
-    np.array([6.205145264719924, 6.231609545104102, 6.263015109910695, 6.257616555092254, 6.267232619528006,
-              6.276722597094117, 6.258378649955263])
-bermudan_prices_256_Euler_2_MC = \
-    np.array([6.344430779399225, 6.321748327491974, 6.305306909362065])
-bermudan_prices_256_Weak_2_MC = \
-    np.array([6.301194912728672, 6.318316116346498, 6.294297714897946])
-bermudan_prices_4_Euler_3_MC = \
-    np.array([6.398657083587142, 6.479940945615953, 6.492488861914647, 6.466431412420086, 6.38612362113434,
-              6.30562219817047, 6.2205907264635725, 6.164454139067818, 6.126165399572341])
-bermudan_prices_4_Weak_3_MC = \
-    np.array([5.582231373826758, 5.812984613267271, 5.929799254569929, 6.005275274516244, 6.060022438581269,
-              6.078758139791109, 6.056899266851076, 6.069635662532924, 6.081681696919653])
-bermudan_prices_16_Euler_3_MC = \
-    np.array([6.660958289864805, 6.639787544579042, 6.559597866760051, 6.47722382597367, 6.398640298451329,
-              6.336305040475958, 6.3019964438789255])
-bermudan_prices_16_Weak_3_MC = \
-    np.array([6.108318508204293, 6.196936824424116, 6.238368060097502, 6.2605023752306765, 6.2475150990083295,
-              6.248353190373457, 6.257423063271396])
-bermudan_prices_256_Euler_3_MC = \
-    np.array([6.433661802419653, 6.36660700918045, 6.323643496158492])
-bermudan_prices_256_Weak_3_MC = \
-    np.array([6.282204776091425, 6.290799267960921, 6.289616969621115])
-bermudan_prices_4_Euler_4_MC = \
-    np.array([6.406126843462981, 6.4633057044612165, 6.441774061026381, 6.433433636956694, 6.391686385381758,
-              6.365513359686255, 6.327031422505806, 6.246376842322323, 6.164341809680132])
-bermudan_prices_4_Weak_4_MC = \
-    np.array([5.4362976021797715, 5.615935597891296, 5.799872869118376, 5.924465290342187, 5.999826544126777,
-              6.056387810860024, 6.063220744715272, 6.084647288395503, 6.082758720011783])
-bermudan_prices_16_Euler_4_MC = \
-    np.array([6.6174189872125035, 6.59365408841299, 6.571667289827528, 6.5292510957202605, 6.490150895994291,
-              6.4242716756146905, 6.341487168838822])
-bermudan_prices_16_Weak_4_MC = \
-    np.array([5.985484297556279, 6.107943180197603, 6.162857269579133, 6.223215685386942, 6.228446742528628,
-              6.256058618685774, 6.250430035251435])
-bermudan_prices_256_Euler_4_MC = \
-    np.array([6.526466435611826, 6.454235797638589, 6.372289136335599])
-bermudan_prices_256_Weak_4_MC = \
-    np.array([6.264208536866021, 6.285533212002273, 6.293718989571229])
-bermudan_prices_4_MC_error = 0.022
-bermudan_prices_16_MC_error = 0.020
-bermudan_prices_256_MC_error = 0.019
-
-bermudan_prices_4_QE_QMC = \
-    np.array([5.774183408437744, 5.854615351301953, 5.929369293090418, 5.9663337673351835, 5.986770239196567,
-              5.999424979520078, 6.005674224266439, 6.012039333608904, 6.016, 6.016])
-bermudan_prices_16_QE_QMC = \
-    np.array([6.0993861291263345, 6.126970973104815, 6.143719753306705, 6.151690453648474, 6.159262765596182,
-              6.163881778647127, 6.168, 6.171])
-bermudan_prices_256_QE_QMC = \
-    np.array([6.117771629784127, 6.123, 6.128, 6.130])
-bermudan_prices_4_Euler_1_QMC = \
-    np.array([6.38975718366088, 6.423390029711331, 6.342266803436221, 6.234990343255016, 6.156105066476399,
-              6.11120506357235, 6.088939347127523, 6.080471413156653, 6.078006526653015, 6.074])
-bermudan_prices_4_Weak_1_QMC = \
-    np.array([5.83653258591296, 5.987247751528324, 6.046365468255918, 6.065750433730277, 6.070906571147718,
-              6.072159309667814, 6.074527789330435, 6.07491176485612, 6.0767741969412, 6.075])
-bermudan_prices_16_Euler_1_QMC = \
-    np.array([6.506793263507289, 6.404013763459586, 6.326878921104333, 6.28420385672242, 6.26447589920283,
-              6.254576638991984, 6.249822675780373, 6.250])
-bermudan_prices_16_Weak_1_QMC = \
-    np.array([6.214071649080092, 6.237786576410557, 6.247116775253625, 6.248556966773295, 6.246794787666114,
-              6.248758449092724, 6.2478358783283605, 6.248])
-bermudan_prices_256_Euler_1_QMC = \
-    np.array([6.296, 6.284, 6.281, 6.280])
-bermudan_prices_256_Weak_1_QMC = \
-    np.array([6.277, 6.278, 6.278, 6.278])
-bermudan_prices_4_Euler_2_QMC = \
-    np.array([6.414, 6.486, 6.452, 6.355, 6.252,
-              6.171, 6.122, 6.098, 6.086, 6.081])
-bermudan_prices_4_Weak_2_QMC = \
-    np.array([5.793, 5.952, 6.029, 6.064, 6.076,
-              6.076, 6.075, 6.078, 6.074, 6.074])
-bermudan_prices_16_Euler_2_QMC = \
-    np.array([6.617, 6.530, 6.428, 6.351, 6.302,
-              6.280, 6.268, 6.261])
-bermudan_prices_16_Weak_2_QMC = \
-    np.array([6.204, 6.237, 6.252, 6.256, 6.258,
-              6.257, 6.258, 6.258])
-bermudan_prices_256_Euler_2_QMC = \
-    np.array([6.338, 6.311, 6.300, 6.294])
-bermudan_prices_256_Weak_2_QMC = \
-    np.array([6.291, 6.289, 6.289, 6.288])
-bermudan_prices_4_Euler_3_QMC = \
-    np.array([6.403, 6.479, 6.481, 6.447, 6.388,
-              6.308, 6.225, 6.160, 6.117, 6.094])
-bermudan_prices_4_Weak_3_QMC = \
-    np.array([5.586, 5.797, 5.936, 6.015, 6.055,
-              6.064, 6.068, 6.074, 6.071, 6.070])
-bermudan_prices_16_Euler_3_QMC = \
-    np.array([6.645, 6.619, 6.561, 6.483, 6.402,
-              6.339, 6.298, 6.275])
-bermudan_prices_16_Weak_3_QMC = \
-    np.array([6.109, 6.190, 6.231, 6.245, 6.249,
-              6.251, 6.249, 6.249])
-bermudan_prices_256_Euler_3_QMC = \
-    np.array([6.436, 6.371, 6.332, 6.306])
-bermudan_prices_256_Weak_3_QMC = \
-    np.array([6.281, 6.281, 6.282, 6.279])
-bermudan_prices_4_Euler_4_QMC = \
-    np.array([6.403, 6.476, 6.471, 6.433, 6.396,
-              6.355, 6.302, 6.241, 6.182, 6.135])
-bermudan_prices_4_Weak_4_QMC = \
-    np.array([5.431, 5.619, 5.805, 5.935, 6.015,
-              6.052, 6.065, 6.068, 6.070, 6.070])
-bermudan_prices_16_Euler_4_QMC = \
-    np.array([6.633, 6.604, 6.565, 6.521, 6.473,
-              6.413, 6.355, 6.313])
-bermudan_prices_16_Weak_4_QMC = \
-    np.array([5.992, 6.114, 6.188, 6.228, 6.244,
-              6.247, 6.248, 6.248])
-bermudan_prices_256_Euler_4_QMC = \
-    np.array([6.505, 6.446, 6.387, 0])
-bermudan_prices_256_Weak_4_QMC = \
-    np.array([6.271, 6.275, 6.278, 0])
-bermudan_prices_4_QMC_error = 0.0025
-bermudan_prices_16_QMC_error = 0.0025
-bermudan_prices_256_QMC_error = 0.0025
 
 
 def illustrate_bermudan_option_prices():
+    """
+    Bermudan option prices for the Markovian Mackevicius Paper. The parameters used are
+    lambda_ = 0.3, nu = 0.3, theta = 0.02, V_0 = 0.02, rho = -0.7, S_0 = 100., T = 1., H = 0.1, K = 105., r = 0.06
+    For MC estimators, the number of Monte Carlo samples used is 1_000_000, 500_000 of which are used for fitting the
+    stopping rules, and 500_000 for pricing the option. The Markovian schemes use antithetic variates.
+    For the Longstaff-Schwartz  linear regression, we use polynomials in S, V, and the components of V, of weighted
+    degree at most 8.
+    For QMC estimators, the number of QMC samples with Sobol is 2 ** 20 for the regression and 2 ** 20 for the pricing,
+    and we did 25 iterations with shifted Sobol points using random shifts, taking the MC average of these 25
+    iterations.
+    We use 4, 16, or 256 exercise times, linearly spaced over [0, 1]. The sample paths are simulated with a number of
+    time steps that is always a power of 2. In the arrays below, the prices are for increasing number of time steps in
+    the simulation. For example, for 16 exercise times, these prices correspond to 16, 32, 64, 128, 256, 512, and 1024
+    simulation time steps.
+    The general naming convention is as follows.
+    bermudan_prices_A_method_N
+    where A is the number of exercise times (4, 16, or 256), method is the method of simulation (HQE, Euler, or Weak),
+    and N, only for the Markovian approximations (Euler and Weak) denotes the number of dimensions for approximating
+    the volatility.
+    Furthermore, we have arrays for determining which weighted degree of polynomials we should use in the linear
+    regression in Longstaff-Schwartz. In the end, we chose a maximal weighted degree of 8. The arrays with varying
+    maximal degree are denoted by
+    bermudan_prices_A_method_depending_on_d
+    where A is the number of exercise times (4 or 16), and method is the method for simulation (HQE, Euler, or Weak).
+    We always use 256 simulation time steps, and for the Markovian approximations, we use 3 dimensions for the
+    volatility.
+    All these MC estimates below of course come with MC errors. We give approximately the MC errors of the pricing
+    (i.e. the second step of the Longstaff-Schwartz algorithm), in terms of a 95% confidence interval, for the prices
+    below. The naming convention is
+    bermudan_prices_A_MC_error
+    or
+    bermudan_prices_A_depending_on_d_MC_error
+    where A is the number of execution times (4, 16, or 256, and 4 or 16, respectively). The MC errors are similar
+    for all methods and number of simulation time steps. The 95% MC intervals are hence roughly given by, e.g.,
+    bermudan_prices_4_HQE_depending_on_d +/- bermudan_prices_4_depending_on_d_MC_error.
+    """
+
+    bermudan_prices_4_HQE_depending_on_d_MC = \
+        np.array([5.881312977844017, 5.968850620756691, 5.998553757861667, 6.006160182030647, 6.006383697727581,
+                  6.006263235149674, 6.008178490802654, 6.008523830888406, 6.009364315695357, 6.009343528951102])
+    bermudan_prices_16_HQE_depending_on_d_MC = \
+        np.array([5.975877138293987, 6.111586468354794, 6.133727709676545, 6.1509455538422575, 6.154641777246265,
+                  6.158014128837235, 6.158766950398943, 6.158520021365969, 6.1621527362593795, 6.159249087253855])
+    bermudan_prices_4_Euler_depending_on_d_MC = \
+        np.array([6.054783793139857, 6.159708441955763, 6.20228676332753, 6.216731827913274, 6.218885182596948,
+                  6.218676583435156, 6.21894432367718, 6.2205907264635725, 6.217908309921049, 6.216903894341569])
+    bermudan_prices_16_Euler_depending_on_d_MC = \
+        np.array([6.147976009374668, 6.300566751997734, 6.3599674269505275, 6.38828958937379, 6.393769871447732,
+                  6.397455068946655, 6.396819084015585, 6.398640298451329, 6.398929582688365, 6.39708370098245])
+    bermudan_prices_4_Weak_depending_on_d_MC = \
+        np.array([5.887155699391186, 5.989452612718753, 6.038799039128605, 6.054692018775657, 6.055529845713608,
+                  6.052842941057083, 6.0551526792542925, 6.056899266851076, 6.0547788243116765, 6.054291819265685])
+    bermudan_prices_16_Weak_depending_on_d_MC = \
+        np.array([5.982915278022808, 6.144029283537505, 6.20662138026517, 6.231188122480796, 6.236681995867578,
+                  6.239516028915048, 6.244258417204066, 6.2475150990083295, 6.243166782714627, 6.238788655289753])
+    bermudan_prices_4_depending_on_d_MC_error = 0.022
+    bermudan_prices_16_depending_on_d_MC_error = 0.0205
+
+    bermudan_prices_4_HQE_MC = \
+        np.array([5.759153259708528, 5.849745441674186, 5.950877598800659, 5.9760810510333044, 6.00055143696531,
+                  6.020520279637076, 6.008523830888406, 6.0052708190581585, 5.998668978300777])
+    bermudan_prices_16_HQE_MC = \
+        np.array([6.108186686341114, 6.1376755379654995, 6.148969362688817, 6.164491459494097, 6.158520021365969,
+                  6.154609781154781, 6.1629121725498965])
+    bermudan_prices_256_HQE_MC = \
+        np.array([6.122145926679324, 6.11613868482267, 6.134258103250474])
+    bermudan_prices_4_Euler_1_MC = \
+        np.array([6.374994912074388, 6.428210948091557, 6.337767249793884, 6.222338166117672, 6.122125820317566,
+                  6.124113522529565, 6.08543869293257, 6.073672663916806, 6.074643688987093])
+    bermudan_prices_4_Weak_1_MC = \
+        np.array([5.84016625395903, 5.984185407498253, 6.029869817364804, 6.064265531122275, 6.065994671888949,
+                  6.091467955508539, 6.069185109030468, 6.067684072599958, 6.055497464606124])
+    bermudan_prices_16_Euler_1_MC = \
+        np.array([6.506932192102358, 6.385482948726982, 6.304988519866201, 6.288568136419512, 6.2634987607692345,
+                  6.254241700294283, 6.248516530539128])
+    bermudan_prices_16_Weak_1_MC = \
+        np.array([6.209433658560861, 6.228173128211438, 6.251695791413654, 6.270230183806934, 6.251623923400068,
+                  6.256084539774051, 6.236805423970378])
+    bermudan_prices_256_Euler_1_MC = \
+        np.array([6.306193949440956, 6.2874596034918575, 6.291323937091087])
+    bermudan_prices_256_Weak_1_MC = \
+        np.array([6.293511391981054, 6.287814577174661, 6.273199102131892])
+    bermudan_prices_4_Euler_2_MC = \
+        np.array([6.420390145127389, 6.472930797016549, 6.458838247666576, 6.364240742381819, 6.257612575183531,
+                  6.196801022064704, 6.120252614849627, 6.108887312409656, 6.0814427881406035])
+    bermudan_prices_4_Weak_2_MC = \
+        np.array([5.783702082255862, 5.936975703357294, 6.013991614481586, 6.060701895557607, 6.086942776411719,
+                  6.073626406770916, 6.078451673607631, 6.092376219791714, 6.082868039016247])
+    bermudan_prices_16_Euler_2_MC = \
+        np.array([6.630140959958434, 6.542539230136588, 6.434377181446154, 6.380682485919598, 6.309035979130753,
+                  6.293600027099479, 6.275720286664339])
+    bermudan_prices_16_Weak_2_MC = \
+        np.array([6.205145264719924, 6.231609545104102, 6.263015109910695, 6.257616555092254, 6.267232619528006,
+                  6.276722597094117, 6.258378649955263])
+    bermudan_prices_256_Euler_2_MC = \
+        np.array([6.344430779399225, 6.321748327491974, 6.305306909362065])
+    bermudan_prices_256_Weak_2_MC = \
+        np.array([6.301194912728672, 6.318316116346498, 6.294297714897946])
+    bermudan_prices_4_Euler_3_MC = \
+        np.array([6.398657083587142, 6.479940945615953, 6.492488861914647, 6.466431412420086, 6.38612362113434,
+                  6.30562219817047, 6.2205907264635725, 6.164454139067818, 6.126165399572341])
+    bermudan_prices_4_Weak_3_MC = \
+        np.array([5.582231373826758, 5.812984613267271, 5.929799254569929, 6.005275274516244, 6.060022438581269,
+                  6.078758139791109, 6.056899266851076, 6.069635662532924, 6.081681696919653])
+    bermudan_prices_16_Euler_3_MC = \
+        np.array([6.660958289864805, 6.639787544579042, 6.559597866760051, 6.47722382597367, 6.398640298451329,
+                  6.336305040475958, 6.3019964438789255])
+    bermudan_prices_16_Weak_3_MC = \
+        np.array([6.108318508204293, 6.196936824424116, 6.238368060097502, 6.2605023752306765, 6.2475150990083295,
+                  6.248353190373457, 6.257423063271396])
+    bermudan_prices_256_Euler_3_MC = \
+        np.array([6.433661802419653, 6.36660700918045, 6.323643496158492])
+    bermudan_prices_256_Weak_3_MC = \
+        np.array([6.282204776091425, 6.290799267960921, 6.289616969621115])
+    bermudan_prices_4_Euler_4_MC = \
+        np.array([6.406126843462981, 6.4633057044612165, 6.441774061026381, 6.433433636956694, 6.391686385381758,
+                  6.365513359686255, 6.327031422505806, 6.246376842322323, 6.164341809680132])
+    bermudan_prices_4_Weak_4_MC = \
+        np.array([5.4362976021797715, 5.615935597891296, 5.799872869118376, 5.924465290342187, 5.999826544126777,
+                  6.056387810860024, 6.063220744715272, 6.084647288395503, 6.082758720011783])
+    bermudan_prices_16_Euler_4_MC = \
+        np.array([6.6174189872125035, 6.59365408841299, 6.571667289827528, 6.5292510957202605, 6.490150895994291,
+                  6.4242716756146905, 6.341487168838822])
+    bermudan_prices_16_Weak_4_MC = \
+        np.array([5.985484297556279, 6.107943180197603, 6.162857269579133, 6.223215685386942, 6.228446742528628,
+                  6.256058618685774, 6.250430035251435])
+    bermudan_prices_256_Euler_4_MC = \
+        np.array([6.526466435611826, 6.454235797638589, 6.372289136335599])
+    bermudan_prices_256_Weak_4_MC = \
+        np.array([6.264208536866021, 6.285533212002273, 6.293718989571229])
+    bermudan_prices_4_MC_error = 0.022
+    bermudan_prices_16_MC_error = 0.020
+    bermudan_prices_256_MC_error = 0.019
+
+    bermudan_prices_4_HQE_QMC = \
+        np.array([5.774183408437744, 5.854615351301953, 5.929369293090418, 5.9663337673351835, 5.986770239196567,
+                  5.999424979520078, 6.005674224266439, 6.012039333608904, 6.016, 6.016])
+    bermudan_prices_16_HQE_QMC = \
+        np.array([6.0993861291263345, 6.126970973104815, 6.143719753306705, 6.151690453648474, 6.159262765596182,
+                  6.163881778647127, 6.168, 6.171])
+    bermudan_prices_256_HQE_QMC = \
+        np.array([6.117771629784127, 6.123, 6.128, 6.130])
+    bermudan_prices_4_Euler_1_QMC = \
+        np.array([6.38975718366088, 6.423390029711331, 6.342266803436221, 6.234990343255016, 6.156105066476399,
+                  6.11120506357235, 6.088939347127523, 6.080471413156653, 6.078006526653015, 6.074])
+    bermudan_prices_4_Weak_1_QMC = \
+        np.array([5.83653258591296, 5.987247751528324, 6.046365468255918, 6.065750433730277, 6.070906571147718,
+                  6.072159309667814, 6.074527789330435, 6.07491176485612, 6.0767741969412, 6.075])
+    bermudan_prices_16_Euler_1_QMC = \
+        np.array([6.506793263507289, 6.404013763459586, 6.326878921104333, 6.28420385672242, 6.26447589920283,
+                  6.254576638991984, 6.249822675780373, 6.250])
+    bermudan_prices_16_Weak_1_QMC = \
+        np.array([6.214071649080092, 6.237786576410557, 6.247116775253625, 6.248556966773295, 6.246794787666114,
+                  6.248758449092724, 6.2478358783283605, 6.248])
+    bermudan_prices_256_Euler_1_QMC = \
+        np.array([6.296, 6.284, 6.281, 6.280])
+    bermudan_prices_256_Weak_1_QMC = \
+        np.array([6.277, 6.278, 6.278, 6.278])
+    bermudan_prices_4_Euler_2_QMC = \
+        np.array([6.414, 6.486, 6.452, 6.355, 6.252,
+                  6.171, 6.122, 6.098, 6.086, 6.081])
+    bermudan_prices_4_Weak_2_QMC = \
+        np.array([5.793, 5.952, 6.029, 6.064, 6.076,
+                  6.076, 6.075, 6.078, 6.074, 6.074])
+    bermudan_prices_16_Euler_2_QMC = \
+        np.array([6.617, 6.530, 6.428, 6.351, 6.302,
+                  6.280, 6.268, 6.261])
+    bermudan_prices_16_Weak_2_QMC = \
+        np.array([6.204, 6.237, 6.252, 6.256, 6.258,
+                  6.257, 6.258, 6.258])
+    bermudan_prices_256_Euler_2_QMC = \
+        np.array([6.338, 6.311, 6.300, 6.294])
+    bermudan_prices_256_Weak_2_QMC = \
+        np.array([6.291, 6.289, 6.289, 6.288])
+    bermudan_prices_4_Euler_3_QMC = \
+        np.array([6.403, 6.479, 6.481, 6.447, 6.388,
+                  6.308, 6.225, 6.160, 6.117, 6.094])
+    bermudan_prices_4_Weak_3_QMC = \
+        np.array([5.586, 5.797, 5.936, 6.015, 6.055,
+                  6.064, 6.068, 6.074, 6.071, 6.070])
+    bermudan_prices_16_Euler_3_QMC = \
+        np.array([6.645, 6.619, 6.561, 6.483, 6.402,
+                  6.339, 6.298, 6.275])
+    bermudan_prices_16_Weak_3_QMC = \
+        np.array([6.109, 6.190, 6.231, 6.245, 6.249,
+                  6.251, 6.249, 6.249])
+    bermudan_prices_256_Euler_3_QMC = \
+        np.array([6.436, 6.371, 6.332, 6.306])
+    bermudan_prices_256_Weak_3_QMC = \
+        np.array([6.281, 6.281, 6.282, 6.279])
+    bermudan_prices_4_Euler_4_QMC = \
+        np.array([6.403, 6.476, 6.471, 6.433, 6.396,
+                  6.355, 6.302, 6.241, 6.182, 6.135])
+    bermudan_prices_4_Weak_4_QMC = \
+        np.array([5.431, 5.619, 5.805, 5.935, 6.015,
+                  6.052, 6.065, 6.068, 6.070, 6.070])
+    bermudan_prices_16_Euler_4_QMC = \
+        np.array([6.633, 6.604, 6.565, 6.521, 6.473,
+                  6.413, 6.355, 6.313])
+    bermudan_prices_16_Weak_4_QMC = \
+        np.array([5.992, 6.114, 6.188, 6.228, 6.244,
+                  6.247, 6.248, 6.248])
+    bermudan_prices_256_Euler_4_QMC = \
+        np.array([6.505, 6.446, 6.387, 0])
+    bermudan_prices_256_Weak_4_QMC = \
+        np.array([6.271, 6.275, 6.278, 0])
+    bermudan_prices_4_QMC_error = 0.0025
+    bermudan_prices_16_QMC_error = 0.0025
+    bermudan_prices_256_QMC_error = 0.0025
+
     d_vec = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     n_vec_4 = np.array([4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048])
     n_vec_16 = np.array([16, 32, 64, 128, 256, 512, 1024, 2048])
     n_vec_256 = np.array([256, 512, 1024, 2048])
-    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d_MC, 'g', label='QE')
-    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d_MC - bermudan_prices_4_depending_on_d_MC_error, 'g--')
-    plt.plot(d_vec, bermudan_prices_4_QE_depending_on_d_MC + bermudan_prices_4_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_4_HQE_depending_on_d_MC, 'g', label='HQE')
+    plt.plot(d_vec, bermudan_prices_4_HQE_depending_on_d_MC - bermudan_prices_4_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_4_HQE_depending_on_d_MC + bermudan_prices_4_depending_on_d_MC_error, 'g--')
     plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d_MC, 'b', label='Euler')
     plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d_MC - bermudan_prices_4_depending_on_d_MC_error, 'b--')
     plt.plot(d_vec, bermudan_prices_4_Euler_depending_on_d_MC + bermudan_prices_4_depending_on_d_MC_error, 'b--')
@@ -713,11 +726,12 @@ def illustrate_bermudan_option_prices():
     plt.xlabel('Weighted maximal degree d of polynomials')
     plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan option with 4 execution times')
+    plt.tight_layout()
     plt.show()
 
-    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d_MC, 'g', label='QE')
-    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d_MC - bermudan_prices_16_depending_on_d_MC_error, 'g--')
-    plt.plot(d_vec, bermudan_prices_16_QE_depending_on_d_MC + bermudan_prices_16_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_16_HQE_depending_on_d_MC, 'g', label='HQE')
+    plt.plot(d_vec, bermudan_prices_16_HQE_depending_on_d_MC - bermudan_prices_16_depending_on_d_MC_error, 'g--')
+    plt.plot(d_vec, bermudan_prices_16_HQE_depending_on_d_MC + bermudan_prices_16_depending_on_d_MC_error, 'g--')
     plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d_MC, 'b', label='Euler')
     plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d_MC - bermudan_prices_16_depending_on_d_MC_error, 'b--')
     plt.plot(d_vec, bermudan_prices_16_Euler_depending_on_d_MC + bermudan_prices_16_depending_on_d_MC_error, 'b--')
@@ -728,11 +742,12 @@ def illustrate_bermudan_option_prices():
     plt.xlabel('Weighted maximal degree d of polynomials')
     plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan option with 16 execution times')
+    plt.tight_layout()
     plt.show()
 
-    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC, 'g', label='QE')
-    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC - bermudan_prices_4_QMC_error, 'g--')
-    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC + bermudan_prices_4_QMC_error, 'g--')
+    plt.plot(n_vec_4, bermudan_prices_4_HQE_QMC, 'g', label='HQE')
+    plt.plot(n_vec_4, bermudan_prices_4_HQE_QMC - bermudan_prices_4_QMC_error, 'g--')
+    plt.plot(n_vec_4, bermudan_prices_4_HQE_QMC + bermudan_prices_4_QMC_error, 'g--')
     plt.plot(n_vec_4, bermudan_prices_4_Euler_1_QMC, 'b', label='Euler, N=1')
     plt.plot(n_vec_4, bermudan_prices_4_Euler_2_QMC, color='b', linestyle='dotted', label='Euler, N=2')
     plt.plot(n_vec_4, bermudan_prices_4_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, N=3')
@@ -746,11 +761,12 @@ def illustrate_bermudan_option_prices():
     plt.xlabel('Number of simulation time steps')
     # plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan put option with 4 execution times')
+    plt.tight_layout()
     plt.show()
 
-    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC, 'g', label='QE')
-    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC - bermudan_prices_16_QMC_error, 'g--')
-    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC + bermudan_prices_16_QMC_error, 'g--')
+    plt.plot(n_vec_16, bermudan_prices_16_HQE_QMC, 'g', label='HQE')
+    plt.plot(n_vec_16, bermudan_prices_16_HQE_QMC - bermudan_prices_16_QMC_error, 'g--')
+    plt.plot(n_vec_16, bermudan_prices_16_HQE_QMC + bermudan_prices_16_QMC_error, 'g--')
     plt.plot(n_vec_16, bermudan_prices_16_Euler_1_QMC, 'b', label='Euler, N=1')
     plt.plot(n_vec_16, bermudan_prices_16_Euler_2_QMC, color='b', linestyle='dotted', label='Euler, N=2')
     plt.plot(n_vec_16, bermudan_prices_16_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, N=3')
@@ -764,11 +780,12 @@ def illustrate_bermudan_option_prices():
     plt.xlabel('Number of simulation time steps')
     # plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan put option with 16 execution times')
+    plt.tight_layout()
     plt.show()
 
-    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC, 'g', label='QE')
-    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC - bermudan_prices_256_QMC_error, 'g--')
-    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC + bermudan_prices_256_QMC_error, 'g--')
+    plt.plot(n_vec_256, bermudan_prices_256_HQE_QMC, 'g', label='HQE')
+    plt.plot(n_vec_256, bermudan_prices_256_HQE_QMC - bermudan_prices_256_QMC_error, 'g--')
+    plt.plot(n_vec_256, bermudan_prices_256_HQE_QMC + bermudan_prices_256_QMC_error, 'g--')
     plt.plot(n_vec_256, bermudan_prices_256_Euler_1_QMC, 'b', label='Euler, N=1')
     plt.plot(n_vec_256, bermudan_prices_256_Euler_2_QMC, color='b', linestyle='dotted', label='Euler, N=2')
     plt.plot(n_vec_256, bermudan_prices_256_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, N=3')
@@ -782,13 +799,14 @@ def illustrate_bermudan_option_prices():
     plt.xlabel('Number of simulation time steps')
     # plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan put option with 256 execution times')
+    plt.tight_layout()
     plt.show()
 
-    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC, 'g', label='QE, 4 ex. times')
-    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC - bermudan_prices_4_QMC_error, color='g', linestyle='dashdot')
-    plt.plot(n_vec_4, bermudan_prices_4_QE_QMC + bermudan_prices_4_QMC_error, color='g', linestyle='dashdot')
-    plt.plot(n_vec_16, bermudan_prices_16_QE_QMC, color='g', linestyle='dotted', label='QE, 16 ex. times')
-    plt.plot(n_vec_256, bermudan_prices_256_QE_QMC, color='g', linestyle='dashed', label='QE, 256 ex. times')
+    plt.plot(n_vec_4, bermudan_prices_4_HQE_QMC, 'g', label='HQE, 4 ex. times')
+    plt.plot(n_vec_4, bermudan_prices_4_HQE_QMC - bermudan_prices_4_QMC_error, color='g', linestyle='dashdot')
+    plt.plot(n_vec_4, bermudan_prices_4_HQE_QMC + bermudan_prices_4_QMC_error, color='g', linestyle='dashdot')
+    plt.plot(n_vec_16, bermudan_prices_16_HQE_QMC, color='g', linestyle='dotted', label='HQE, 16 ex. times')
+    plt.plot(n_vec_256, bermudan_prices_256_HQE_QMC, color='g', linestyle='dashed', label='HQE, 256 ex. times')
     plt.plot(n_vec_4, bermudan_prices_4_Euler_3_QMC, color='b', label='Euler, 4 ex. times')
     plt.plot(n_vec_16, bermudan_prices_16_Euler_3_QMC, color='b', linestyle='dotted', label='Euler, 16 ex. times')
     plt.plot(n_vec_256, bermudan_prices_256_Euler_3_QMC, color='b', linestyle='dashed', label='Euler, 256 ex. times')
@@ -800,6 +818,7 @@ def illustrate_bermudan_option_prices():
     plt.xlabel('Number of simulation time steps')
     # plt.ylabel('Prices of Bermudan put option')
     plt.title('Prices of Bermudan put options')
+    plt.tight_layout()
     plt.show()
 
 
@@ -846,23 +865,24 @@ def plot_for_L1_error_bound_paper_comparing_OL1_and_OL2():
     plt.xlabel('Number of nodes N')
     plt.legend(loc='best')
     plt.title('Maximal relative errors of implied volatility smiles')
+    plt.tight_layout()
     plt.show()
 
 
 def plot_for_simulation_paper_smile_errors():
     n_smile_Markov = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024])
-    n_smile_QE = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
+    n_smile_HQE = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
     N_smile = np.array([2, 3])
     H_smile = np.array([0.1, -0.2])
-    QE_smile = np.empty((3, len(H_smile), len(n_smile_QE)))  # total, MC, excess
+    HQE_smile = np.empty((3, len(H_smile), len(n_smile_HQE)))  # total, MC, excess
     Euler_smile = np.empty((4, len(H_smile), len(N_smile), len(n_smile_Markov)))  # total, discr, MC, excess
     Weak_smile = np.empty_like(Euler_smile)
     Markov_smile = np.empty((len(H_smile), len(N_smile)))
     nodes_smile = np.empty((len(H_smile), len(N_smile)))
-    QE_smile[0, 0, :] = np.array([10.85, 11.06, 8.124, 4.591, 2.24, 1.158, 0.7272, 0.4846, 0.3124, 0.1912])
-    QE_smile[1, 0, :] = np.array([0.0004697, 0.001584, 0.003557, 0.007299, 0.008072, 0.01366, 0.01461, 0.01601, 0.01977,
-                                  0.02333])
-    QE_smile[2, 0, :] = np.array([10.85, 11.06, 8.121, 4.584, 2.232, 1.147, 0.7137, 0.4716, 0.2946, 0.1734])
+    HQE_smile[0, 0, :] = np.array([10.85, 11.06, 8.124, 4.591, 2.24, 1.158, 0.7272, 0.4846, 0.3124, 0.1912])
+    HQE_smile[1, 0, :] = np.array([0.0004697, 0.001584, 0.003557, 0.007299, 0.008072, 0.01366, 0.01461, 0.01601,
+                                   0.01977, 0.02333])
+    HQE_smile[2, 0, :] = np.array([10.85, 11.06, 8.121, 4.584, 2.232, 1.147, 0.7137, 0.4716, 0.2946, 0.1734])
 
     Markov_smile[0, 0] = 0.0001323
     nodes_smile[0, 0] = 8.7171
@@ -920,21 +940,21 @@ def plot_for_simulation_paper_smile_errors():
                                        0.01039, 0.0138, 0.0229])
     Weak_smile[3, 1, 1, :] = np.array([38.74, 40.39, 40.17, 38.69, 35.63, 30.35, 22.71, 13.83, 5.935, 1.850, 0.460])
 
-    QE_smile, Euler_smile, Weak_smile = 0.01 * QE_smile, 0.01 * Euler_smile, 0.01 * Weak_smile
+    HQE_smile, Euler_smile, Weak_smile = 0.01 * HQE_smile, 0.01 * Euler_smile, 0.01 * Weak_smile
 
     n_surface_Markov = np.array([16, 32, 64, 128, 256, 512, 1024])
-    n_surface_QE = np.array([16, 32, 64, 128, 256, 512])
+    n_surface_HQE = np.array([16, 32, 64, 128, 256, 512])
     N_surface = np.array([2, 3])
     H_surface = 0.1
-    QE_surface = np.empty((3, len(n_surface_QE)))  # total, MC, excess
+    HQE_surface = np.empty((3, len(n_surface_HQE)))  # total, MC, excess
     Euler_surface = np.empty((4, len(N_surface), len(n_surface_Markov)))  # total, discr, MC, excess
     Weak_surface = np.empty_like(Euler_surface)
     Markov_surface = np.empty(len(N_surface))
     nodes_surface = np.empty(len(N_surface))
 
-    QE_surface[0, :] = np.array([8.631, 7.914, 5.467, 3.036, 1.565, 0.935])
-    QE_surface[1, :] = np.array([0.0114, 0.0148, 0.0174, 0.0189, 0.0251, 0.0230])
-    QE_surface[2, :] = np.array([np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
+    HQE_surface[0, :] = np.array([8.631, 7.914, 5.467, 3.036, 1.565, 0.935])
+    HQE_surface[1, :] = np.array([0.0114, 0.0148, 0.0174, 0.0189, 0.0251, 0.0230])
+    HQE_surface[2, :] = np.array([np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
 
     Markov_surface[0] = 0.0163
     nodes_surface[0] = 34.87
@@ -958,20 +978,49 @@ def plot_for_simulation_paper_smile_errors():
     Weak_surface[2, 1, :] = np.array([0.0064, 0.0120, 0.0202, 0.0218, 0.0193, 0.0203, 0.0226])
     Weak_surface[3, 1, :] = np.array([16.25, 8.569, 3.525, 1.127, 0.295, 0.057, 0.0133])
 
-    QE_surface, Euler_surface, Weak_surface = 0.01 * QE_surface, 0.01 * Euler_surface, 0.01 * Weak_surface
+    HQE_surface, Euler_surface, Weak_surface = 0.01 * HQE_surface, 0.01 * Euler_surface, 0.01 * Weak_surface
 
-    n_asian = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512])
+    n_asian = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024])
     N_asian = np.array([2, 3])
     H_asian = 0.1
-    QE_asian = np.empty((3, len(n_asian)))  # total, MC, excess
+    HQE_asian = np.empty((3, len(n_asian)))  # total, MC, excess
     Euler_asian = np.empty((4, len(N_asian), len(n_asian)))  # total, discr, MC, excess
     Weak_asian = np.empty_like(Euler_asian)
     Markov_asian = np.empty(len(N_asian))
     nodes_asian = np.empty(len(N_asian))
 
-    QE_asian[0, :] = np.array([38.58, 17.95, 13.40, 9.606, 5.722, 2.858, 1.387, 0.750, 0.458, 0.2825])
-    QE_asian[1, :] = np.array([0.0015, 0.0023, 0.0050, 0.0107, 0.0175, 0.0227, 0.0331, 0.0357, 0.0378, 0.03944])
+    HQE_asian[0, :] = np.array([38.58, 17.95, 13.40, 9.606, 5.722, 2.858, 1.387, 0.750, 0.458, 0.2825, np.nan])
+    HQE_asian[1, :] = np.array([0.0015, 0.0023, 0.0050, 0.0107, 0.0175, 0.0227, 0.0331, 0.0357, 0.0378, 0.03944,
+                                np.nan])
 
+    Markov_asian[0] = 0.005292
+    nodes_asian[0] = 8.7171
+    Euler_asian[0, 0, :] = np.array([14.44, 40.72, 44.82, 39.22, 30.29, 20.32, 11.79, 5.916, 2.585, 0.9034, 0.07106])
+    Euler_asian[1, 0, :] = np.array([14.39, 41.47, 45.59, 39.96, 30.98, 20.96, 12.38, 6.480, 3.131, 1.440, 0.6035])
+    Euler_asian[2, 0, :] = np.array([0.0002647, 0.0004465, 0.003508, 0.008856, 0.01676, 0.02242, 0.02278, 0.03726,
+                                     0.02932, 0.03022, 0.02423])
+    Euler_asian[3, 0, :] = np.array([14.39, 41.47, 45.58, 39.95, 30.96, 20.94, 12.36, 6.440, 3.101, 1.410, 0.5791])
+    Weak_asian[0, 0, :] = np.array([30.12, 13.98, 6.958, 3.374, 1.270, 0.4938, 0.3819, 0.5134, 0.5259, 0.5190, 0.521])
+    Weak_asian[1, 0, :] = np.array([29.81, 13.84, 6.827, 3.924, 1.809, 0.5632, 0.1579, 0.02332, 0.004048, 0.01027,
+                                    0.008])
+    Weak_asian[2, 0, :] = np.array([0.0004367, 0.001021, 0.005349, 0.01259, 0.01438, 0.01903, 0.02597, 0.03436, 0.02909,
+                                    0.03447, 0.03])
+    Weak_asian[3, 0, :] = np.array([29.81, 13.84, 6.825, 3.911, 1.795, 0.5440, 0.1319, 0.009505, 0.000, 0.000, 0.])
+
+    Markov_asian[1] = 0.0001233
+    nodes_asian[1] = 46.83
+    Euler_asian[0, 1, :] = np.array([14.44, 40.66, 44.57, 39.47, 33.05, 27.23, 21.43, 15.34, 9.752, 5.576, 2.872])
+    Euler_asian[1, 1, :] = np.array([14.44, 40.65, 44.55, 39.45, 33.03, 27.21, 21.41, 15.44, 9.739, 5.563, 2.860])
+    Euler_asian[2, 1, :] = np.array([0.0003765, 0.0005353, 0.003264, 0.009283, 0.01854, 0.02264, 0.02179, 0.03309,
+                                     0.03353, 0.03223, 0.03112])
+    Euler_asian[3, 1, :] = np.array([14.44, 40.64, 44.55, 39.44, 33.00, 27.18, 21.39, 15.29, 9.702, 5.529, 2.828])
+    Weak_asian[0, 1, :] = np.array([33.64, 19.22, 12.44, 7.092, 5.402, 2.616, 0.8532, 0.2004, 0.06884, 0.009356, 0.014])
+    Weak_asian[1, 1, :] = np.array([33.65, 19.23, 12.45, 7.100, 5.389, 2.604, 0.8408, 0.1881, 0.05651, 0.01915, 0.014])
+    Weak_asian[2, 1, :] = np.array([0.0004728, 0.001117, 0.005183, 0.01191, 0.01615, 0.01926, 0.02554, 0.03478, 0.02860,
+                                    0.03551, 0.032])
+    Weak_asian[3, 1, :] = np.array([33.64, 19.23, 12.45, 7.096, 5.372, 2.584, 0.8150, 0.1532, 0.02789, 0.002235, 0.0])
+
+    '''
     Markov_asian[0] = 0.003195
     nodes_asian[0] = 12.328
     Euler_asian[0, 0, :] = np.array([14.44, 40.76, 44.80, 39.67, 31.92, 22.91, 14.35, 7.845, 3.816, 1.609])
@@ -993,8 +1042,9 @@ def plot_for_simulation_paper_smile_errors():
     Weak_asian[1, 1, :] = np.array([33.93, 19.76, 13.20, 7.794, 5.826, 3.118, 1.068, 0.264, 0.092, 0.025])
     Weak_asian[2, 1, :] = np.array([0.0006, 0.0018, 0.0039, 0.0082, 0.0082, 0.0180, 0.0223, 0.0318, 0.0312, 0.0306])
     Weak_asian[3, 1, :] = np.array([33.93, 19.76, 13.20, 7.791, 5.817, 3.099, 1.045, 0.233, 0.061, 0.008])
+    '''
 
-    QE_asian, Euler_asian, Weak_asian = 0.01 * QE_asian, 0.01 * Euler_asian, 0.01 * Weak_asian
+    HQE_asian, Euler_asian, Weak_asian = 0.01 * HQE_asian, 0.01 * Euler_asian, 0.01 * Weak_asian
 
     for i in range(len(H_smile)):
         for j in range(len(N_smile)):
@@ -1005,9 +1055,9 @@ def plot_for_simulation_paper_smile_errors():
             plt.loglog(n_smile_Markov, Weak_smile[0, i, j, :] - Weak_smile[2, i, j, :], 'g--')
             plt.loglog(n_smile_Markov, Weak_smile[0, i, j, :] + Weak_smile[2, i, j, :], 'g--')
             if H_smile[i] > 0:
-                plt.loglog(n_smile_QE, QE_smile[0, i, :], 'b-', label='QE')
-                plt.loglog(n_smile_QE, QE_smile[0, i, :] - QE_smile[1, i, :], 'b--')
-                plt.loglog(n_smile_QE, QE_smile[0, i, :] + QE_smile[1, i, :], 'b--')
+                plt.loglog(n_smile_HQE, HQE_smile[0, i, :], 'b-', label='HQE')
+                plt.loglog(n_smile_HQE, HQE_smile[0, i, :] - HQE_smile[1, i, :], 'b--')
+                plt.loglog(n_smile_HQE, HQE_smile[0, i, :] + HQE_smile[1, i, :], 'b--')
             plt.loglog(n_smile_Markov, Markov_smile[i, j] * np.ones_like(n_smile_Markov), 'k-')
             plt.loglog(nodes_smile[i, j] * np.ones(2),
                        np.array([np.fmax(np.amax(Weak_smile[0, i, j, :]), np.amax(Euler_smile[0, i, j, :])), 0]), 'k-')
@@ -1025,9 +1075,9 @@ def plot_for_simulation_paper_smile_errors():
         plt.loglog(n_surface_Markov, Weak_surface[0, j, :], 'g-', label='Weak')
         plt.loglog(n_surface_Markov, Weak_surface[0, j, :] - Weak_surface[2, j, :], 'g--')
         plt.loglog(n_surface_Markov, Weak_surface[0, j, :] + Weak_surface[2, j, :], 'g--')
-        plt.loglog(n_surface_QE, QE_surface[0, :], 'b-', label='QE')
-        plt.loglog(n_surface_QE, QE_surface[0, :] - QE_surface[1, :], 'b--')
-        plt.loglog(n_surface_QE, QE_surface[0, :] + QE_surface[1, :], 'b--')
+        plt.loglog(n_surface_HQE, HQE_surface[0, :], 'b-', label='HQE')
+        plt.loglog(n_surface_HQE, HQE_surface[0, :] - HQE_surface[1, :], 'b--')
+        plt.loglog(n_surface_HQE, HQE_surface[0, :] + HQE_surface[1, :], 'b--')
         plt.loglog(n_surface_Markov, Markov_surface[j] * np.ones_like(n_surface_Markov), 'k-')
         plt.loglog(nodes_surface[j] * np.ones(2),
                    np.array([np.fmax(np.amax(Weak_surface[0, j, :]), np.amax(Euler_surface[0, j, :])), 0]), 'k-')
@@ -1045,9 +1095,9 @@ def plot_for_simulation_paper_smile_errors():
         plt.loglog(n_asian, Weak_asian[0, j, :], 'g-', label='Weak')
         plt.loglog(n_asian, Weak_asian[0, j, :] - Weak_asian[2, j, :], 'g--')
         plt.loglog(n_asian, Weak_asian[0, j, :] + Weak_asian[2, j, :], 'g--')
-        plt.loglog(n_asian, QE_asian[0, :], 'b-', label='QE')
-        plt.loglog(n_asian, QE_asian[0, :] - QE_asian[1, :], 'b--')
-        plt.loglog(n_asian, QE_asian[0, :] + QE_asian[1, :], 'b--')
+        plt.loglog(n_asian, HQE_asian[0, :], 'b-', label='HQE')
+        plt.loglog(n_asian, HQE_asian[0, :] - HQE_asian[1, :], 'b--')
+        plt.loglog(n_asian, HQE_asian[0, :] + HQE_asian[1, :], 'b--')
         plt.loglog(n_asian, Markov_asian[j] * np.ones_like(n_asian), 'k-')
         plt.loglog(nodes_asian[j] * np.ones(2),
                    np.array([np.fmax(np.amax(Weak_asian[0, j, :]), np.amax(Euler_asian[0, j, :])), 0]), 'k-')
