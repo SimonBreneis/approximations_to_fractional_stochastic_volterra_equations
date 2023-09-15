@@ -1,1 +1,7 @@
-This is a document for the simulation of fractional Brownian motion with Hurst parameter H < 0.5, as well as the simulation of the rough Bergomi and the rough Heston model. The rough kernel is represented by its Laplace transform. The resulting integral is discretized using quadrature rules. Then, Ornstein-Uhlenbeck-like SDEs are solved. The method is inspired by Abi Jaber, El Euch "Multi-factor approximation of rough volatility" and by Alfonsi, Kebaier "Approximation of stochastic Volterra equations with kernels of completely monotone type". The idea of using quadrature rules is taken from Harms "Strong convergence rates for Markovian representations of fractional processes".
+For obtaining good Markovian approximations (good quadrature rules), call 
+nodes, weights = RoughKernel.quadrature_rule(H, T, N)
+where H is the Hurst parameter, T the maturity and N the approximating dimension (N=2 or N=3 is usually enough).
+
+For efficiently simulating the Markovian approximation of the rough Heston model, call
+rHestonMarkovSimulation.samples()
+where one uses the nodes and weights generated before.
