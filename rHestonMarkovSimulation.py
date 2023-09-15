@@ -366,7 +366,7 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n
     is_smile = n_maturities is None
     if is_smile:
         n_maturities = 1
-    T_vec = T * np.linspace(0, 1, n_maturities + 1)[1:]
+    T_vec = np.linspace(0, T, n_maturities + 1)[1:]
     K_mat = S_0 * np.exp(np.sqrt(T_vec[:, None] / T) * np.log(K / S_0)[None, :])
 
     def get_samples(rv_shift=False):
@@ -388,7 +388,10 @@ def eur(K, lambda_, rho, nu, theta, V_0, S_0, T, nodes, weights, r, m, N_time, n
             if is_smile:
                 est, stat = est[0, :], stat[0, :]
             return est, est - stat, est + stat
-        return cf.iv_eur(S_0=S_0, K=K_mat, r=r, T=T_vec, price=est, payoff=payoff, stat=stat)
+        smile, lower, upper = cf.iv_eur(S_0=S_0, K=K_mat, r=r, T=T_vec, price=est, payoff=payoff, stat=stat)
+        if is_smile:
+            smile, lower, upper = smile[0, :], lower[0, :], upper[0, :]
+        return smile, lower, upper
     else:
         return cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, samples=get_samples(), payoff=payoff, implied_vol=implied_vol)
 

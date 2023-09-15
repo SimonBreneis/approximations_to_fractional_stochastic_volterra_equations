@@ -318,7 +318,10 @@ def eur(H, K, lambda_, rho, nu, theta, V_0, S_0, T, r, m, N_time, qmc=True, payo
             if is_smile:
                 est, stat = est[0, :], stat[0, :]
             return est, est - stat, est + stat
-        return cf.iv_eur(S_0=S_0, K=K_mat, r=r, T=T_vec, price=est, payoff=payoff, stat=stat)
+        smile, lower, upper = cf.iv_eur(S_0=S_0, K=K_mat, r=r, T=T_vec, price=est, payoff=payoff, stat=stat)
+        if is_smile:
+            smile, lower, upper = smile[0, :], lower[0, :], upper[0, :]
+        return smile, lower, upper
     else:
         return cf.eur_MC(S_0=S_0, K=K_mat, T=T_vec, r=r, samples=get_samples()[0], payoff=payoff,
                          implied_vol=implied_vol)
