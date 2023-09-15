@@ -75,25 +75,6 @@ def BS_paths(sigma, T, n, m, r=0., antithetic=True):
     return np.exp(BM_samples + (r - 0.5 * sigma ** 2) * np.linspace(0, T, n + 1)[None, :])
 
 
-def BS_nodes(S_0, K, sigma, T, r=0., regularize=True):
-    """
-    Computes the two nodes of the Black-Scholes model where the CDF is evaluated.
-    :param S_0: Initial stock price
-    :param K: Strike price
-    :param sigma: Volatility
-    :param r: Drift
-    :param T: Final time
-    :param regularize: Ensures that the results are in the interval [-30, 30].
-    :return: The first node
-    """
-    d1 = (np.log(S_0 / K) + (r + sigma ** 2 / 2) * T[..., None]) / (sigma * np.sqrt(T[..., None]))
-    d2 = (np.log(S_0 / K) + (r - sigma ** 2 / 2) * T[..., None]) / (sigma * np.sqrt(T[..., None]))
-    if regularize:
-        d1 = np.fmax(np.fmin(d1, 30), -30)
-        d2 = np.fmax(np.fmin(d2, 30), -30)
-    return d1, d2
-
-
 def BS_price_eur_call_put(S_0, K, sigma, T, r=0., call=True, digital=False):
     """
     Computes the price of a (digital or standard) European call or put option under the Black-Scholes model.
@@ -106,17 +87,31 @@ def BS_price_eur_call_put(S_0, K, sigma, T, r=0., call=True, digital=False):
     :param digital: If True, prices a digital option. Else prices a standard option
     :return: The price of a call option
     """
+    T = T[..., None] if (isinstance(T, np.ndarray) and len(T.shape) == 1) else T
+
+    def BS_nodes(regularize=True):
+        """
+        Computes the two nodes of the Black-Scholes model where the CDF is evaluated.
+        :param regularize: Ensures that the results are in the interval [-30, 30] to avoid overflow/underflow errors.
+        :return: The nodes
+        """
+        d1_ = (np.log(S_0 / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
+        d2_ = (np.log(S_0 / K) + (r - sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
+        if regularize:
+            d1_ = np.fmax(np.fmin(d1_, 30), -30)
+            d2_ = np.fmax(np.fmin(d2_, 30), -30)
+        return d1_, d2_
+
     if digital:
-        put_price = norm.cdf((np.log(K / S_0) + sigma ** 2 * T[..., None] / 2 - r * T[..., None])
-                             / (sigma * np.sqrt(T[..., None])))
+        put_price = norm.cdf((np.log(K / S_0) + sigma ** 2 * T / 2 - r * T) / (sigma * np.sqrt(T)))
         if call:
             return 1 - put_price
         else:
             return put_price
-    d1, d2 = BS_nodes(S_0=S_0, K=K, sigma=sigma, T=T, r=r, regularize=True)
+    d1, d2 = BS_nodes()
     if call:
-        return S_0 * norm.cdf(d1) - K * np.exp(-r * T[..., None]) * norm.cdf(d2)
-    return - S_0 * norm.cdf(-d1) + K * np.exp(-r * T[..., None]) * norm.cdf(-d2)
+        return S_0 * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    return - S_0 * norm.cdf(-d1) + K * np.exp(-r * T) * norm.cdf(-d2)
 
 
 def BS_price_geom_asian_call(S_0, K, sigma, T):
@@ -166,6 +161,8 @@ def iv_eur(S_0, K, T, price, payoff, r=0., stat=None):
         well as the corresponding MC interval
     :return: The implied volatility
     """
+    T = T[..., None] if (isinstance(T, np.ndarray) and len(T.shape) == 1) else T
+
     if payoff == 'call' or payoff == payoff_call:
         def price_fun(s):
             return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=True, digital=False)
@@ -180,13 +177,12 @@ def iv_eur(S_0, K, T, price, payoff, r=0., stat=None):
             return BS_price_eur_call_put(S_0=S_0, K=K, sigma=s, r=r, T=T, call=False, digital=True)
     else:
         if isinstance(T, np.ndarray):
-            normal_rv = np.sqrt(T)[:, None] * np.random.normal(0, 1, (len(T), 1000000))
+            normal_rv = np.sqrt(T) * np.random.normal(0, 1, (T.shape[0], 1000000))
         else:
             normal_rv = np.sqrt(T) * np.random.normal(0, 1, 1000000)
 
         def price_fun(s):
-            return np.average(np.exp(-r * T)[..., None]
-                              * payoff(S=np.exp(s * normal_rv + (r - 0.5 * s ** 2) * T[..., None]), K=K), axis=-1)
+            return np.average(np.exp(-r * T) * payoff(S=np.exp(s * normal_rv + (r - 0.5 * s ** 2) * T), K=K), axis=-1)
     if stat is None:
         return iv(BS_price_fun=price_fun, price=price)
     return iv(BS_price_fun=price_fun, price=price), iv(BS_price_fun=price_fun, price=price - stat), \
