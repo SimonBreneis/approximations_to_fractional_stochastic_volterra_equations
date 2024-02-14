@@ -1822,3 +1822,63 @@ def plot_GG_OL1_varying_H():
     plt.title('Relative ' + r'$L^1$' + f'-errors for GG and OL1')
     plt.legend(loc='best')
     plt.show()
+
+
+def generate_and_safe_samples():
+    H, T, S_0, V_0, theta, rho, nu, lambda_, r = 0.1, 1., 1., 0.02, 0.02, -0.7, 0.3, 0.3, 0.
+    rng, kernel_dict = None, None
+    m = 2 ** 22
+    N_time = 1024
+    n_batches, m_batch = rHestonQESimulation.get_n_batches(return_times=N_time, m=m)  # 220, 19066
+
+    for i in range(25):
+        if i >= 1:
+            rv_shift = np.random.uniform(0, 1, 3 * N_time)
+        else:
+            rv_shift = None
+        for j in range(n_batches):
+            print(f'Batch {i + 1} {j + 1} of 25 {n_batches}')
+            filename = f'rHeston HQE sample paths {i + 1} {j + 1}.npy'
+            samples, rng, kernel_dict = rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0,
+                                                                    T=T,
+                                                                    rho=rho, S_0=S_0, r=r, m=m_batch, N_time=N_time,
+                                                                    sample_paths=True, rng=rng, kernel_dict=kernel_dict,
+                                                                    rv_shift=rv_shift)
+            np.save(filename, samples)
+            if i == 0 and j == 0:
+                samples_2 = np.load(filename)
+                print(np.array_equal(samples, samples_2))
+            rng = rng.reset()
+            rng = rng.fast_forward((j + 1) * m_batch)
+
+
+def generate_and_safe_samples_2():
+    H, T, S_0, V_0, theta, rho, nu, lambda_, r = 0.1, 1., 1., 0.02, 0.02, -0.7, 0.3, 0.3, 0.
+    rng, kernel_dict = None, None
+    m = 2 ** 22
+    N_time = 1024
+    n_batches, m_batch = rHestonQESimulation.get_n_batches(return_times=N_time, m=m)  # 220, 19066
+
+    final_vals = np.empty(m)
+    avg_vals = np.empty(m)
+    for i in range(5, 25):
+        rv_shift = np.random.uniform(0, 1, 3 * N_time)
+        rng = None
+        for j in range(n_batches):
+            print(f'Batch {i + 1} {j + 1} of 25 {n_batches}')
+            samples, rng, kernel_dict = rHestonQESimulation.samples(H=H, lambda_=lambda_, nu=nu, theta=theta, V_0=V_0,
+                                                                    T=T, rho=rho, S_0=S_0, r=r, m=m_batch,
+                                                                    N_time=N_time, sample_paths=True, rng=rng,
+                                                                    kernel_dict=kernel_dict, rv_shift=rv_shift)
+            if j == n_batches - 1:
+                final_vals[j * m_batch:] = samples[0, -1, :m - j * m_batch]
+                avg_vals[j * m_batch:] = \
+                    np.exp(np.trapz(np.log(samples[0, :, :m - j * m_batch]), dx=1 / N_time, axis=0))
+            else:
+                final_vals[j * m_batch:(j + 1) * m_batch] = samples[0, -1, :]
+                avg_vals[j * m_batch:(j + 1) * m_batch] = \
+                    np.exp(np.trapz(np.log(samples[0, :, :]), dx=1 / N_time, axis=0))
+            rng = rng.reset()
+            rng = rng.fast_forward((j + 1) * m_batch)
+        np.save(f'rHeston HQE samples 1024 {i + 1}.npy', final_vals)
+        np.save(f'rHeston HQE geom avg samples 1024 {i + 1}.npy', avg_vals)

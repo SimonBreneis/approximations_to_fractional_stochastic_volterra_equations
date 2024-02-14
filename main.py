@@ -9,13 +9,313 @@ import fBmMarkov
 import functions
 import rHestonFourier
 import rHestonMarkovSimulation
-# import rHestonQESimulation
 import rHestonQESimulation
 from functions import *
 import rBergomiMarkov
 import rHestonMomentMatching
 import scipy.stats, scipy.optimize, scipy.integrate, scipy.linalg, scipy.special
 from scipy.special import gamma
+import fbm
+
+import csv
+
+
+rHestonFourier.eur_call_put(S_0=1., K=np.exp(np.linspace(-0.5, 0.3, 101)), lambda_=0.3, rho=-0.7, nu=0.3, theta=0.02, V_0=0.02, T=1., rel_tol=1e-05, H=0.1)
+
+print(rk.quadrature_rule(H=0.1, N=2, T=1.))
+print(rk.quadrature_rule(H=0.1, N=3, T=1.))
+print(rk.quadrature_rule(H=-0.2, N=2, T=1.))
+print(rk.quadrature_rule(H=-0.2, N=3, T=1.))
+time.sleep(3600000)
+
+def save_string_to_float(x):
+    try:
+        return float(x)
+    except ValueError:
+        pass
+    return None
+
+
+def get_data():
+    data_ = np.empty((2583, 3))  # 2583 data points with maturity T, log-moneyness k and implied volatility sigma
+    with open('ivols.csv', newline='') as csvfile:
+        ivols_reader = csv.reader(csvfile, delimiter=',')
+        i = -1
+        for row in ivols_reader:
+            print(', '.join(row))
+            if i >= 0:
+                data_[i, :] = np.array([save_string_to_float(row[2]),
+                                       np.log(save_string_to_float(row[3]) / save_string_to_float(row[6])),
+                                       save_string_to_float(row[5])])
+            i = i + 1
+    return data_
+
+
+data = get_data()
+data = data[np.abs(data[:, 1]) <= 0.5, :]
+data = data[data[:, 0] > np.amin(data[:, 0]), :]
+data = data[data[:, 0] > np.amin(data[:, 0]), :]
+data = data[data[:, 0] > np.amin(data[:, 0]), :]
+
+
+
+import sys
+import numpy
+numpy.set_printoptions(threshold=sys.maxsize)
+print(data)
+
+
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
+
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+
+# Make data.
+X = np.arange(-5, 5, 0.25)
+Y = np.arange(-5, 5, 0.25)
+X, Y = np.meshgrid(X, Y)
+print(X, Y)
+R = np.sqrt(X**2 + Y**2)
+Z = np.sin(R)
+
+# Plot the surface.
+surf = ax.plot_trisurf(data[:, 1], data[:, 0], data[:, 2], cmap='hsv',
+                       linewidth=0, antialiased=False)
+
+# Customize the z axis.
+#ax.set_zlim(-1.01, 1.01)
+#ax.zaxis.set_major_locator(LinearLocator(10))
+# A StrMethodFormatter is used automatically
+#ax.zaxis.set_major_formatter('{x:.02f}')
+
+# Add a color bar which maps values to colors.
+# fig.colorbar(surf, shrink=0.5, aspect=5)
+
+ax.set_ylabel('Maturity T')
+ax.set_xlabel('Log-moneyness k')
+ax.set_zlabel('Implied volatility')
+ax.set_zticks([0.1, 0.2, 0.3, 0.4, 0.5])
+
+plt.tight_layout()
+plt.show()
+
+print(data[1000, 0])
+data = data[data[:, 0] == data[1000, 0], :]
+plt.plot(data[:, 1], data[:, 2])
+plt.xlabel('Log-moneyness k')
+plt.ylabel('Implied volatility')
+plt.tight_layout()
+plt.show()
+
+k = np.linspace(-0.5, 0.3, 201)
+iv_smile = rHestonFourier.eur_call_put(S_0=1., K=np.exp(k), lambda_=0.3, rho=-0.7, theta=0.02,
+                                       V_0=0.02, nu=1., nodes=np.array([0.]), weights=np.array([1.]), T=0.23,
+                                       rel_tol=1e-04, verbose=2)
+plt.plot(k, iv_smile)
+plt.xlabel('Log-moneyness k')
+plt.title('Implied volatility smile for Heston')
+plt.tight_layout()
+plt.show()
+
+data = get_data()
+skew = []
+maturities = []
+current_T = 0
+current_T_index = -1
+while data.shape[0] > 0:
+    current_data = data[data[:, 0] == data[0, 0], :]
+    current_data_positive_k = current_data[current_data[:, 1] >= 0, :]
+    current_data_negative_k = current_data[current_data[:, 1] < 0, :]
+    maturities.append(current_data[0, 0])
+    '''
+    skew.append((
+        np.abs((current_data_positive_k[0, 2] - current_data_negative_k[-1, 2]) / (current_data_positive_k[0, 1] - current_data_negative_k[-1, 1]))
+        + np.abs((current_data_positive_k[1, 2] - current_data_negative_k[-1, 2]) / (current_data_positive_k[1, 1] - current_data_negative_k[-1, 1]))
+        + np.abs((current_data_positive_k[2, 2] - current_data_negative_k[-1, 2]) / (current_data_positive_k[2, 1] - current_data_negative_k[-1, 1]))
+        + np.abs((current_data_positive_k[0, 2] - current_data_negative_k[-2, 2]) / (current_data_positive_k[0, 1] - current_data_negative_k[-2, 1]))
+        + np.abs((current_data_positive_k[1, 2] - current_data_negative_k[-2, 2]) / (current_data_positive_k[1, 1] - current_data_negative_k[-2, 1]))
+        + np.abs((current_data_positive_k[2, 2] - current_data_negative_k[-2, 2]) / (current_data_positive_k[2, 1] - current_data_negative_k[-2, 1]))
+        + np.abs((current_data_positive_k[0, 2] - current_data_negative_k[-3, 2]) / (current_data_positive_k[0, 1] - current_data_negative_k[-3, 1]))
+        + np.abs((current_data_positive_k[1, 2] - current_data_negative_k[-3, 2]) / (current_data_positive_k[1, 1] - current_data_negative_k[-3, 1]))
+        + np.abs((current_data_positive_k[2, 2] - current_data_negative_k[-3, 2]) / (current_data_positive_k[2, 1] - current_data_negative_k[-3, 1]))) / 9)
+    '''
+    skew.append((
+        np.abs((current_data_positive_k[0, 2] - current_data_negative_k[-1, 2]) / (current_data_positive_k[0, 1] - current_data_negative_k[-1, 1]))
+        + np.abs((current_data_positive_k[1, 2] - current_data_negative_k[-1, 2]) / (current_data_positive_k[1, 1] - current_data_negative_k[-1, 1]))
+        + np.abs((current_data_positive_k[0, 2] - current_data_negative_k[-2, 2]) / (current_data_positive_k[0, 1] - current_data_negative_k[-2, 1]))
+        + np.abs((current_data_positive_k[1, 2] - current_data_negative_k[-2, 2]) / (current_data_positive_k[1, 1] - current_data_negative_k[-2, 1]))) / 4)
+    data = data[data[:, 0] != data[0, 0], :]
+skew, maturities = np.array(skew), np.array(maturities)
+exponent, constant, _, _, _ = functions.log_linear_regression(maturities, skew)
+print(exponent, constant)
+plt.scatter(maturities, skew)
+plt.plot(maturities, constant * maturities ** exponent)
+plt.ylim(0, 1.4)
+plt.xlabel('Maturity T')
+plt.ylabel('Skew')
+plt.tight_layout()
+plt.show()
+'''
+skew_heston = rHestonFourier.skew_eur_call_put(lambda_=0.3, rho=-0.7, nu=1, theta=0.02, V_0=0.02, T=maturities, nodes=np.array([0.]), weights=np.array([1.]), verbose=2)
+plt.plot(maturities, skew_heston)
+plt.show()
+'''
+
+seed = 801 * 42
+np.random.seed(seed)
+f = fbm.FBM(2 ** 12, 0.1)
+fbm_sample_1 = f.fbm()
+np.random.seed(seed)
+f = fbm.FBM(2 ** 12, 0.3)
+fbm_sample_2 = f.fbm()
+np.random.seed(seed)
+f = fbm.FBM(2 ** 12, 0.499)
+fbm_sample_3 = f.fbm()
+np.random.seed(seed)
+f = fbm.FBM(2 ** 12, 0.7)
+fbm_sample_4 = f.fbm()
+np.random.seed(seed)
+f = fbm.FBM(2 ** 12, 0.9)
+fbm_sample_5 = f.fbm()
+times = f.times()
+plt.plot(times, fbm_sample_1, color=color(0, 5), label='H=0.1')
+plt.plot(times, fbm_sample_2, color=color(1, 5), label='H=0.3')
+plt.plot(times, fbm_sample_3, color=color(2, 5), label='H=0.5')
+plt.plot(times, fbm_sample_4, color=color(3, 5), label='H=0.7')
+plt.plot(times, fbm_sample_5, color=color(4, 5), label='H=0.9')
+plt.xlabel('Time t')
+plt.legend(loc='best')
+plt.title('Sample paths of fractional Brownian motion')
+plt.tight_layout()
+plt.show()
+
+n = 1000
+BM_increments = np.random.normal(0, np.sqrt(1 / n), n)
+n_mean_reversions = 201
+mean_reversions = np.linspace(0, 10, n_mean_reversions)
+OU_paths = np.zeros((n_mean_reversions, n + 1))
+
+for i in range(1, n + 1):
+    OU_paths[:, i] = OU_paths[:, i - 1] - mean_reversions * OU_paths[:, i - 1] / n + np.random.normal(0, n ** (-0.5))
+
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+
+# Make data.
+X = np.arange(-5, 5, 0.25)
+Y = np.arange(-5, 5, 0.25)
+X, Y = np.meshgrid(X, Y)
+print(X, Y)
+R = np.sqrt(X**2 + Y**2)
+Z = np.sin(R)
+
+X, Y = np.meshgrid(np.linspace(0, 1, n + 1), mean_reversions)
+
+# Plot the surface.
+surf = ax.plot_surface(X, Y, OU_paths, cmap=cm.coolwarm,
+                       linewidth=0, antialiased=False)
+
+# Customize the z axis.
+#ax.set_zlim(-1.01, 1.01)
+#ax.zaxis.set_major_locator(LinearLocator(10))
+# A StrMethodFormatter is used automatically
+#ax.zaxis.set_major_formatter('{x:.02f}')
+
+# Add a color bar which maps values to colors.
+# fig.colorbar(surf, shrink=0.5, aspect=5)
+
+ax.set_xlabel('Time t')
+ax.set_ylabel('Mean reversion x')
+
+plt.tight_layout()
+plt.show()
+print('Finished')
+time.sleep(360000)
+
+
+Data.illustrate_bermudan_option_prices()
+Data.plot_for_simulation_paper_smile_errors()
+
+'''
+Data.illustrate_bermudan_option_prices()
+generate_and_safe_samples_2()
+print('Finished')
+time.sleep(360000)
+'''
+
+H, T, S_0, V_0, theta, rho, nu, lambda_, r, rel_tol = 0.1, 1., 1., 0.02, 0.02, -0.7, 0.3, 0.3, 0., 1e-05
+K = np.exp(np.linspace(-0.1, 0.05, 16))
+'''
+approx_smiles = np.empty((25, len(K)))
+for i in range(25):
+    print(i)
+    stock_prices = np.load(f'rHeston HQE samples 1024 {i + 1}.npy')
+    approx_smiles[i, :], _, _ = cf.eur_MC(S_0=S_0, K=K, T=T, samples=stock_prices, r=r, implied_vol=False)
+approx_smile, lower, upper = cf.iv_eur(S_0=S_0, K=K, T=T, price=np.average(approx_smiles, axis=0), payoff='call', stat=np.std(approx_smiles, axis=0) / 5 * 1.95)
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
+                                         r=r, rel_tol=rel_tol, H=H, implied_vol=True)
+print(np.amax(np.abs(true_smile - approx_smile) / true_smile),
+      np.fmax(np.amax(np.abs(approx_smile - lower) / approx_smile),
+              np.amax(np.abs(approx_smile - upper) / approx_smile)))
+
+T = np.linspace(0, 1, 17)[1:]
+K_mat = S_0 * np.exp(np.sqrt(T[:, None]) * np.log(K / S_0)[None, :])
+payoffs = np.empty((len(T), len(K), 5 * 220))
+for i in range(25):
+    samples = np.load(f'rHeston HQE samples 1024 {i + 1}.npy')
+    payoffs[:, :, i * 220 + j], _, _ = cf.eur_MC(S_0=S_0, K=K_mat, T=T, samples=samples, r=r, implied_vol=False)
+price, stat = cf.MC(payoffs)
+approx_smile, lower, upper = cf.iv_eur(S_0=S_0, K=K_mat, T=T, price=price, payoff='call', r=r, stat=stat)
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K_mat, T=T, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                         r=r, rel_tol=rel_tol, H=H, implied_vol=True, verbose=2)
+print(np.amax(np.abs(true_smile - approx_smile) / true_smile),
+      np.fmax(np.amax(np.abs(approx_smile - lower) / approx_smile),
+              np.amax(np.abs(approx_smile - upper) / approx_smile)))
+'''
+T = 1
+payoffs = np.empty((len(K), 25))
+for i in range(25):
+    print(i)
+    samples = np.load(f'rHeston HQE geom avg samples 1024 {i + 1}.npy')
+    payoffs[:, i], _ = cf.MC(cf.payoff_call(S=samples, K=K))
+true_smile = rHestonFourier.geom_asian_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0,
+                                                T=T, rel_tol=rel_tol, H=H)
+approx_smile, stat = cf.MC(payoffs)
+print(np.amax(np.abs(true_smile - approx_smile) / true_smile), np.amax(stat / approx_smile))
+
+K = np.exp(np.linspace(-0.5, 0.5, 101))
+true_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T, r=r,
+                                         rel_tol=rel_tol, H=H)
+nodes, weights = rk.quadrature_rule(H=H, N=2, T=T)
+markov_smile = rHestonFourier.eur_call_put(S_0=S_0, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, T=T,
+                                           r=r, rel_tol=rel_tol, H=H, nodes=nodes, weights=weights)
+m = 2 ** 24
+N_time = 32
+HQE_smile, _, _ = rHestonQESimulation.eur(H=H, K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                          r=r, m=m, N_time=N_time, implied_vol=True, qmc_error_estimators=1, verbose=2)
+Weak_smile, _, _ = rHestonMarkovSimulation.eur(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0, T=T,
+                                               nodes=nodes, weights=weights, r=r, m=m, N_time=N_time, euler=False,
+                                               implied_vol=True, qmc_error_estimators=1, verbose=2)
+Euler_smile, _, _ = rHestonMarkovSimulation.eur(K=K, lambda_=lambda_, rho=rho, nu=nu, theta=theta, V_0=V_0, S_0=S_0,
+                                                T=T, nodes=nodes, weights=weights, r=r, m=m, N_time=N_time, euler=True,
+                                                implied_vol=True, qmc_error_estimators=1, verbose=2)
+k = np.log(K)
+plt.plot(k, true_smile, 'k-', label='True smile')
+plt.plot(k, markov_smile, 'brown', label='Markov smile')
+plt.plot(k, Euler_smile, color='red', marker='x', markevery=10, label='Euler smile')
+plt.plot(k, Weak_smile, 'g-', label='Weak smile')
+plt.plot(k, HQE_smile, color='blue', marker='o', markevery=10, label='HQE smile')
+plt.xlabel('Log-moneyness')
+plt.title('Implied volatility for European call options')
+plt.legend(loc='best')
+plt.tight_layout()
+plt.show()
+print('Finished')
+time.sleep(360000)
+
+
+
+
+Data.plot_for_simulation_paper_smile_errors()
 
 
 def plot_samples_volatility_markov():
@@ -337,7 +637,7 @@ for N in [2, 3]:
 '''
 
 params['rel_tol'] = 2e-04
-compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([2, 3]),
+compute_smiles_given_stock_prices_QMC(params=params, Ns=np.array([3]),
                                       N_times=np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]),
                                       n_samples=2 ** 22, option='geometric asian call', simulator=['Euler', 'Weak'],
                                       verbose=2)
